@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../engine-core"
+    },
+    {
+      "path": "../common"
+    },
+    {
+      "path": "../journal"
+    }
+  ],
+  "extends": "../../tsconfig.base.json"
+}

@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "type": "module",
+  "name": "@matchledger/web",
+  "version": "0.1.0",
+  "dependencies": {
+    "@matchledger/common": "file:../packages/common"
+  }
+}

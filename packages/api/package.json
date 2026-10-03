@@ -1,0 +1,15 @@
+{
+  "name": "@matchledger/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@matchledger/common": "file:../common",
+    "@matchledger/journal": "file:../journal",
+    "@matchledger/projections": "file:../projections",
+    "@matchledger/risk": "file:../risk",
+    "@matchledger/recon": "file:../recon"
+  }
+}

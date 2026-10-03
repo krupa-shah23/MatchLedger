@@ -1,0 +1,17 @@
+{
+  "name": "@matchledger/shard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@confluentinc/kafka-javascript": "1.10.1",
+    "@matchledger/common": "file:../common",
+    "@matchledger/engine-core": "file:../engine-core",
+    "@matchledger/journal": "file:../journal"
+  },
+  "scripts": {
+    "spike:kafka": "node --experimental-strip-types src/spike4.ts"
+  }
+}

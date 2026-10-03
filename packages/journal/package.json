@@ -1,0 +1,19 @@
+{
+  "name": "@matchledger/journal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@matchledger/common": "file:../common",
+    "@matchledger/engine-core": "file:../engine-core",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  },
+  "scripts": {
+    "test:integration": "RUN_CONTAINERS=1 vitest run src/postgres.integration.test.ts"
+  }
+}

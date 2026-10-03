@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/engine-core" }, { "path": "./packages/common" },
+    { "path": "./packages/journal" }, { "path": "./packages/shard" },
+    { "path": "./packages/risk" }, { "path": "./packages/ledger" },
+    { "path": "./packages/recon" }, { "path": "./packages/projections" },
+    { "path": "./packages/api" }, { "path": "./packages/simulator" },
+    { "path": "./packages/benchmarks" }, { "path": "./web" }
+  ]
+}

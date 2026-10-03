@@ -1,0 +1,26 @@
+{
+  "name": "matchledger",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "packages/*",
+    "web"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "check:boundaries": "node scripts/check-boundaries.mjs"
+  },
+  "devDependencies": {
+    "eslint": "10.11.0",
+    "fast-check": "4.10.2",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0",
+    "vitest": "4.1.11"
+  }
+}

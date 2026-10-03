@@ -1,0 +1,15 @@
+{
+  "name": "@matchledger/benchmarks",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@matchledger/engine-core": "file:../engine-core",
+    "tinybench": "6.2.0"
+  },
+  "scripts": {
+    "bench": "node --experimental-strip-types src/hello.bench.ts"
+  }
+}
