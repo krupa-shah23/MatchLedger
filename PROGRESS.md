@@ -80,3 +80,14 @@
 - `docs/WEEK-3.md` and `docs/WEEK-2.md` remain absent in this checkout; available blueprint/source conventions were used.
 - The requested Prompt 2 precondition is not green in the current checkout: IOC remains intentionally stubbed, causing U8, U9, U22, U23, U24, and U25 to fail. No engine changes were made for this quantity task.
 - Next step is to implement/review the IOC tail and then rerun the full suite.
+
+| Week 3 — Property STUB harness | Added extended arbitraries, invariant assertions, command/event analysis, a throwing reference matcher stub, and P1–P4/P11–P14 plus D1 property wiring. | packages/engine-core/test/helpers, packages/engine-core/test/properties.test.ts | Build, lint, and boundaries pass. Focused properties: 7 passed, D1 failed after 1 run with `reference matcher: hand-written`; P1 uses 5,000 runs and the other properties use 2,000. Full suite remains blocked by six IOC stub failures plus D1. | STUB handoff complete |
+
+## Property STUB deviations and next step
+
+- The requested helper files did not exist, so they were created rather than extended.
+- The current engine-core API exposes `Engine` rather than `OrderBook.apply`; the property harness uses `Engine.apply`.
+- In STUB mode, the reference matcher intentionally throws, so D1 cannot compare event streams yet.
+- The generated command arbitrary includes IOC, but the runnable regression properties use a normalized GTC subset because IOC is still intentionally unimplemented.
+- Mutation sanity checks were not run because they are reserved for REVIEW/IMPLEMENT mode.
+- Next step: hand-write the reference matcher, then REVIEW its independence, validation precedence, event shapes, trade IDs, and worked examples.
