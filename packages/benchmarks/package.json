@@ -7,9 +7,9 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@matchledger/engine-core": "file:../engine-core",
-    "tinybench": "6.2.0"
+    "tinybench": "6.2.1"
   },
   "scripts": {
-    "bench": "node --experimental-strip-types src/hello.bench.ts"
+    "bench": "node dist/book.bench.js"
   }
 }
