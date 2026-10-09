@@ -72,3 +72,11 @@
 
 - Handoff checklist: implement the IOC-only post-loop `ORDER_CANCELLED` tail with `IOC_REMAINDER`; add/use one shared inclusive crossing predicate if needed; confirm the match loop remains independent of TIF and does not allocate/index/sequence an IOC remainder.
 - Current stub text is `IOC matching is not implemented`, whereas the new prompt suggests `IOC not implemented: Week 3 hand-written`; this was left unchanged to avoid modifying the hand-written-test contract in STUB mode.
+
+| Week 3 — Quantity parser | Added browser-safe `parseQuantity`, exported its types/API from common, added Q1–Q8 tests including a 1,000-run fast-check property, and added a composite common test project to the root build. | packages/common/src/quantity.ts, packages/common/src/index.ts, packages/common/test/quantity.test.ts, packages/common/test/tsconfig.json, tsconfig.json | `npm run build`, `npm run lint`, and `npm run check:boundaries` pass. Quantity tests pass. Full suite: 60 passed, 6 pre-existing IOC stub failures, 4 skipped. | Complete with unrelated IOC baseline blocker |
+
+## Quantity parser deviations and next step
+
+- `docs/WEEK-3.md` and `docs/WEEK-2.md` remain absent in this checkout; available blueprint/source conventions were used.
+- The requested Prompt 2 precondition is not green in the current checkout: IOC remains intentionally stubbed, causing U8, U9, U22, U23, U24, and U25 to fail. No engine changes were made for this quantity task.
+- Next step is to implement/review the IOC tail and then rerun the full suite.
