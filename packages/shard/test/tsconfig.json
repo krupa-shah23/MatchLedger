@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../dist-test",
+    "tsBuildInfoFile": "../dist-test/.tsbuildinfo",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["./**/*.ts"],
+  "references": [{ "path": ".." }],
+  "extends": "../../../tsconfig.base.json"
+}

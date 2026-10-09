@@ -1,6 +1,6 @@
 import tseslint from "typescript-eslint";
 export default [
-  { ignores: ["**/dist/**", "**/node_modules/**"] },
+  { ignores: ["**/dist/**", "**/dist-test/**", "**/node_modules/**"] },
   ...tseslint.configs.recommended,
   { files: ["packages/engine-core/src/**/*.ts"], ignores: ["**/*.test.ts", "**/*.spec.ts", "packages/simulator/**"], rules: {
     "no-restricted-globals": ["error", {name:"Date",message:"Time is an input"},{name:"performance",message:"No clock"},{name:"process",message:"No environment"},{name:"setTimeout"},{name:"setInterval"},{name:"setImmediate"},{name:"queueMicrotask"},{name:"crypto"},{name:"fetch"}],

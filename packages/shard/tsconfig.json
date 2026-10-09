@@ -10,6 +10,10 @@
   "include": [
     "src/**/*.ts"
   ],
+  "exclude": [
+    "src/spike4.ts",
+    "src/spike4.integration.test.ts"
+  ],
   "references": [
     {
       "path": "../engine-core"

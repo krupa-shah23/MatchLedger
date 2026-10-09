@@ -98,6 +98,32 @@ Next: Week 4 (input stage, naive-async comparison).
 
 Week 4 deviations: `docs/WEEK-4.md` and `docs/WEEK-3.md` are absent from the checkout, so the supplied prompt and existing `docs/BLUEPRINT.md` were used. Engine-core was not modified. Next step: verify the full gate, then proceed to the hand-written `ShardRunner.run`, `NaiveRisk`, and `SerializedRisk` stubs.
 
+## Week 4 — shard STUB scaffolding
+
+Added the shard clock, event-loop yield, stamper, in-memory journal, collecting
+sink, `ShardRunner` lifecycle surface, SH1-SH15 tests, and SP1-SP2 properties.
+The runner loop remains the required hand-written stub:
+`ShardRunner.run: hand-written (docs/WEEK-4.md 4.4)`.
+
+Verification: build, lint, and dependency boundaries pass. Focused runner
+tests report 14 tests with 9 failures caused by the run stub; the two
+properties have one expected SP1 failure for the same reason. The full suite
+reports 17 failures: the pre-existing six IOC failures and D1, plus the
+runner STUB failures. The current Week 4 snapshot does not define
+`NaiveRisk`/`SerializedRisk` APIs and `packages/risk` is otherwise empty, so
+those two pieces were not invented.
+
+Run-loop handoff checklist:
+1. Await `queue.dequeue()` and stop cleanly on `undefined`.
+2. Drain at most `maxBatch` items.
+3. Stamp synchronously in dequeue order, never at enqueue.
+4. Await journal append before any engine application.
+5. Apply each stamped command in order and construct `ShardOutput`.
+6. Await sink publication in order.
+7. Await `yieldFn()` after each batch.
+8. On `stop({ drain: false })`, finish the in-flight batch, drain/discard queued work, then stop.
+9. Catch journal, sink, engine, and stamper errors through `enterFailed`; never continue after failure.
+
 ## Property STUB deviations and next step
 
 - The requested helper files did not exist, so they were created rather than extended.
