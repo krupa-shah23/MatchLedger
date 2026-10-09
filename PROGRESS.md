@@ -67,3 +67,8 @@
 - The existing checkout uses `orderType` on events and currently has no `takerRemaining` or `makerRemaining` fields. Tests retain those code-defined event shapes rather than inventing fields.
 - Existing engine-core tests are under `src/`, while the new requested tests are under `packages/engine-core/test/`.
 - The IOC stub currently throws after accepted orders have matched; Prompt 2 must make IOC validation/matching atomic and emit the exact terminal events without resting the IOC remainder.
+
+| Week 3 — STUB handoff | Verified the IOC branch location and current stub without implementing it. The shared match loop is TIF-independent; only the post-loop tail branches on `timeInForce`. | packages/engine-core/src/matching/engine.ts | Existing Prompt 1 verification remains: build, lint, boundaries pass; IOC suite has 12 passing and 6 intentional stub failures. | Waiting for hand-written IOC implementation and REVIEW |
+
+- Handoff checklist: implement the IOC-only post-loop `ORDER_CANCELLED` tail with `IOC_REMAINDER`; add/use one shared inclusive crossing predicate if needed; confirm the match loop remains independent of TIF and does not allocate/index/sequence an IOC remainder.
+- Current stub text is `IOC matching is not implemented`, whereas the new prompt suggests `IOC not implemented: Week 3 hand-written`; this was left unchanged to avoid modifying the hand-written-test contract in STUB mode.
