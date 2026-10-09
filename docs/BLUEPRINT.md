@@ -428,10 +428,10 @@ journal
 engine-core, common, pg
 web, Kafka
 shard
-engine-core, common, journal, the Kafka client
+engine-core, common (journal and the Kafka client are later-stage dependencies)
 api, web
 risk
-common, journal, the Kafka client
+common only for Week 4; journal and the Kafka client are later-stage dependencies
 web
 ledger, recon
 common, journal
@@ -446,8 +446,9 @@ simulator
 common, the Kafka client
 api internals
 benchmarks
-engine-core, tinybench
-Fastify, Kafka
+engine-core, common, shard, risk, tinybench
+Fastify, @fastify/*, Kafka, pg, redis. The broader dependency set is a Week 4
+deviation so the end-to-end harness can use the real runner and risk code.
 web
 common (browser-safe)
 everything else in the backend
@@ -1459,6 +1460,45 @@ Rejected NO_REFERENCE_PRICE, no reservation placed
 U15
 New price level inserted at the best, middle and worst position
 Sorted price array stays ordered; best price is always the last element
+U22
+IOC exactly fills one maker
+One trade and no resting IOC order
+U23
+IOC partially fills then cancels its remainder
+Trade followed by IOC_REMAINDER cancellation
+U24
+IOC respects the inclusive crossing boundary
+No trade beyond the cap or floor
+U25
+SELL IOC sweeps the bid floor
+Only bids at or above the floor trade
+U26
+IOC cap and floor are inclusive
+Equality at the bound is executable
+U27
+Cancelling an IOC id is rejected
+IOC never enters the resting index
+U28
+Order-id reuse after IOC follows the accepted-id policy
+The engine's duplicate-id behavior is explicit
+U29
+IOC self-trade is allowed
+Same-account IOC matching is not prevented
+U30
+IOC remainder event carries remaining quantity
+Reservation release input is available to risk
+U31
+Invalid IOC commands do not mutate state
+Validation remains atomic
+U32
+IOC event sequence is deterministic
+Fresh engines produce equal events
+U33
+Self-trade remains allowed for IOC
+Maker and taker may share an account
+U34
+IOC remainder is terminal
+No remainder is rested after cancellation
 
 10.2 Property-based tests (fast-check)
 Use fast-check with @fast-check/vitest. It generates random command sequences, prints the seed and a minimal shrunk counterexample on failure, and lets you replay a failure by seed. For richer scenarios, use its model-based testing support (commands run against both the engine and a simple reference model). Assert, over thousands of random sequences:
@@ -1487,6 +1527,20 @@ P10
 Money codec round trip: for any bigint within bounds, encode to decimal string and decode gives the same value, through JSON, Postgres (int8) and Redis
 P11
 The sorted price array is always strictly ordered and contains exactly the levels that have resting orders
+P12
+Every accepted order conserves quantity across fills, cancellation, and resting remainder
+Per-instance quantity is conserved
+P13
+IOC orders never rest and every IOC fill respects its cap or floor
+No IOC instance remains in final resting orders
+P14
+Two fresh engines are deterministic for the same command sequence
+Events and final resting orders are equal
+
+Differential test D1 compares every command's event list and the final resting
+orders with an independent plain-array reference matcher. Regression examples
+EX1 to EX3 cover the Week 2 carry-over examples. Edge quantity parser tests Q1
+to Q8 cover canonical strings, safe numbers, bounds, and large exact values.
 
 10.3 Concurrency tests
 #
@@ -1993,5 +2047,3 @@ matchledger/
 [ ] docs/versions.md linked, so a reader can see exactly what was pinned and why
 
 End of blueprint. Start with Week 1, keep the decision log updated as you go, and revisit this document at the end of each phase to check whether your "done when" criteria are actually met.
-
-

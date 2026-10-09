@@ -6,10 +6,8 @@
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "@confluentinc/kafka-javascript": "1.10.1",
     "@matchledger/common": "file:../common",
-    "@matchledger/engine-core": "file:../engine-core",
-    "@matchledger/journal": "file:../journal"
+    "@matchledger/engine-core": "file:../engine-core"
   },
   "scripts": {
     "spike:kafka": "node --experimental-strip-types src/spike4.ts"

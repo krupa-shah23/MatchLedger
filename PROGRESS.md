@@ -83,6 +83,21 @@
 
 | Week 3 — Property STUB harness | Added extended arbitraries, invariant assertions, command/event analysis, a throwing reference matcher stub, and P1–P4/P11–P14 plus D1 property wiring. | packages/engine-core/test/helpers, packages/engine-core/test/properties.test.ts | Build, lint, and boundaries pass. Focused properties: 7 passed, D1 failed after 1 run with `reference matcher: hand-written`; P1 uses 5,000 runs and the other properties use 2,000. Full suite remains blocked by six IOC stub failures plus D1. | STUB handoff complete |
 
+| Week 3 — Benchmark baseline harness | Added compiled-JavaScript tinybench B1–B7 harness, environment output, and JSON result path; pinned tinybench to 6.2.1 after `npm view tinybench version peerDependencies`. | packages/benchmarks/src/book.bench.ts, packages/benchmarks/package.json, packages/benchmarks/tsconfig.json, docs/experiments.md, docs/decisions.md, docs/versions.md | Build and lint pass. `npm run bench` reaches the harness but cannot produce a valid table because B6 invokes the intentional IOC stub (`IOC matching is not implemented`). No performance numbers were recorded. | Blocked by STUB precondition |
+
+Next: Week 4 (input stage, naive-async comparison).
+
+## Week 4
+
+| Step | What | Verification | Status |
+| --- | --- | --- | --- |
+| 0 | Re-ran the clean Week 3 gate and checked the E3 documentation. | `npm ci`, build, lint, and boundaries pass; tests retain the six IOC STUB failures plus D1 reference-matcher STUB failure. `docs/experiments.md` contains an E3 heading but no valid B1-B7 measurements because the benchmark is blocked by IOC STUB mode. | Week 3 is not green in this checkout |
+| 2 | Updated the dependency map and boundary checker for Week 4. Added common `node:*` and timer checks; expanded benchmark allowances; restricted risk to common for this week. | Boundary probes rejected risk -> engine-core, common -> `node:fs`, and common timer usage with clear errors; all probes were reverted. | Complete |
+| 3 | Added browser-safe shard ports: `Clock`, `StampedCommand`, `ShardOutput`, `JournalAppender`, and `EventSink`. | Type-checked by the workspace build; no node imports or timers. | Complete |
+| 4 | Added BQ1-BQ6 tests and implemented `BoundedQueue` with FIFO ring-buffer semantics, single-consumer enforcement, close/drain behavior, and direct handoff to pending consumers. | Focused queue suite: 6 tests passed, including BQ6 with 1,000 fast-check runs. | Complete |
+
+Week 4 deviations: `docs/WEEK-4.md` and `docs/WEEK-3.md` are absent from the checkout, so the supplied prompt and existing `docs/BLUEPRINT.md` were used. Engine-core was not modified. Next step: verify the full gate, then proceed to the hand-written `ShardRunner.run`, `NaiveRisk`, and `SerializedRisk` stubs.
+
 ## Property STUB deviations and next step
 
 - The requested helper files did not exist, so they were created rather than extended.
