@@ -151,3 +151,19 @@ SerializedRisk must use one BoundedQueue consumer, resolve after writes,
 continue after per-message `UnknownAccountError`, and fail-stop on
 infrastructure errors while settling all queued requests. Next step:
 hand-write both handlers, then REVIEW the concurrency and failure semantics.
+
+## Week 4 — STUB verification handoff
+
+Re-verified the existing Week 4 STUB scaffolding without implementing the
+three hand-written pieces. `npm run build`, `npm run lint`, and
+`npm run check:boundaries` pass. `npm test` reports 21 expected failures:
+6 IOC failures and D1 from Week 3, 10 shard runner failures plus SP1, and
+4 risk-handler failures. The failures are caused by the intentional stubs,
+not by build, lint, or boundary errors. The requested `docs/WEEK-4.md` and
+`docs/WEEK-3.md` files are absent from this checkout; the supplied prompt
+attachment remains the available specification. Generated `dist-test`
+directories were removed. No implementation code was changed in this
+verification step.
+
+Next step: the user should hand-write or authorize implementation of
+`ShardRunner.run`, `NaiveRisk`, and `SerializedRisk`, then request REVIEW.
