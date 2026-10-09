@@ -132,3 +132,22 @@ Run-loop handoff checklist:
 - The generated command arbitrary includes IOC, but the runnable regression properties use a normalized GTC subset because IOC is still intentionally unimplemented.
 - Mutation sanity checks were not run because they are reserved for REVIEW/IMPLEMENT mode.
 - Next step: hand-write the reference matcher, then REVIEW its independence, validation precedence, event shapes, trade IDs, and worked examples.
+
+## Week 4 — risk prototype STUB scaffolding
+
+Added the Week 4 prototype account types, errors, pure `decide` function,
+copy-safe asynchronous account store, deterministic delay helpers, and the
+`NaiveRisk`/`SerializedRisk` public surfaces. Added C2, C2b, C6, RK1, and
+supporting unit tests.
+
+Verification: build, lint, and boundaries pass. The risk suite has 7 tests:
+the 3 support/unit tests pass; C2 fails only with
+`NaiveRisk.handle: hand-written`; C2b, C6, and RK1 fail only with
+`SerializedRisk: hand-written`. No node imports or timers were added to risk.
+
+The exact hand-written checklist is in the attachment/spec: NaiveRisk must
+remain intentionally concurrent with the same read/decide/write awaits;
+SerializedRisk must use one BoundedQueue consumer, resolve after writes,
+continue after per-message `UnknownAccountError`, and fail-stop on
+infrastructure errors while settling all queued requests. Next step:
+hand-write both handlers, then REVIEW the concurrency and failure semantics.
