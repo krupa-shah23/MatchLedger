@@ -4,3 +4,8 @@ export type { ParsedQuantity, QuantityError } from "./quantity.js";
 export type { AfterBatchContext, BookPort, JournalReader, RecoveredState, SnapshotCandidate, SnapshotRecord, SnapshotStore } from "./recovery-types.js";
 export type { Clock, EventSink, JournalAppender, ShardOutput, StampedCommand } from "./shard-ports.js";
 export { BoundedQueue } from "./bounded-queue.js";
+export { SeqDeduper } from "./seq-deduper.js";
+export { serializeCommand, deserializeCommand } from "./codec/commands.js";
+export { serializeEvent, deserializeEvent } from "./codec/events.js";
+export { serializeBookSnapshot, deserializeBookSnapshot } from "./codec/book-snapshot.js";
+export { CURRENT_VERSION, UnknownSchemaVersionError, registerUpcaster, getUpcaster } from "./codec/versioning.js";

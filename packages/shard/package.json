@@ -8,7 +8,8 @@
   "dependencies": {
     "@confluentinc/kafka-javascript": "1.10.0",
     "@matchledger/common": "file:../common",
-    "@matchledger/engine-core": "file:../engine-core"
+    "@matchledger/engine-core": "file:../engine-core",
+    "@matchledger/journal": "file:../journal"
   },
   "scripts": {
     "spike:kafka": "node --experimental-strip-types src/spike4.ts"

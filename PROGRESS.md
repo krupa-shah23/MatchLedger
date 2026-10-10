@@ -226,3 +226,27 @@ The API websocket test was racing the socket lifecycle: it sent the auth message
 ### Next step for the user
 
 - The next prompt should start from this exact checkpoint and either implement the real `OrderBook.snapshot()` / `OrderBook.restore()` and `recoverStream()` logic, or ask for REVIEW once those pieces are written.
+
+## Week 5: Event sourcing, snapshots, crash recovery
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Codecs (CD1-CD9) | DONE | versioning, commands, events, snapshots, bigint as strings |
+| Migrations (MG1-MG3) | DONE | journal, snapshots, order_requests tables with checksums |
+| Pool (PG1-PG4) | DONE | int8→bigint parser, safe integer checks |
+| Journal (J1-J14) | DONE | PgJournal: append, appendEvents, readCommands, readEvents |
+| Snapshots (SS1-SS7) | DONE | PgSnapshotStore: save, listCandidates, prune, checksum validation |
+| Order requests (OR1-OR6) | DONE | OrderRequestStore: idempotency by (account, clientOrderId) |
+| Engine snapshot (SN1-SN10, P15) | DONE | OrderBook.snapshot/restore with validation, property test |
+| Recovery (RC1-RC10) | DONE | recoverStream/recoverShard, snapshot selection, tail replay |
+| Runner integration (SH16-SH18) | DONE | afterBatch hook, recovered state, error handling |
+| Properties (P7-P8) | DONE | replay determinism, Date.now throwing |
+| SeqDeduper (R3) | DONE | (symbol, seq) deduplication with gap detection |
+| Chaos (R1-R6) | PARTIAL | R1-R3 placeholder tests, R6 benchmark skeleton |
+| Mutations (M1-M12) | NOT RUN | Define what to mutate (see week-5.md 8.7) |
+| Docs & decisions | PARTIAL | hypotheses H1-H4 in experiments.md |
+
+**Definition of done:** snapshot + tail replay recovers to exact state after kills at CP1-CP5. Mutations and chaos harness (SIGKILL script) deferred to nightly CI or Week 6.
+
+**Next:** Run mutations in worktree (docs/audits/WEEK-5-AUDIT.md section 6); implement scripts/chaos-kill.mjs for OS SIGKILL; commit decisions 1-16.
+

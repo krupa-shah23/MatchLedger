@@ -1,0 +1,33 @@
+name: Flake Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Number of iterations
+        required: false
+        default: "20"
+        type: string
+      paths:
+        description: Comma-separated test paths
+        required: false
+        default: "packages/shard,packages/risk,packages/common"
+        type: string
+  schedule:
+    - cron: "0 6 * * *"
+
+jobs:
+  flake-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Run flake gate
+        run: |
+          runs="${{ github.event.inputs.runs || '20' }}"
+          paths="${{ github.event.inputs.paths || 'packages/shard,packages/risk,packages/common' }}"
+          node scripts/flake-gate.mjs --runs "$runs" --paths "$paths"

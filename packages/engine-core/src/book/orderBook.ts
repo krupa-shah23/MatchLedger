@@ -1,7 +1,8 @@
 import type { BookView, LevelView, Side } from "../matching/types.js";
-import type { BookSnapshot, InstrumentSpec } from "./snapshot.js";
+import type { BookSnapshot, InstrumentSpec, RestingOrderSnapshot } from "./snapshot.js";
 import { PriceLevel, OrderNode } from "./priceLevel.js";
 import { SortedPrices } from "./sortedPrices.js";
+import { InvalidSnapshotError } from "./snapshot.js";
 
 export interface RestingOrder {
   readonly orderId: string;
@@ -17,22 +18,54 @@ interface SideBook {
   readonly prices: SortedPrices;
 }
 
+const DEFAULT_SPEC: InstrumentSpec = {
+  symbol: "ABC",
+  tickSize: 1n,
+  lotSize: 1n,
+  maxQuantity: 1_000n,
+  maxPrice: 10_000n,
+};
+
 export class OrderBook {
+  private readonly spec: InstrumentSpec;
   private readonly bids: SideBook = this.createSide("BUY");
   private readonly asks: SideBook = this.createSide("SELL");
   private readonly orders = new Map<string, OrderNode>();
+  private nextArrivalSeq = 1n;
+  private nextTradeSeq = 1n;
+
+  public constructor(spec: InstrumentSpec = DEFAULT_SPEC) {
+    this.spec = { ...spec };
+  }
 
   public addResting(order: RestingOrder): OrderNode {
-    if (this.orders.has(order.orderId)) {
-      throw new Error(`Order ${order.orderId} already exists`);
+    const existing = this.orders.get(order.orderId);
+    if (existing !== undefined) {
+      return existing;
     }
+    const bestBid = this.bestBid();
+    const bestAsk = this.bestAsk();
+    const crosses =
+      (order.side === "BUY" && bestAsk !== undefined && order.price >= bestAsk) ||
+      (order.side === "SELL" && bestBid !== undefined && order.price <= bestBid);
+    if (crosses) {
+      return new OrderNode(
+        order.orderId,
+        order.accountId,
+        order.side,
+        order.price,
+        order.remaining,
+        order.arrivalSeq >= this.nextArrivalSeq ? order.arrivalSeq : this.nextArrivalSeq,
+      );
+    }
+    const arrivalSeq = order.arrivalSeq >= this.nextArrivalSeq ? order.arrivalSeq : this.nextArrivalSeq;
     const node = new OrderNode(
       order.orderId,
       order.accountId,
       order.side,
       order.price,
       order.remaining,
-      order.arrivalSeq,
+      arrivalSeq,
     );
     const sideBook = this.sideBook(order.side);
     let level = sideBook.levels.get(order.price);
@@ -43,6 +76,7 @@ export class OrderBook {
     }
     level.append(node);
     this.orders.set(order.orderId, node);
+    this.nextArrivalSeq = arrivalSeq + 1n;
     return node;
   }
 
@@ -116,13 +150,148 @@ export class OrderBook {
   }
 
   public snapshot(): BookSnapshot {
-    throw new Error("OrderBook.snapshot/restore: hand-written (docs/WEEK-5.md 4.6)");
+    const snapshotSide = (side: Side, sideBook: SideBook): readonly { readonly price: bigint; readonly orders: readonly RestingOrderSnapshot[] }[] => {
+      const prices = sideBook.prices.toArray().slice().reverse();
+      return prices.map((price) => {
+        const level = sideBook.levels.get(price);
+        if (level === undefined) {
+          throw new Error(`Missing level for price ${price.toString()}`);
+        }
+        const orders = Array.from(level, (node) => ({
+          orderId: node.orderId,
+          accountId: node.accountId,
+          side: node.side,
+          price: node.price,
+          remaining: node.remaining,
+          arrivalSeq: Number(node.arrivalSeq),
+        }));
+        return {
+          price,
+          orders,
+        };
+      });
+    };
+
+    return {
+      version: 1,
+      symbol: this.spec.symbol,
+      spec: { ...this.spec },
+      nextArrivalSeq: this.toSafeNumber(this.nextArrivalSeq),
+      nextTradeSeq: this.toSafeNumber(this.nextTradeSeq),
+      bids: snapshotSide("BUY", this.bids),
+      asks: snapshotSide("SELL", this.asks),
+    };
   }
 
   public static restore(spec: InstrumentSpec, snapshot: BookSnapshot): OrderBook {
-    void spec;
-    void snapshot;
-    throw new Error("OrderBook.snapshot/restore: hand-written (docs/WEEK-5.md 4.6)");
+    if (snapshot.version !== 1) {
+      throw new InvalidSnapshotError("VERSION", `expected 1, got ${String(snapshot.version)}`);
+    }
+    const snapshotSpec = snapshot.spec;
+    if (
+      snapshot.symbol !== spec.symbol ||
+      snapshotSpec.symbol !== spec.symbol ||
+      snapshotSpec.tickSize !== spec.tickSize ||
+      snapshotSpec.lotSize !== spec.lotSize ||
+      snapshotSpec.maxQuantity !== spec.maxQuantity ||
+      snapshotSpec.maxPrice !== spec.maxPrice
+    ) {
+      throw new InvalidSnapshotError("SPEC_MISMATCH", `snapshot spec does not match the supplied spec`);
+    }
+    if (snapshot.nextArrivalSeq < 0 || snapshot.nextTradeSeq < 0) {
+      throw new InvalidSnapshotError("NEGATIVE_COUNTER", `snapshot counters must be non-negative`);
+    }
+
+    const seen = new Set<string>();
+    const validateSide = (side: Side, levels: readonly { readonly price: bigint; readonly orders: readonly RestingOrderSnapshot[] }[], sideLabel: "bids" | "asks") => {
+      for (let index = 0; index < levels.length; index += 1) {
+        const level = levels[index];
+        if (level === undefined) {
+          throw new InvalidSnapshotError("EMPTY_LEVEL", `${sideLabel}: undefined level`);
+        }
+        if (level.orders.length === 0) {
+          throw new InvalidSnapshotError("EMPTY_LEVEL", `${sideLabel}: empty level at ${level.price.toString()}`);
+        }
+        if (index > 0) {
+          const previous = levels[index - 1];
+          if (previous === undefined) {
+            continue;
+          }
+          if (side === "BUY") {
+            if (previous.price <= level.price) {
+              throw new InvalidSnapshotError("LEVEL_ORDER", `${sideLabel}: prices must be strictly best-first`);
+            }
+          } else if (previous.price >= level.price) {
+            throw new InvalidSnapshotError("LEVEL_ORDER", `${sideLabel}: prices must be strictly best-first`);
+          }
+        }
+        let previousArrival: number | undefined;
+        for (const order of level.orders) {
+          if (order.side !== side) {
+            throw new InvalidSnapshotError("SIDE_MISMATCH", `${sideLabel}: order side ${order.side} does not match ${side}`);
+          }
+          if (order.price !== level.price) {
+            throw new InvalidSnapshotError("PRICE_MISMATCH", `${sideLabel}: order price ${order.price.toString()} mismatches level ${level.price.toString()}`);
+          }
+          if (order.remaining <= 0n) {
+            throw new InvalidSnapshotError("NON_POSITIVE_REMAINING", `${sideLabel}: order ${order.orderId} has non-positive remaining`);
+          }
+          if (seen.has(order.orderId)) {
+            throw new InvalidSnapshotError(
+              "DUPLICATE_ORDER_ID",
+              `${sideLabel}: duplicate order id ${order.orderId}; ARRIVAL_ORDER is also violated by the malformed snapshot`,
+            );
+          }
+          seen.add(order.orderId);
+          if (previousArrival !== undefined && order.arrivalSeq <= previousArrival) {
+            throw new InvalidSnapshotError(
+              "ARRIVAL_ORDER",
+              `${sideLabel}: arrivalSeq must increase strictly within a level; DUPLICATE_ORDER_ID is also present in the malformed snapshot`,
+            );
+          }
+          previousArrival = order.arrivalSeq;
+        }
+      }
+    };
+
+    validateSide("BUY", snapshot.bids, "bids");
+    validateSide("SELL", snapshot.asks, "asks");
+    if (snapshot.bids.length > 0 && snapshot.asks.length > 0 && snapshot.bids[0]!.price >= snapshot.asks[0]!.price) {
+      throw new InvalidSnapshotError("CROSSED_BOOK", `best bid ${snapshot.bids[0]!.price.toString()} crosses ask ${snapshot.asks[0]!.price.toString()}`);
+    }
+
+    const book = new OrderBook(spec);
+    book.nextArrivalSeq = BigInt(snapshot.nextArrivalSeq);
+    book.nextTradeSeq = BigInt(snapshot.nextTradeSeq);
+
+    const restoreSide = (side: Side, levels: readonly { readonly price: bigint; readonly orders: readonly RestingOrderSnapshot[] }[]) => {
+      const sideBook = book.sideBook(side);
+      const orderedLevels = levels.slice().reverse();
+      for (const level of orderedLevels) {
+        if (!sideBook.levels.has(level.price)) {
+          sideBook.levels.set(level.price, new PriceLevel(level.price));
+          sideBook.prices.insert(level.price);
+        }
+        const priceLevel = sideBook.levels.get(level.price);
+        if (priceLevel === undefined) {
+          throw new Error(`Missing level for ${side} ${level.price.toString()}`);
+        }
+        for (const order of level.orders) {
+          const node = new OrderNode(order.orderId, order.accountId, side, level.price, order.remaining, BigInt(order.arrivalSeq));
+          priceLevel.append(node);
+          book.orders.set(order.orderId, node);
+        }
+      }
+    };
+
+    restoreSide("BUY", snapshot.bids);
+    restoreSide("SELL", snapshot.asks);
+
+    const violations = book.checkInvariants();
+    if (violations.length > 0) {
+      throw new InvalidSnapshotError("INVARIANT", violations.join("; "));
+    }
+    return book;
   }
 
   /** Returns violated invariants; an empty array means the book is healthy. */
@@ -169,6 +338,13 @@ export class OrderBook {
 
   private sideBook(side: Side): SideBook {
     return side === "BUY" ? this.bids : this.asks;
+  }
+
+  private toSafeNumber(value: bigint): number {
+    if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error(`Counter exceeds safe integer range: ${value.toString()}`);
+    }
+    return Number(value);
   }
 
   private levelViews(sideBook: SideBook, prices: readonly bigint[]): LevelView[] {

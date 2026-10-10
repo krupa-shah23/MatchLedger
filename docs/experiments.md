@@ -102,3 +102,19 @@ Relative margin of error 1-4% per case. B7 slows as live levels grow (array shif
 - Anything about throughput under I/O, journaling, Kafka or Postgres.
 - Tail latency or GC behavior (only means are reported).
 - Results on other hardware; this is a baseline for later optimization comparison only.
+
+## Week 5: R6 Recovery benchmark hypotheses
+
+**H1:** Without snapshots, recovery time grows roughly linearly with N (10x N gives ~10x time, within 50%).
+
+**H2:** With snapshots, recovery time is bounded by snapshot interval and independent of total N.
+
+**H3:** Verifying stored events costs at least as much as re-applying commands; event verification dominates.
+
+**H4:** Snapshot save time depends on resting-order count, not on N.
+
+### What this does NOT prove
+- Network latency or distributed Postgres.
+- Real workload snapshot timing (synthetic book shapes only).
+- Multi-machine failover or concurrent recovery.
+
