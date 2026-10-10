@@ -11,6 +11,24 @@ export interface BookLike {
   apply(command: EngineCommand): readonly EngineEvent[];
 }
 
+export type RecoveredStreamState = {
+  readonly book: BookLike;
+  readonly lastSeq: number;
+  readonly lastTs: number;
+};
+
+export type RecoveredState = {
+  readonly streams: ReadonlyMap<string, RecoveredStreamState>;
+  readonly lastSeqBySymbol: ReadonlyMap<string, number>;
+  readonly lastTs: number;
+};
+
+export type AfterBatchContext = {
+  readonly books: ReadonlyMap<string, BookLike>;
+  readonly lastSeqBySymbol: ReadonlyMap<string, number>;
+  readonly lastTs: number;
+};
+
 export type ShardRunnerOptions = {
   readonly symbols: ReadonlyMap<string, InstrumentConfig>;
   readonly clock: Clock;
@@ -21,6 +39,8 @@ export type ShardRunnerOptions = {
   readonly yieldFn?: () => Promise<void>;
   readonly onFatal?: (error: unknown) => void;
   readonly bookFactory?: (symbol: string, spec: InstrumentConfig) => BookLike;
+  readonly recovered?: RecoveredState;
+  readonly afterBatch?: (ctx: AfterBatchContext) => Promise<void>;
 };
 
 type Queued = { readonly symbol: string; readonly command: EngineCommand };
@@ -29,6 +49,8 @@ export class ShardRunner {
   private readonly queue: BoundedQueue<Queued>;
   private readonly stamper: Stamper;
   private readonly books = new Map<string, BookLike>();
+  private readonly lastSeqBySymbol = new Map<string, number>();
+  private lastTs = Number.NEGATIVE_INFINITY;
   private readonly yieldFn: () => Promise<void>;
   private readonly onFatal: (error: unknown) => void;
   private doneResolve!: (exit: ShardExit) => void;
@@ -51,7 +73,17 @@ export class ShardRunner {
     this.onFatal = opts.onFatal ?? (() => undefined);
     this.donePromise = new Promise<ShardExit>((resolve) => { this.doneResolve = resolve; });
     const factory = opts.bookFactory ?? ((_symbol, spec) => new Engine(spec));
-    for (const [symbol, spec] of opts.symbols) this.books.set(symbol, factory(symbol, spec));
+    for (const [symbol, spec] of opts.symbols) {
+      const recoveredBook = opts.recovered?.streams.get(symbol)?.book;
+      this.books.set(symbol, recoveredBook ?? factory(symbol, spec));
+      if (recoveredBook) {
+        this.lastSeqBySymbol.set(symbol, opts.recovered!.lastSeqBySymbol.get(symbol) ?? 0);
+      }
+    }
+    this.lastTs = opts.recovered?.lastTs ?? Number.NEGATIVE_INFINITY;
+    if (opts.recovered) {
+      this.stamper.restore(opts.recovered.lastSeqBySymbol, opts.recovered.lastTs);
+    }
   }
 
   public get state(): RunnerState { return this.runnerState; }

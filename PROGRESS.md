@@ -184,3 +184,21 @@ Next step: the user should hand-write or authorize implementation of
 
 - The installed `@confluentinc/kafka-javascript` client does not use KafkaJS-style top-level producer/consumer config for the rebalance callback or transactional producer semantics. It accepts KafkaJS-compatible names in the `kafkaJS` block while the core settlement and error signals are made available by the librdkafka-backed client.
 - Observed live result: the fencing signal is `KafkaJSError` with code `-152`; the rebalance callback is `rebalance_cb`, and the library reports `-175` (revoked partitions) and `-174` (lost partitions) in the callback payload. No blueprint conflict was seen; the spike behavior matches the actual library contract.
+
+## Week 5 — recovery and snapshot STUB checkpoint
+
+- Added the Week 5 recovery API scaffolding in [packages/journal/src/recovery.ts](packages/journal/src/recovery.ts) and exported it via [packages/journal/src/index.ts](packages/journal/src/index.ts): `JournalGapError`, `ReplayMismatchError`, `RecoveryResult`, `RecoveredState`, `recoverStream`, and `recoverShard`.
+- `recoverStream` is intentionally left as a stub that throws `recoverStream: hand-written (docs/WEEK-5.md 4.5)`; this is the required hand-written checkpoint before REVIEW mode.
+- Added the recovery-aware shard state scaffolding in [packages/shard/src/shard-runner.ts](packages/shard/src/shard-runner.ts) and the `Stamper.restore()` path in [packages/shard/src/stamper.ts](packages/shard/src/stamper.ts); the runner loop itself remains unmodified in STUB mode, per the specification.
+- The engine-core snapshot contract remains intentionally red only because the implementation is still hand-written. The current failure signal is the exact stub message: `OrderBook.snapshot/restore: hand-written (docs/WEEK-5.md 4.6)`.
+
+### Verification
+
+- `npm run build` passed.
+- `npm run lint` passed.
+- `npm run check:boundaries` passed.
+- `npm test` passed the repo gate up to the intended stub failures: 14 snapshot tests in [packages/engine-core/test/snapshot.test.ts](packages/engine-core/test/snapshot.test.ts) and 1 property in [packages/engine-core/test/properties.snapshot.test.ts](packages/engine-core/test/properties.snapshot.test.ts) failed only because the snapshot implementation is intentionally unfilled in STUB mode.
+
+### Next step for the user
+
+- The next prompt should start from this exact checkpoint and either implement the real `OrderBook.snapshot()` / `OrderBook.restore()` and `recoverStream()` logic, or ask for REVIEW once those pieces are written.

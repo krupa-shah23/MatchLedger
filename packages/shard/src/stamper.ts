@@ -7,6 +7,16 @@ export class Stamper {
 
   public constructor(private readonly clock: Clock) {}
 
+  public restore(seqBySymbol: ReadonlyMap<string, number>, lastTs: number): void {
+    if (Number.isFinite(lastTs)) {
+      this.lastTs = Math.max(this.lastTs, lastTs);
+    }
+    for (const [symbol, seq] of seqBySymbol) {
+      const current = this.seqBySymbol.get(symbol) ?? 0;
+      this.seqBySymbol.set(symbol, Math.max(current, seq));
+    }
+  }
+
   public stamp(symbol: string, command: EngineCommand): StampedCommand {
     const reading = this.clock.now();
     if (!Number.isFinite(reading)) {

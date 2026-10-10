@@ -3,8 +3,7 @@ import { OrderBook } from "../src/book/orderBook.js";
 import type { BookSnapshot, InstrumentSpec } from "../src/book/snapshot.js";
 import { InvalidSnapshotError } from "../src/book/snapshot.js";
 import { Engine } from "../src/matching/engine.js";
-import type { PlaceOrder, Side } from "../src/matching/types.js";
-import { config, expectInvariants, place } from "./helpers.js";
+import { config, place } from "./helpers.js";
 
 const spec: InstrumentSpec = {
   symbol: "ABC",
@@ -24,18 +23,6 @@ const cloneSnapshot = <T>(value: T): T => {
   }
   return value;
 };
-
-const makeOrder = (id: string, side: Side, price: bigint, remaining: bigint): PlaceOrder => ({
-  kind: "PLACE",
-  ts: 1n,
-  orderId: id,
-  accountId: "acct",
-  side,
-  orderType: "LIMIT",
-  timeInForce: "GTC",
-  price,
-  quantity: remaining,
-});
 
 const deepFreeze = <T>(value: T): T => {
   if (value && typeof value === "object") {
