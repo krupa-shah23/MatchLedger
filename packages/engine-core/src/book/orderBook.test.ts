@@ -1,6 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { OrderBook } from "./orderBook.js";
+import { OrderNode, PriceLevel } from "./priceLevel.js";
 
 const PROPERTY_TIMEOUT_MS = 60_000;
 const PROPERTY_RUNS = 2_000;
@@ -90,4 +91,19 @@ describe("OrderBook", () => {
       );
     }
   }, PROPERTY_TIMEOUT_MS);
+});
+
+describe("PriceLevel iteration", () => {
+  it("keeps a stable traversal when the current node is unlinked during iteration", () => {
+    const level = new PriceLevel(100n);
+    const nodes = ["a", "b", "c"].map((id, index) => new OrderNode(id, "acc", "BUY", 100n, 1n, BigInt(index)));
+    nodes.forEach((node) => level.append(node));
+    const seen: string[] = [];
+    for (const node of level) {
+      seen.push(node.orderId);
+      level.unlink(node);
+    }
+    expect(seen).toEqual(["a", "b", "c"]);
+    expect(level.isEmpty()).toBe(true);
+  });
 });
