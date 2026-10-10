@@ -179,3 +179,8 @@ Next step: the user should hand-write or authorize implementation of
 - This prompt was intentionally left in STUB mode. The snapshot API is present and the tests are red only because the hand-written implementation remains intentionally unfilled.
 
 | Kafka spike API validation | Confirmed the installed Confluent client API names match the repo’s Kafka transaction spike and no code patch was required. | [packages/shard/src/spike4.ts](packages/shard/src/spike4.ts), [node_modules/@confluentinc/kafka-javascript/types/kafkajs.d.ts](node_modules/@confluentinc/kafka-javascript/types/kafkajs.d.ts), [docs/versions.md](docs/versions.md) | Verified with `npm run build`, `npm run lint`, `npm run check:boundaries`, and `npm test`; 14 test files passed and 81 tests passed, with 5 files and 27 tests skipped by opt-in live-service gating. | Complete |
+
+### Decisions and deviations
+
+- The installed `@confluentinc/kafka-javascript` client does not use KafkaJS-style top-level producer/consumer config for the rebalance callback or transactional producer semantics. It accepts KafkaJS-compatible names in the `kafkaJS` block while the core settlement and error signals are made available by the librdkafka-backed client.
+- Observed live result: the fencing signal is `KafkaJSError` with code `-152`; the rebalance callback is `rebalance_cb`, and the library reports `-175` (revoked partitions) and `-174` (lost partitions) in the callback payload. No blueprint conflict was seen; the spike behavior matches the actual library contract.

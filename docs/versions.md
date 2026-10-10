@@ -110,5 +110,28 @@ Command: `npm view tinybench version peerDependencies`
 Observed latest version: `6.2.1`; peer dependencies: none. The benchmark
 workspace is pinned to exact version `6.2.1`.
 
-## Spike 4 (T10-T14)
-Code written in packages/shard/src/spike4.ts (T10 round-trip, T11 sendOffsets, T12 abort, T13 fencing, T14 rebalance_cb). NOT RUN: needs compose Kafka. Record the printed fencing error name/code here after the first live run.
+## Spike 4 results
+- Client version: `@confluentinc/kafka-javascript` 1.10.0
+- librdkafka version: 2.15.0
+- Broker: `apache/kafka:4.2.2` via Docker Compose; broker health confirmed, KRaft mode active, transaction state log replication 1 / min ISR 1.
+- Real API names validated against the installed package:
+  - Producer creation: `const { Kafka } = KafkaJS; const producer = kafka.producer({ "transactional.id": txId, "enable.idempotence": true, kafkaJS: { acks: -1 } });`
+  - Transaction start: `await producer.transaction()`
+  - Transaction commit: `await tx.commit()`
+  - Transaction abort: `await tx.abort()`
+  - Offset commit inside a transaction: `await tx.sendOffsets({ consumer, topics })`
+  - Consumer config: `"group.protocol": "classic"`, `"enable.auto.commit": false`, `"isolation.level": "read_committed"`
+  - Rebalance callback: the library exposes the low-level librdkafka callback as `rebalance_cb`, and the callback receives the current rebalance state plus the revoked/assigned/lost partitions in the underlying client event payload.
+- Live broker outputs from `RUN_KAFKA_SPIKE=1 node --experimental-strip-types src/spike4.ts`:
+  - T10 read_committed sees: `[ 'committed' ]`
+  - T12 after abort (expect no 'aborted'): `[ 'committed' ]`
+  - T11 output topic: `[ 'processed:committed' ]`
+  - T13 fenced: `{ name: 'KafkaJSError', code: -152, message: 'Local: Purged in queue' }`
+  - T14 rebalance_cb -175 [ { topic: 'spike4-in-...', partition: 0 } ]
+  - T14 rebalance_cb -174 [ { topic: 'spike4-in-...', partition: 0 } ]
+- Exact producer-fencing failure observed on the first producer:
+  - call: `await tx.commit()` on the stale producer after a second producer re-used the same `transactional.id`
+  - error name: `KafkaJSError`
+  - code: `-152`
+  - message: `Local: Purged in queue`
+- Decision / deviation: no blueprint conflict was observed. The installed client uses KafkaJS-compatible names in the `kafkaJS` config block, but the underlying consumer rebalance hook is the librdkafka callback name `rebalance_cb`, and the producer-fencing error arrives as `KafkaJSError` with code `-152`.
