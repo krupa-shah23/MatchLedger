@@ -1,4 +1,5 @@
 import type { BookView, LevelView, Side } from "../matching/types.js";
+import type { BookSnapshot, InstrumentSpec } from "./snapshot.js";
 import { PriceLevel, OrderNode } from "./priceLevel.js";
 import { SortedPrices } from "./sortedPrices.js";
 
@@ -112,6 +113,16 @@ export class OrderBook {
       out.push({ orderId: node.orderId, accountId: node.accountId, side: node.side, price: node.price, remaining: node.remaining, arrivalSeq: node.arrivalSeq });
     }
     return out;
+  }
+
+  public snapshot(): BookSnapshot {
+    throw new Error("OrderBook.snapshot/restore: hand-written (docs/WEEK-5.md 4.6)");
+  }
+
+  public static restore(spec: InstrumentSpec, snapshot: BookSnapshot): OrderBook {
+    void spec;
+    void snapshot;
+    throw new Error("OrderBook.snapshot/restore: hand-written (docs/WEEK-5.md 4.6)");
   }
 
   /** Returns violated invariants; an empty array means the book is healthy. */

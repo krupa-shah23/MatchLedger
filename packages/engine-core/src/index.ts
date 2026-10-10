@@ -4,3 +4,4 @@ export * from "./matching/engine.js";
 export * from "./book/orderBook.js";
 export * from "./book/priceLevel.js";
 export * from "./book/sortedPrices.js";
+export * from "./book/snapshot.js";
