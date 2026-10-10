@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import * as jose from "jose";
 import WebSocket from "ws";
 import { buildServer } from "./index.js";
@@ -15,16 +15,90 @@ async function createToken(expiration?: string) {
   return await jwt.sign(SECRET_BYTES);
 }
 
+function waitForOpen(ws: WebSocket): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      ws.off("open", onOpen);
+      ws.off("error", onError);
+      ws.off("close", onClose);
+    };
+    const onOpen = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new Error("WebSocket closed before open"));
+    };
+
+    ws.on("open", onOpen);
+    ws.on("error", onError);
+    ws.on("close", onClose);
+  });
+}
+
+function waitForAuthAck(ws: WebSocket): Promise<{ op: string; status: string }> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      ws.off("message", onMessage);
+      ws.off("error", onError);
+      ws.off("close", onClose);
+    };
+    const onMessage = (data: WebSocket.RawData) => {
+      try {
+        const message = JSON.parse(data.toString());
+        if (message.op === "auth" && message.status === "ok") {
+          cleanup();
+          resolve(message);
+        }
+      } catch {
+        // ignore non-JSON frames until the auth ack arrives
+      }
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new Error("WebSocket closed before auth acknowledgement"));
+    };
+
+    ws.on("message", onMessage);
+    ws.on("error", onError);
+    ws.on("close", onClose);
+  });
+}
+
 describe("Spike 5: Fastify, JWT, WebSocket auth", () => {
   let app: Awaited<ReturnType<typeof buildServer>>;
   let address: string;
+  const sockets = new Set<WebSocket>();
 
   beforeAll(async () => {
     app = await buildServer({ jwtSecret: SECRET_STR, wsAuthTimeoutMs: 150 });
     address = await app.listen({ port: 0, host: "127.0.0.1" });
   });
 
+  afterEach(async () => {
+    for (const ws of sockets) {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
+    }
+    sockets.clear();
+  });
+
   afterAll(async () => {
+    for (const ws of sockets) {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.terminate();
+      }
+    }
     await app.close();
   });
 
@@ -63,6 +137,7 @@ describe("Spike 5: Fastify, JWT, WebSocket auth", () => {
   it("closes WebSocket client after timeout if no auth is sent", async () => {
     const wsUrl = address.replace("http://", "ws://") + "/ws";
     const ws = new WebSocket(wsUrl);
+    sockets.add(ws);
 
     const closed = new Promise<number>((resolve) => {
       ws.on("close", (code) => resolve(code));
@@ -75,18 +150,15 @@ describe("Spike 5: Fastify, JWT, WebSocket auth", () => {
   it("acknowledges WebSocket client with a valid token", async () => {
     const wsUrl = address.replace("http://", "ws://") + "/ws";
     const ws = new WebSocket(wsUrl);
+    sockets.add(ws);
     const token = await createToken("1h");
 
-    const messagePromise = new Promise<string>((resolve) => {
-      ws.on("message", (data) => resolve(data.toString()));
-    });
+    await waitForOpen(ws);
+    const ackPromise = waitForAuthAck(ws);
+    ws.send(JSON.stringify({ op: "auth", token }));
 
-    ws.on("open", () => {
-      ws.send(JSON.stringify({ op: "auth", token }));
-    });
-
-    const reply = await messagePromise;
-    expect(JSON.parse(reply)).toEqual({ op: "auth", status: "ok" });
+    const reply = await ackPromise;
+    expect(reply).toEqual({ op: "auth", status: "ok" });
     ws.close();
   });
 });
