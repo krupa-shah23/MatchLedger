@@ -5,7 +5,7 @@ const allowed = new Map([
   ["engine-core", []],
   ["common", ["@matchledger/engine-core", "zod"]],
   ["journal", ["@matchledger/engine-core", "@matchledger/common", "pg"]],
-  ["shard", ["@matchledger/engine-core", "@matchledger/common"]],
+  ["shard", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/journal", "@confluentinc/kafka-javascript"]],
   ["risk", ["@matchledger/common"]],
   ["ledger", ["@matchledger/common", "@matchledger/journal"]],
   ["recon", ["@matchledger/common", "@matchledger/journal"]],
