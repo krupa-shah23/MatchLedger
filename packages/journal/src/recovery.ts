@@ -1,25 +1,12 @@
 import { Engine, InvalidSnapshotError, OrderBook } from "@matchledger/engine-core";
 import type { InstrumentSpec } from "@matchledger/engine-core";
-import type { ShardOutput } from "@matchledger/common";
+import type { JournalReader, RecoveredState, ShardOutput, SnapshotStore } from "@matchledger/common";
 
-export type SnapshotCandidate = {
-  readonly lastSeq: number;
-  readonly lastTs: number;
-  readonly symbol: string;
-  readonly version?: number;
-  readonly data?: unknown;
-};
+export type { JournalReader, RecoveredState, SnapshotCandidate, SnapshotStore } from "@matchledger/common";
 
-export type SnapshotStore = {
-  readonly listCandidates: (symbol: string, options: { readonly maxSeq: number }) => readonly SnapshotCandidate[];
-};
-
-export type PgJournal = {
+export type PgJournal = JournalReader & {
   readonly append: (batch: readonly unknown[]) => Promise<void>;
   readonly appendEvents: (batch: readonly ShardOutput[]) => Promise<void>;
-  readonly readCommands: (symbol: string, fromSeq: number, chunkSize: number) => Promise<readonly { readonly seq: number; readonly ts: number; readonly command: unknown }[]>;
-  readonly readEvents: (symbol: string, fromSeq: number, toSeq: number) => Promise<readonly { readonly seq: number; readonly ts: number; readonly payload: unknown }[]>;
-  readonly lastCommandSeq: (symbol: string) => Promise<number>;
 };
 
 export class JournalGapError extends Error {
@@ -62,12 +49,6 @@ export type RecoveryResult = {
 export type RecoveredStreamState = {
   readonly book: ReplayBook;
   readonly lastSeq: number;
-  readonly lastTs: number;
-};
-
-export type RecoveredState = {
-  readonly streams: ReadonlyMap<string, RecoveredStreamState>;
-  readonly lastSeqBySymbol: ReadonlyMap<string, number>;
   readonly lastTs: number;
 };
 
@@ -140,7 +121,7 @@ export async function recoverStream(args: {
       book = restored;
       snapshotUsed = { lastSeq: candidate.lastSeq };
       lastSeq = candidate.lastSeq;
-      lastTs = candidate.lastTs;
+      lastTs = candidate.lastTs ?? 0;
       break;
     } catch (error: unknown) {
       if (error instanceof InvalidSnapshotError) {
@@ -280,7 +261,7 @@ export async function recoverShard(args: {
 
   return {
     recovered: {
-      streams: new Map(streams),
+      streams: new Map(streams) as unknown as RecoveredState["streams"],
       lastSeqBySymbol: new Map(lastSeqBySymbol),
       lastTs,
     },

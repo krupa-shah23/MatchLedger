@@ -1,31 +1,20 @@
 import { BoundedQueue, type Clock, type EventSink, type JournalAppender, type ShardOutput } from "@matchledger/common";
-import { Engine, type Command as EngineCommand, type Event as EngineEvent, type InstrumentConfig } from "@matchledger/engine-core";
+import type { AfterBatchContext, BookPort, RecoveredState } from "@matchledger/common";
+import { Engine, type Command as EngineCommand, type InstrumentConfig } from "@matchledger/engine-core";
 import { Stamper } from "./stamper.js";
 import { yieldToEventLoop } from "./yield.js";
+
+export type { AfterBatchContext, BookPort, RecoveredState } from "@matchledger/common";
 
 export type EnqueueResult = "ACCEPTED" | "FULL" | "UNKNOWN_SYMBOL" | "CLOSED";
 export type RunnerState = "IDLE" | "RUNNING" | "STOPPING" | "STOPPED" | "FAILED";
 export type ShardExit = { reason: "STOPPED" } | { reason: "FAILED"; error: unknown };
 
-export interface BookLike {
-  apply(command: EngineCommand): readonly EngineEvent[];
-}
+export type BookLike = BookPort;
 
 export type RecoveredStreamState = {
   readonly book: BookLike;
   readonly lastSeq: number;
-  readonly lastTs: number;
-};
-
-export type RecoveredState = {
-  readonly streams: ReadonlyMap<string, RecoveredStreamState>;
-  readonly lastSeqBySymbol: ReadonlyMap<string, number>;
-  readonly lastTs: number;
-};
-
-export type AfterBatchContext = {
-  readonly books: ReadonlyMap<string, BookLike>;
-  readonly lastSeqBySymbol: ReadonlyMap<string, number>;
   readonly lastTs: number;
 };
 
@@ -77,12 +66,12 @@ export class ShardRunner {
       const recoveredBook = opts.recovered?.streams.get(symbol)?.book;
       this.books.set(symbol, recoveredBook ?? factory(symbol, spec));
       if (recoveredBook) {
-        this.lastSeqBySymbol.set(symbol, opts.recovered!.lastSeqBySymbol.get(symbol) ?? 0);
+        this.lastSeqBySymbol.set(symbol, opts.recovered!.lastSeqBySymbol?.get(symbol) ?? 0);
       }
     }
     this.lastTs = opts.recovered?.lastTs ?? Number.NEGATIVE_INFINITY;
     if (opts.recovered) {
-      this.stamper.restore(opts.recovered.lastSeqBySymbol, opts.recovered.lastTs);
+      this.stamper.restore(opts.recovered.lastSeqBySymbol ?? new Map<string, number>(), opts.recovered.lastTs);
     }
   }
 
