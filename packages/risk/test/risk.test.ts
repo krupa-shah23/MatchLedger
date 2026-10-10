@@ -72,7 +72,7 @@ describe.skipIf((globalThis as { process?: { env?: Record<string, string | undef
       const handler = new SerializedRisk(store, { queueCapacity: 250 });
       const requests = Array.from({ length: 200 }, (_, index) => request(`o${index}`, BigInt((index % 20) + 1)));
       const results = await Promise.all(requests.map((item) => handler.submit(item)));
-      expect(results.filter((result) => result.accepted).reduce((sum, result, index) => sum + (result.accepted ? requests[index]?.need ?? 0n : 0n), 0n)).toBeLessThanOrEqual(500n);
+      expect(committed(results.map((result) => ({ status: "fulfilled", value: result } as const)), requests)).toBeLessThanOrEqual(500n);
       await handler.stop();
     }), { numRuns: 200 });
   });

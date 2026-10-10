@@ -1,4 +1,4 @@
-import { BoundedQueue, type Clock, type EventSink, type JournalAppender } from "@matchledger/common";
+import { BoundedQueue, type Clock, type EventSink, type JournalAppender, type ShardOutput } from "@matchledger/common";
 import { Engine, type Command as EngineCommand, type Event as EngineEvent, type InstrumentConfig } from "@matchledger/engine-core";
 import { Stamper } from "./stamper.js";
 import { yieldToEventLoop } from "./yield.js";
@@ -103,6 +103,34 @@ export class ShardRunner {
   }
 
   private async run(): Promise<void> {
-    throw new Error("ShardRunner.run: hand-written (docs/WEEK-4.md 4.4)");
+    try {
+      for (;;) {
+        const first = await this.queue.dequeue();
+        if (first === undefined) break;
+        const batch = [first, ...this.queue.drainSync(this.opts.maxBatch - 1)];
+
+        const stamped = batch.map(item => this.stamper.stamp(item.symbol, item.command));
+        await this.opts.journal.append(stamped);
+
+        const outputs: ShardOutput[] = [];
+        for (const item of stamped) {
+          const book = this.books.get(item.symbol);
+          if (!book) continue;
+          const events = book.apply(item.command);
+          outputs.push({ symbol: item.symbol, seq: item.seq, ts: item.ts, command: item.command, events });
+        }
+
+        await this.opts.sink.publish(outputs);
+        await this.yieldFn();
+
+        if (this.runnerState === "STOPPING" && this.stopDiscard) {
+          this.discardedCount = this.queue.size;
+          break;
+        }
+      }
+      this.enterStopped();
+    } catch (error: unknown) {
+      this.enterFailed(error);
+    }
   }
 }
