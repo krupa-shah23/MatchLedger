@@ -2047,3 +2047,13 @@ matchledger/
 [ ] docs/versions.md linked, so a reader can see exactly what was pinned and why
 
 End of blueprint. Start with Week 1, keep the decision log updated as you go, and revisit this document at the end of each phase to check whether your "done when" criteria are actually met.
+
+### Week 3 test IDs (added)
+| ID | Test | Location |
+|---|---|---|
+| U8-U10 | IOC cap with empty book, cap reached, remainder never rests | packages/engine-core/test/ioc.test.ts |
+| U12a/U12b | max quantity/price in engine; edge quantity parser | ioc.test.ts; packages/common/test/quantity.test.ts |
+| U22-U34 | IOC exact fill, partial, boundaries, duplicates, validation, FIFO, level removal, sweep, self-trade, cancel reasons | ioc.test.ts |
+| EX1-EX3 | worked examples (sweep/cancel, FIFO, head/middle/tail) | packages/engine-core/test/examples.test.ts |
+| Q1-Q8 | quantity parser cases | packages/common/test/quantity.test.ts |
+| P12-P14 | accounting of every accepted order, IOC never rests and stays within limit, deterministic replay | packages/engine-core/test/properties.test.ts |

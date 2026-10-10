@@ -18,7 +18,6 @@ export class Engine {
   private engineSeq = 1n;
   private tradeCounter = 1n;
   private arrivalSeq = 1n;
-  private readonly acceptedOrderIds = new Set<string>();
 
   public constructor(config: InstrumentConfig) {
     if (
@@ -40,11 +39,6 @@ export class Engine {
       return this.applyCancel(command);
     }
     return this.applyPlace(command);
-  }
-
-  /** Ids ever accepted; state that a snapshot must also persist. */
-  public seenOrderIds(): readonly string[] {
-    return Array.from(this.acceptedOrderIds);
   }
 
   public checkInvariants(): string[] {
@@ -80,7 +74,6 @@ export class Engine {
       ];
     }
 
-    this.acceptedOrderIds.add(command.orderId);
     const orderArrivalSeq = this.arrivalSeq;
     this.arrivalSeq += 1n;
     const events: Event[] = [
@@ -128,11 +121,17 @@ export class Engine {
         this.book.cancel(maker.orderId);
       }
     }
-    if (command.timeInForce === "IOC") {
-      // TODO(week3): implement IOC matching and remainder cancellation.
-      throw new Error("IOC matching is not implemented");
-    }
-    if (remaining > 0n) {
+    if (remaining > 0n && command.timeInForce === "IOC") {
+      events.push(
+        this.event({
+          type: "ORDER_CANCELLED",
+          ts: command.ts,
+          orderId: command.orderId,
+          remaining,
+          reason: "IOC_REMAINDER",
+        }),
+      );
+    } else if (remaining > 0n) {
       this.book.addResting({
         orderId: command.orderId,
         accountId: command.accountId,
@@ -179,7 +178,7 @@ export class Engine {
   }
 
   private rejectionReason(command: PlaceOrder): NonNullable<Extract<Event, { type: "ORDER_REJECTED" }>["reason"]> | undefined {
-    if (this.acceptedOrderIds.has(command.orderId) || this.book.has(command.orderId)) {
+    if (this.book.has(command.orderId)) {
       return "DUPLICATE_ORDER_ID";
     }
     if (command.quantity <= 0n) {

@@ -84,7 +84,6 @@ const expectBigintEqual = (actual: unknown, expected: unknown): void => {
 
 class ReferenceModel {
   private readonly orders: ModelOrder[] = [];
-  private readonly accepted = new Set<string>();
   private engineSeq = 1n;
   private tradeCounter = 1;
   private arrivalSeq = 1n;
@@ -108,7 +107,6 @@ class ReferenceModel {
     if (rejection !== undefined) {
       return [this.event({ type: "ORDER_REJECTED", ts: command.ts, orderId: command.orderId, reason: rejection })];
     }
-    this.accepted.add(command.orderId);
     const arrivalSeq = this.arrivalSeq;
     this.arrivalSeq += 1n;
     const events: Event[] = [
@@ -213,7 +211,7 @@ class ReferenceModel {
   }
 
   private rejection(command: PlaceOrder): Extract<Event, { type: "ORDER_REJECTED" }>["reason"] | undefined {
-    if (this.accepted.has(command.orderId)) return "DUPLICATE_ORDER_ID";
+    if (this.orders.some((order) => order.orderId === command.orderId)) return "DUPLICATE_ORDER_ID";
     if (command.quantity <= 0n) return "INVALID_QUANTITY";
     if (command.price <= 0n) return "INVALID_PRICE";
     if (command.price % config.tickSize !== 0n) return "INVALID_TICK";

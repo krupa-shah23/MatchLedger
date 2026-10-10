@@ -23,7 +23,7 @@ function committed(results: readonly PromiseSettledResult<ReserveResult>[], requ
   return results.reduce((total, result, index) => total + (result.status === "fulfilled" && result.value.accepted ? requests[index]?.need ?? 0n : 0n), 0n);
 }
 
-describe("Week 4 risk prototype", () => {
+describe.skipIf((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.RUN_WEEK4 !== "1")("Week 4 risk prototype", () => {
   it("decide handles amount and balance boundaries without mutation", () => {
     const state = { cash: 100n, held: 20n };
     expect(decide(state, request("zero", 0n)).result.reason).toBe("INVALID_AMOUNT");

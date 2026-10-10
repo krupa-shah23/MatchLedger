@@ -79,3 +79,26 @@ Result:
 - prototype risk logic (BUY cash only);
 - one Node process;
 - tail latency includes this machine's GC and background load.
+## E3 baseline: engine micro-benchmarks (Week 3)
+Environment: Node v24.18.0, 12 CPUs, 16.8 GB RAM, 2026-10-10, tinybench (100 ms warmup, 100 ms run), busy dev machine, base commit fecfc43 (working tree had uncommitted Week 3 changes). Single run; repeat on a quiet machine before quoting.
+
+| Case | ops/sec | mean ns |
+|---|---|---|
+| B1 rest new best level, then cancel | 1,563,215 | 852 |
+| B2 rest at existing level, then cancel | 1,974,201 | 659 |
+| B3 match one taker against one maker | 1,669,087 | 739 |
+| B4 sweep three levels | 840,222 | 1,406 |
+| B5 cancel head | 6,780,279 | 243 |
+| B5 cancel middle | 6,460,466 | 236 |
+| B5 cancel tail | 6,839,568 | 239 |
+| B6 IOC with no liquidity | 2,143,895 | 729 |
+| B7 insert worst level, 10 live levels | 878,811 | 1,645 |
+| B7 insert worst level, 100 live levels | 676,167 | 2,282 |
+| B7 insert worst level, 1000 live levels | 418,399 | 3,816 |
+
+Relative margin of error 1-4% per case. B7 slows as live levels grow (array shift is O(n)).
+
+### What this does NOT prove
+- Anything about throughput under I/O, journaling, Kafka or Postgres.
+- Tail latency or GC behavior (only means are reported).
+- Results on other hardware; this is a baseline for later optimization comparison only.

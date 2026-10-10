@@ -11,7 +11,8 @@
     "pg": "8.23.1"
   },
   "devDependencies": {
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.23.1",
+    "redis": "4.7.1"
   },
   "scripts": {
     "test:integration": "RUN_CONTAINERS=1 vitest run src/postgres.integration.test.ts"

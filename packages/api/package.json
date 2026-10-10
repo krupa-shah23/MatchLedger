@@ -6,10 +6,17 @@
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "dependencies": {
+    "@fastify/websocket": "11.3.2",
     "@matchledger/common": "file:../common",
     "@matchledger/journal": "file:../journal",
     "@matchledger/projections": "file:../projections",
+    "@matchledger/recon": "file:../recon",
     "@matchledger/risk": "file:../risk",
-    "@matchledger/recon": "file:../recon"
+    "fastify": "5.10.0",
+    "jose": "6.2.12",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2"
   }
 }

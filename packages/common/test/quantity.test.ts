@@ -50,7 +50,7 @@ describe("parseQuantity", () => {
     expect(parseQuantity("101", 100n)).toEqual({ ok: false, error: "ABOVE_MAXIMUM" });
   });
 
-  it("Q8 round-trips bigint values through their canonical strings and safe numbers", () => {
+  it("Q8b round-trips bigint values through their canonical strings and safe numbers", () => {
     const max = 2n ** 100n;
     fc.assert(
       fc.property(fc.bigInt({ min: 1n, max }), (value) => {

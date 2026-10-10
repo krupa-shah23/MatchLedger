@@ -14,7 +14,8 @@
     "build": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run",
-    "check:boundaries": "node scripts/check-boundaries.mjs"
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "bench": "npm --workspace @matchledger/benchmarks run bench"
   },
   "devDependencies": {
     "eslint": "10.11.0",

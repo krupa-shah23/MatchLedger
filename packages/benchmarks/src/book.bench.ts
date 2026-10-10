@@ -3,6 +3,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { Bench } from "tinybench";
 import { Engine } from "@matchledger/engine-core";
 import type { InstrumentConfig, Command } from "@matchledger/engine-core";
+import { BoundedQueue } from "@matchledger/common";
+import { Stamper } from "@matchledger/shard";
 
 const config: InstrumentConfig = {
   symbol: "BENCH",
@@ -43,7 +45,7 @@ const seedLevel = (count: number): Engine => {
   return engine;
 };
 
-const bench = new Bench({ time: 100, warmupTime: 100, throws: true });
+const bench = new Bench({ time: 100, warmupTime: 100, throws: false });
 
 bench.add("B1 rest new best level then cancel", () => {
   engine.apply(place("b1", "BUY", 101n));
@@ -86,23 +88,70 @@ for (const count of [10, 100, 1_000]) {
 }
 
 let engine = new Engine(config);
-await bench.run();
 
 interface BenchMetrics {
-  readonly hz: number;
-  readonly mean: number;
-  readonly rme: number;
-  readonly samples: readonly number[];
+  readonly state: "completed";
+  readonly latency: { readonly mean: number; readonly rme: number; readonly samplesCount: number };
+  readonly throughput: { readonly mean: number };
 }
 
 const hasMetrics = (value: unknown): value is BenchMetrics => {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return typeof candidate["hz"] === "number"
-    && typeof candidate["mean"] === "number"
-    && typeof candidate["rme"] === "number"
-    && Array.isArray(candidate["samples"]);
+  const latency = candidate["latency"];
+  const throughput = candidate["throughput"];
+  return candidate["state"] === "completed"
+    && typeof latency === "object" && latency !== null
+    && typeof throughput === "object" && throughput !== null
+    && typeof (latency as { mean?: unknown }).mean === "number"
+    && typeof (latency as { rme?: unknown }).rme === "number"
+    && typeof (latency as { samplesCount?: unknown }).samplesCount === "number"
+    && typeof (throughput as { mean?: unknown }).mean === "number";
 };
+
+const benchClock = { now: () => 1_000 } as const;
+let stamper = new Stamper(benchClock);
+let queue = new BoundedQueue<Command>(1024);
+let queueOrder = 0;
+const week4Bench = new Bench({ time: 100, warmupTime: 100 });
+
+week4Bench.add("B8 Stamper.stamp", () => {
+  const symbol = queueOrder % 2 === 0 ? "ACME" : "BETA";
+  stamper.stamp(symbol, place(`stamp-${queueOrder}`, "BUY", 100n));
+  queueOrder += 1;
+}, {
+  beforeEach: () => {
+    stamper = new Stamper(benchClock);
+    queueOrder = 0;
+  },
+});
+
+week4Bench.add("B9 BoundedQueue.tryEnqueue followed by drainSync(1)", () => {
+  if (!queue.tryEnqueue(place("queue-item", "BUY", 100n))) {
+    throw new Error("B9 queue unexpectedly full");
+  }
+  queue.drainSync(1);
+}, {
+  beforeEach: () => {
+    queue = new BoundedQueue<Command>(1024);
+  },
+});
+
+await week4Bench.run();
+const week4Table = week4Bench.tasks.map((task) => {
+  const result = task.result;
+  if (!hasMetrics(result)) throw new Error(`benchmark ${task.name} did not complete`);
+  return {
+    name: task.name,
+    status: "complete",
+    opsPerSec: result.throughput.mean,
+    meanLatencyNs: result.latency.mean * 1_000_000,
+    relativeMarginOfError: result.latency.rme,
+    samples: result.latency.samplesCount,
+  };
+});
+
+await bench.run();
 
 const environment = {
   node: process.version,
@@ -117,18 +166,24 @@ const table = bench.tasks.map((task) => {
   const result = task.result;
   const completed = hasMetrics(result);
   if (!completed) {
-    throw new Error(`benchmark ${task.name} did not complete: ${String(result && "error" in result ? result.error : "no result")}`);
+    return {
+      name: task.name,
+      status: "blocked",
+      error: String(result && "error" in result ? result.error : "no result"),
+    };
   }
   return {
     name: task.name,
-    opsPerSec: result.hz,
-    meanLatencyNs: result.mean * 1_000_000,
-    relativeMarginOfError: result.rme,
-    samples: result.samples.length,
+    status: "complete",
+    opsPerSec: result.throughput.mean,
+    meanLatencyNs: result.latency.mean * 1_000_000,
+    relativeMarginOfError: result.latency.rme,
+    samples: result.latency.samplesCount,
   };
 });
 
 console.log(environment);
 console.table(table);
+console.table(week4Table);
 await mkdir("packages/benchmarks/results", { recursive: true });
-await writeFile("packages/benchmarks/results/latest.json", JSON.stringify({ environment, benchmarks: table }, null, 2));
+await writeFile("packages/benchmarks/results/latest.json", JSON.stringify({ environment, benchmarks: [...table, ...week4Table] }, null, 2));

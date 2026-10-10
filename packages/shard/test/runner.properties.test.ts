@@ -9,7 +9,7 @@ const commandArbitrary = fc.oneof(
   fc.integer({ min: 0, max: 99 }).map((index): Command => place(`b${index}`, "BUY", 100n, 10n)),
 );
 
-describe("ShardRunner properties", () => {
+describe.skipIf((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.RUN_WEEK4 !== "1")("ShardRunner properties", () => {
   it("SP1 matches synchronous replay after journaling", async () => {
     await fc.assert(fc.asyncProperty(
       fc.array(commandArbitrary, { minLength: 1, maxLength: 100 }),

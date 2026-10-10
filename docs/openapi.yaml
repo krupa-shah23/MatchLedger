@@ -1,0 +1,898 @@
+openapi: 3.1.0
+info:
+  title: MatchLedger API
+  version: 0.1.0
+  description: |
+    REST contract for the MatchLedger demo. Money and prices are decimal
+    strings, never JSON numbers. Quantities are digit strings in responses and
+    integers or digit strings in requests.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Orders
+  - name: Market
+  - name: Accounts
+  - name: Risk
+  - name: Reconciliation
+  - name: Administration
+  - name: System
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Exchange credentials for a JWT
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}
+      responses:
+        '200': {description: Authenticated, content: {application/json: {schema: {$ref: '#/components/schemas/LoginResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Register a demo TRADER
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: '#/components/schemas/RegisterRequest'}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/RegisterResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh a JWT
+      responses:
+        '200': {description: Refreshed, content: {application/json: {schema: {$ref: '#/components/schemas/LoginResponse'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /me:
+    get:
+      tags: [Auth]
+      summary: Current identity
+      responses:
+        '200': {description: Identity, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /orders:
+    post:
+      tags: [Orders]
+      summary: Submit an order
+      x-roles: [TRADER]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: '#/components/schemas/OrderRequest'}}
+      responses:
+        '202': {description: Received, content: {application/json: {schema: {$ref: '#/components/schemas/OrderAcceptedResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    get:
+      tags: [Orders]
+      summary: List orders
+      x-roles: [TRADER, RISK, OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/AccountId'}, {$ref: '#/components/parameters/OrderStatus'}, {$ref: '#/components/parameters/SymbolQuery'}, {$ref: '#/components/parameters/From'}, {$ref: '#/components/parameters/To'}]
+      responses:
+        '200': {description: Orders, content: {application/json: {schema: {$ref: '#/components/schemas/PaginatedOrders'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /orders/{id}:
+    parameters: [{$ref: '#/components/parameters/OrderId'}]
+    get:
+      tags: [Orders]
+      summary: Read an order
+      x-roles: [TRADER, RISK, OPS, ADMIN]
+      responses:
+        '200': {description: Order, content: {application/json: {schema: {$ref: '#/components/schemas/Order'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Orders]
+      summary: Request cancellation
+      x-roles: [TRADER]
+      responses:
+        '202': {description: Cancel requested, content: {application/json: {schema: {$ref: '#/components/schemas/CancelAcceptedResponse'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+    patch:
+      tags: [Orders]
+      summary: Amend an order
+      x-roles: [TRADER]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: '#/components/schemas/AmendRequest'}}
+      responses:
+        '202': {description: Amend requested, content: {application/json: {schema: {$ref: '#/components/schemas/AmendAcceptedResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /orders/{id}/events:
+    get:
+      tags: [Orders]
+      summary: Order audit timeline
+      x-roles: [TRADER, RISK, OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/OrderId'}]
+      responses:
+        '200': {description: Audit timeline, content: {application/json: {schema: {$ref: '#/components/schemas/OrderEvents'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /instruments:
+    get:
+      tags: [Market]
+      summary: List instruments
+      responses:
+        '200': {description: Instruments, content: {application/json: {schema: {$ref: '#/components/schemas/PaginatedInstruments'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /instruments/{symbol}:
+    get:
+      tags: [Market]
+      summary: Read an instrument
+      parameters: [{$ref: '#/components/parameters/Symbol'}]
+      responses:
+        '200': {description: Instrument, content: {application/json: {schema: {$ref: '#/components/schemas/Instrument'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /symbols/{symbol}/book:
+    get:
+      tags: [Market]
+      summary: Book snapshot
+      parameters: [{$ref: '#/components/parameters/Symbol'}, {$ref: '#/components/parameters/Depth'}]
+      responses:
+        '200': {description: Book, content: {application/json: {schema: {$ref: '#/components/schemas/Book'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /symbols/{symbol}/trades:
+    get:
+      tags: [Market]
+      summary: Recent trades
+      parameters: [{$ref: '#/components/parameters/Symbol'}, {$ref: '#/components/parameters/TradeLimit'}]
+      responses:
+        '200': {description: Trades, content: {application/json: {schema: {$ref: '#/components/schemas/PaginatedTrades'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /symbols/{symbol}/status:
+    get:
+      tags: [Market]
+      summary: Symbol status
+      parameters: [{$ref: '#/components/parameters/Symbol'}]
+      responses:
+        '200': {description: Status, content: {application/json: {schema: {$ref: '#/components/schemas/SymbolStatus'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /accounts/{id}/balances:
+    get:
+      tags: [Accounts]
+      summary: Account balances
+      x-roles: [TRADER, RISK, OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/AccountPath'}]
+      responses:
+        '200': {description: Balances, content: {application/json: {schema: {$ref: '#/components/schemas/Balances'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /accounts/{id}/positions:
+    get:
+      tags: [Accounts]
+      summary: Account positions
+      x-roles: [TRADER, RISK, OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/AccountPath'}]
+      responses:
+        '200': {description: Positions, content: {application/json: {schema: {$ref: '#/components/schemas/Positions'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /accounts/{id}/pnl:
+    get:
+      tags: [Accounts]
+      summary: Account P&L
+      x-roles: [TRADER, RISK, OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/AccountPath'}]
+      responses:
+        '200': {description: P&L, content: {application/json: {schema: {$ref: '#/components/schemas/Pnl'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /accounts/{id}/reservations:
+    get:
+      tags: [Accounts]
+      summary: Account reservations
+      x-roles: [TRADER, RISK, OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/AccountPath'}, {$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/ReservationStatus'}]
+      responses:
+        '200': {description: Reservations, content: {application/json: {schema: {$ref: '#/components/schemas/PaginatedReservations'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /accounts/{id}/ledger:
+    get:
+      tags: [Accounts]
+      summary: Account ledger
+      x-roles: [TRADER, RISK, OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/AccountPath'}, {$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/From'}, {$ref: '#/components/parameters/To'}]
+      responses:
+        '200': {description: Ledger, content: {application/json: {schema: {$ref: '#/components/schemas/PaginatedLedger'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /risk/accounts/{id}/limits:
+    get:
+      tags: [Risk]
+      summary: Read risk limits
+      x-roles: [RISK, ADMIN]
+      parameters: [{$ref: '#/components/parameters/AccountPath'}]
+      responses:
+        '200': {description: Limits, content: {application/json: {schema: {$ref: '#/components/schemas/Limits'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Risk]
+      summary: Update risk limits
+      x-roles: [RISK]
+      parameters: [{$ref: '#/components/parameters/AccountPath'}]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: '#/components/schemas/Limits'}}
+      responses:
+        '200': {description: Updated limits, content: {application/json: {schema: {$ref: '#/components/schemas/Limits'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /risk/rejections:
+    get:
+      tags: [Risk]
+      summary: Risk rejection feed
+      x-roles: [RISK, ADMIN]
+      parameters: [{$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/RejectReason'}, {$ref: '#/components/parameters/AccountId'}, {$ref: '#/components/parameters/SymbolQuery'}, {$ref: '#/components/parameters/From'}]
+      responses:
+        '200': {description: Rejections, content: {application/json: {schema: {$ref: '#/components/schemas/PaginatedRejections'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /risk/breakers:
+    get:
+      tags: [Risk]
+      summary: Breaker states
+      x-roles: [RISK, ADMIN]
+      responses:
+        '200': {description: Breakers, content: {application/json: {schema: {$ref: '#/components/schemas/Breakers'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /risk/symbols/{symbol}/halt:
+    post:
+      tags: [Risk]
+      summary: Halt a symbol
+      x-roles: [RISK]
+      parameters: [{$ref: '#/components/parameters/Symbol'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [reason], properties: {reason: {type: string, minLength: 5, maxLength: 200}}}}}
+      responses:
+        '202': {description: Halt requested, content: {application/json: {schema: {$ref: '#/components/schemas/CommandAcceptedResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /risk/symbols/{symbol}/resume:
+    post:
+      tags: [Risk]
+      summary: Resume a symbol
+      x-roles: [RISK]
+      parameters: [{$ref: '#/components/parameters/Symbol'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [reason], properties: {reason: {type: string, minLength: 5, maxLength: 200}}}}}
+      responses:
+        '202': {description: Resume requested, content: {application/json: {schema: {$ref: '#/components/schemas/CommandAcceptedResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /risk/symbols/{symbol}/breaker-config:
+    put:
+      tags: [Risk]
+      summary: Configure a breaker
+      x-roles: [RISK]
+      parameters: [{$ref: '#/components/parameters/Symbol'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/BreakerConfig'}}}
+      responses:
+        '200': {description: Configuration, content: {application/json: {schema: {$ref: '#/components/schemas/BreakerConfig'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /recon/runs:
+    post:
+      tags: [Reconciliation]
+      summary: Upload an external statement
+      x-roles: [OPS]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data: {schema: {type: object, required: [file], properties: {file: {type: string, format: binary}}}}
+      responses:
+        '202': {description: Processing, content: {application/json: {schema: {$ref: '#/components/schemas/ReconUploadResponse'}}}}
+        '200': {description: Duplicate file, content: {application/json: {schema: {$ref: '#/components/schemas/ReconUploadResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    get:
+      tags: [Reconciliation]
+      summary: List reconciliation runs
+      x-roles: [OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/Cursor'}]
+      responses:
+        '200': {description: Runs, content: {application/json: {schema: {$ref: '#/components/schemas/PaginatedRuns'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /recon/runs/{id}:
+    get:
+      tags: [Reconciliation]
+      summary: Read a reconciliation run
+      x-roles: [OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/RunId'}]
+      responses:
+        '200': {description: Run, content: {application/json: {schema: {$ref: '#/components/schemas/Run'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /recon/breaks:
+    get:
+      tags: [Reconciliation]
+      summary: List reconciliation breaks
+      x-roles: [OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/RunIdQuery'}, {$ref: '#/components/parameters/BreakType'}, {$ref: '#/components/parameters/BreakStatus'}]
+      responses:
+        '200': {description: Breaks, content: {application/json: {schema: {$ref: '#/components/schemas/PaginatedBreaks'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /recon/breaks/{id}:
+    get:
+      tags: [Reconciliation]
+      summary: Read a reconciliation break
+      x-roles: [OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/BreakId'}]
+      responses:
+        '200': {description: Break, content: {application/json: {schema: {$ref: '#/components/schemas/Break'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /recon/breaks/{id}/status:
+    post:
+      tags: [Reconciliation]
+      summary: Change reconciliation break status
+      x-roles: [OPS]
+      parameters: [{$ref: '#/components/parameters/BreakId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/BreakStatusRequest'}}}
+      responses:
+        '200': {description: Updated break, content: {application/json: {schema: {$ref: '#/components/schemas/Break'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /recon/breaks/{id}/resolve:
+    post:
+      tags: [Reconciliation]
+      summary: Resolve reconciliation break
+      x-roles: [OPS]
+      parameters: [{$ref: '#/components/parameters/BreakId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/BreakResolveRequest'}}}
+      responses:
+        '200': {description: Resolved break, content: {application/json: {schema: {$ref: '#/components/schemas/Break'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /recon/breaks/{id}/audit:
+    get:
+      tags: [Reconciliation]
+      summary: Read break audit
+      x-roles: [OPS, ADMIN]
+      parameters: [{$ref: '#/components/parameters/BreakId'}]
+      responses:
+        '200': {description: Audit entries, content: {application/json: {schema: {$ref: '#/components/schemas/BreakAudit'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/users:
+    get:
+      tags: [Administration]
+      summary: List users
+      x-roles: [ADMIN]
+      parameters: [{$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/Cursor'}]
+      responses:
+        '200': {description: Users, content: {application/json: {schema: {$ref: '#/components/schemas/PaginatedUsers'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Administration]
+      summary: Create user
+      x-roles: [ADMIN]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AdminUserRequest'}}}
+      responses:
+        '201': {description: Created user, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /admin/accounts:
+    get:
+      tags: [Administration]
+      summary: List accounts
+      x-roles: [ADMIN]
+      parameters: [{$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/Cursor'}]
+      responses:
+        '200': {description: Accounts, content: {application/json: {schema: {$ref: '#/components/schemas/PaginatedAccounts'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Administration]
+      summary: Create account
+      x-roles: [ADMIN]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AdminAccountRequest'}}}
+      responses:
+        '201': {description: Created account, content: {application/json: {schema: {$ref: '#/components/schemas/AdminAccountResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /admin/accounts/{id}/deposit:
+    post:
+      tags: [Administration]
+      summary: Deposit simulated funds
+      x-roles: [ADMIN]
+      parameters: [{$ref: '#/components/parameters/AccountPath'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/DepositRequest'}}}
+      responses:
+        '200': {description: Deposit result, content: {application/json: {schema: {$ref: '#/components/schemas/DepositResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /admin/instruments:
+    post:
+      tags: [Administration]
+      summary: Create instrument
+      x-roles: [ADMIN]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AdminInstrumentRequest'}}}
+      responses:
+        '201': {description: Created instrument, content: {application/json: {schema: {$ref: '#/components/schemas/Instrument'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /admin/instruments/{symbol}:
+    put:
+      tags: [Administration]
+      summary: Update instrument
+      x-roles: [ADMIN]
+      parameters: [{$ref: '#/components/parameters/Symbol'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AdminInstrumentRequest'}}}
+      responses:
+        '200': {description: Updated instrument, content: {application/json: {schema: {$ref: '#/components/schemas/Instrument'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /admin/demo/reset:
+    post:
+      tags: [Administration]
+      summary: Reset demo data
+      x-roles: [ADMIN]
+      x-demo-only: true
+      responses:
+        '202': {description: Reset requested, content: {application/json: {schema: {$ref: '#/components/schemas/CommandAcceptedResponse'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /system/metrics/summary:
+    get:
+      tags: [System]
+      summary: Metrics summary
+      x-roles: [ADMIN]
+      responses:
+        '200': {description: Metrics, content: {application/json: {schema: {$ref: '#/components/schemas/MetricsSummary'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /system/shards:
+    get:
+      tags: [System]
+      summary: Shard status
+      x-roles: [ADMIN]
+      responses:
+        '200': {description: Shards, content: {application/json: {schema: {$ref: '#/components/schemas/Shards'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /system/invariants:
+    get:
+      tags: [System]
+      summary: Invariant status
+      x-roles: [ADMIN]
+      responses:
+        '200': {description: Invariants, content: {application/json: {schema: {$ref: '#/components/schemas/Invariants'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /system/verify-replay:
+    post:
+      tags: [System]
+      summary: Verify replay
+      x-roles: [ADMIN]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/VerifyReplayRequest'}}}
+      responses:
+        '200': {description: Replay result, content: {application/json: {schema: {$ref: '#/components/schemas/VerifyReplayResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /system/simulator/start:
+    post:
+      tags: [System]
+      summary: Start simulator
+      x-roles: [ADMIN]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SimulatorStartRequest'}}}
+      responses:
+        '202': {description: Start requested, content: {application/json: {schema: {$ref: '#/components/schemas/CommandAcceptedResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /system/simulator/stop:
+    post:
+      tags: [System]
+      summary: Stop simulator
+      x-roles: [ADMIN]
+      responses:
+        '202': {description: Stop requested, content: {application/json: {schema: {$ref: '#/components/schemas/CommandAcceptedResponse'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /system/chaos/kill-shard:
+    post:
+      tags: [System]
+      summary: Kill shard
+      x-roles: [ADMIN]
+      x-demo-only: true
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ShardCommandRequest'}}}
+      responses:
+        '202': {description: Kill requested, content: {application/json: {schema: {$ref: '#/components/schemas/CommandAcceptedResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /system/chaos/freeze-shard:
+    post:
+      tags: [System]
+      summary: Freeze shard
+      x-roles: [ADMIN]
+      x-demo-only: true
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ShardCommandRequest'}}}
+      responses:
+        '202': {description: Freeze requested, content: {application/json: {schema: {$ref: '#/components/schemas/CommandAcceptedResponse'}}}}
+        '400': {$ref: '#/components/responses/ValidationError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /system/recovery:
+    get:
+      tags: [System]
+      summary: Recovery status
+      x-roles: [ADMIN]
+      responses:
+        '200': {description: Recovery, content: {application/json: {schema: {$ref: '#/components/schemas/Recovery'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    Limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+    TradeLimit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+    Cursor: {name: cursor, in: query, schema: {type: string}}
+    AccountId: {name: accountId, in: query, schema: {type: string, pattern: '^acc_'}}
+    OrderId: {name: id, in: path, required: true, schema: {type: string, pattern: '^ord_'}}
+    AccountPath: {name: id, in: path, required: true, schema: {type: string, pattern: '^acc_'}}
+    Symbol: {name: symbol, in: path, required: true, schema: {type: string, minLength: 1}}
+    Depth: {name: depth, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 10}}
+    RunId: {name: id, in: path, required: true, schema: {type: string, pattern: '^run_'}}
+    BreakId: {name: id, in: path, required: true, schema: {type: string, pattern: '^brk_'}}
+    OrderStatus: {name: status, in: query, schema: {$ref: '#/components/schemas/OrderStatus'}}
+    SymbolQuery: {name: symbol, in: query, schema: {type: string, minLength: 1}}
+    From: {name: from, in: query, schema: {type: string, format: date-time}}
+    To: {name: to, in: query, schema: {type: string, format: date-time}}
+    RejectReason: {name: reason, in: query, schema: {$ref: '#/components/schemas/RejectReason'}}
+    ReservationStatus: {name: status, in: query, schema: {type: string, enum: [ACTIVE, FILLED, RELEASED]}}
+    RunIdQuery: {name: runId, in: query, schema: {type: string, pattern: '^run_'}}
+    BreakType: {name: type, in: query, schema: {type: string, enum: [MISSING_INTERNAL, MISSING_EXTERNAL, QUANTITY_MISMATCH, PRICE_MISMATCH, DUPLICATE, LATE]}}
+    BreakStatus: {name: status, in: query, schema: {type: string, enum: [OPEN, INVESTIGATING, RESOLVED, WRITTEN_OFF]}}
+  responses:
+    ValidationError: {description: RFC 9457 validation problem, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+    Unauthenticated: {description: Unauthenticated, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+    Forbidden: {description: Forbidden, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+    NotFound: {description: Not found, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+    Conflict: {description: Conflict, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+    RateLimited: {description: Rate limited, headers: {Retry-After: {schema: {type: integer}}}, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+    Unavailable: {description: Unavailable, headers: {Retry-After: {schema: {type: integer}}}, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  schemas:
+    OrderStatus: {type: string, enum: [RECEIVED, ACCEPTED, RESTING, PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, CANCELLED, REJECTED]}
+    RejectReason: {type: string, enum: [insufficient_balance, insufficient_shares, symbol_halted, breaker_open, NO_REFERENCE_PRICE, halt_timeout, invalid_order]}
+    AccountSnapshot: {type: object, required: [totalCash, heldCash, availableCash, requiredAmount, ruleApplied], properties: {totalCash: {type: string}, heldCash: {type: string}, availableCash: {type: string}, requiredAmount: {type: string}, ruleApplied: {type: string}}}
+    CommandAcceptedResponse: {type: object, required: [status], properties: {symbol: {type: string}, status: {type: string}}}
+    BreakStatusRequest: {type: object, additionalProperties: false, required: [status, reason], properties: {status: {const: INVESTIGATING}, reason: {type: string, minLength: 5, maxLength: 500}}}
+    BreakResolveRequest: {type: object, additionalProperties: false, required: [resolution, reason], properties: {resolution: {type: string, enum: [RESOLVED, WRITTEN_OFF]}, reason: {type: string, minLength: 5, maxLength: 500}, adjustment: {type: object, properties: {accountId: {type: string}, asset: {type: string}, amount: {type: string}, direction: {type: string, enum: [DEBIT, CREDIT]}}}}}
+    BreakAudit: {type: object, properties: {items: {type: array, items: {type: object, required: [ts, actor, fromStatus, toStatus, reason], properties: {ts: {type: string, format: date-time}, actor: {type: string}, fromStatus: {type: string}, toStatus: {type: string}, reason: {type: string}}}}}}
+    AdminUserRequest: {type: object, additionalProperties: false, required: [email, password, role], properties: {email: {type: string, format: email}, password: {type: string, minLength: 8}, role: {type: string, enum: [TRADER, RISK, OPS, ADMIN]}, accountIds: {type: array, items: {type: string}}}}
+    AdminAccountRequest: {type: object, additionalProperties: false, required: [ownerUserId], properties: {ownerUserId: {type: string}}}
+    AdminAccountResponse: {type: object, required: [accountId, ownerUserId], properties: {accountId: {type: string}, ownerUserId: {type: string}}}
+    DepositRequest: {type: object, additionalProperties: false, required: [requestId, amount], properties: {requestId: {type: string, minLength: 1, maxLength: 64}, amount: {type: string}}}
+    DepositResponse: {type: object, required: [accountId, requestId, amount], properties: {accountId: {type: string}, requestId: {type: string}, amount: {type: string}}}
+    AdminInstrumentRequest: {type: object, additionalProperties: false, required: [symbol, tickSize, lotSize, maxQuantity, maxPrice, protectionBandBps, referencePrice], properties: {symbol: {type: string}, tickSize: {type: string}, lotSize: {type: string}, maxQuantity: {type: string}, maxPrice: {type: string}, protectionBandBps: {type: integer}, referencePrice: {type: string}}}
+    PaginatedUsers: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/User'}}, nextCursor: {type: [string, 'null']}}}
+    PaginatedAccounts: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/AdminAccountResponse'}}, nextCursor: {type: [string, 'null']}}}
+    MetricsSummary: {type: object, properties: {throughputPerSec: {type: number}, latencyMs: {type: object, properties: {p50: {type: number}, p95: {type: number}, p99: {type: number}}}, queueDepth: {type: integer}, consumerLag: {type: integer}, eventLoopLagMs: {type: number}}}
+    Shards: {type: object, properties: {items: {type: array, items: {type: object, properties: {symbol: {type: string}, ownerInstance: {type: string}, fencingEpoch: {type: string}, lastJournalSeq: {type: string}, lastSnapshotSeq: {type: string}, lagMs: {type: number}}}}}}
+    Invariants: {type: object, properties: {items: {type: array, items: {type: object, properties: {name: {type: string}, passed: {type: boolean}, offendingRows: {type: array}}}}}}
+    VerifyReplayRequest: {type: object, additionalProperties: false, required: [symbol], properties: {symbol: {type: string}}}
+    VerifyReplayResponse: {type: object, required: [equal, diffSummary], properties: {equal: {type: boolean}, diffSummary: {type: [string, 'null']}}}
+    SimulatorStartRequest: {type: object, additionalProperties: false, required: [ratePerSec, symbols], properties: {ratePerSec: {type: integer, minimum: 1, maximum: 5000}, symbols: {type: array, items: {type: string}}}}
+    ShardCommandRequest: {type: object, additionalProperties: false, required: [symbol], properties: {symbol: {type: string}}}
+    Recovery: {type: object, properties: {lastRecoveryMs: {type: number}, tailLength: {type: string}}}
+    ReconUploadResponse: {type: object, required: [runId, status, duplicate], properties: {runId: {type: string}, status: {type: string}, duplicate: {type: boolean}}}
+    Problem:
+      type: object
+      required: [type, title, status, code, detail, requestId]
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        code: {type: string}
+        detail: {type: string}
+        requestId: {type: string}
+        errors: {type: array, items: {type: object, required: [field, message], properties: {field: {type: string}, message: {type: string}}}}
+    User:
+      type: object
+      required: [id, email, role, accountIds]
+      properties:
+        id: {type: string}
+        email: {type: string, format: email}
+        role: {type: string, enum: [TRADER, RISK, OPS, ADMIN]}
+        accountIds: {type: array, items: {type: string}}
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: {type: string, format: email}
+        password: {type: string, minLength: 8, maxLength: 128}
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: {type: string, format: email}
+        password: {type: string, minLength: 8, maxLength: 128}
+    LoginResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn, user]
+      properties:
+        accessToken: {type: string}
+        tokenType: {type: string, const: Bearer}
+        expiresIn: {type: integer, const: 3600}
+        user: {$ref: '#/components/schemas/User'}
+    RegisterResponse:
+      type: object
+      required: [user]
+      properties: {user: {$ref: '#/components/schemas/User'}}
+    OrderRequest:
+      type: object
+      additionalProperties: false
+      required: [clientOrderId, symbol, side, type, timeInForce, quantity]
+      properties:
+        clientOrderId: {type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$'}
+        symbol: {type: string}
+        side: {type: string, enum: [BUY, SELL]}
+        type: {type: string, enum: [LIMIT, MARKET]}
+        timeInForce: {type: string, enum: [GTC, IOC]}
+        quantity: {oneOf: [{type: integer, minimum: 1}, {type: string, pattern: '^[0-9]+$'}]}
+        price: {type: string, pattern: '^[0-9]+(\\.[0-9]+)?$'}
+    OrderAcceptedResponse:
+      type: object
+      required: [orderId, clientOrderId, status, receivedAt]
+      properties:
+        orderId: {type: string}
+        clientOrderId: {type: string}
+        status: {type: string, const: RECEIVED}
+        receivedAt: {type: string, format: date-time}
+    CancelAcceptedResponse:
+      type: object
+      required: [orderId, status]
+      properties: {orderId: {type: string}, status: {type: string, const: CANCEL_REQUESTED}}
+    AmendRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        price: {type: string}
+        quantity: {oneOf: [{type: integer, minimum: 1}, {type: string, pattern: '^[0-9]+$'}]}
+    AmendAcceptedResponse:
+      type: object
+      required: [orderId, status]
+      properties: {orderId: {type: string}, status: {type: string, const: AMEND_REQUESTED}}
+    Order:
+      type: object
+      properties:
+        orderId: {type: string}
+        clientOrderId: {type: string}
+        accountId: {type: string}
+        symbol: {type: string}
+        side: {type: string, enum: [BUY, SELL]}
+        type: {type: string, enum: [LIMIT, MARKET]}
+        timeInForce: {type: string, enum: [GTC, IOC]}
+        quantity: {type: string}
+        filledQuantity: {type: string}
+        remainingQuantity: {type: string}
+        price: {type: [string, 'null']}
+        averageFillPrice: {type: [string, 'null']}
+        status: {$ref: '#/components/schemas/OrderStatus'}
+        rejectReason: {oneOf: [{$ref: '#/components/schemas/RejectReason'}, {type: 'null'}]}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    OrderEvents:
+      type: object
+      required: [orderId, events, reservationMovements, accountSnapshot]
+      properties:
+        orderId: {type: string}
+        events:
+          type: array
+          items:
+            type: object
+            required: [journalSeq, ts, type, payload]
+            properties:
+              journalSeq: {type: integer}
+              ts: {type: string, format: date-time}
+              type: {type: string}
+              payload: {type: object}
+        reservationMovements:
+          type: array
+          items:
+            type: object
+            required: [event, placed, converted, released]
+            properties:
+              event: {type: string, enum: [ReservationPlaced, ReservationConverted, ReservationReleased]}
+              placed: {type: string}
+              converted: {type: string}
+              released: {type: string}
+        accountSnapshot:
+          oneOf:
+            - {$ref: '#/components/schemas/AccountSnapshot'}
+            - {type: 'null'}
+    Instrument:
+      type: object
+      properties:
+        symbol: {type: string}
+        tickSize: {type: string}
+        lotSize: {type: string}
+        maxQuantity: {type: string}
+        maxPrice: {type: string}
+        protectionBandBps: {type: integer}
+        status: {type: string, enum: [ACTIVE, HALTED, DELISTED]}
+    Book:
+      type: object
+      properties:
+        symbol: {type: string}
+        seq: {type: integer}
+        bids: {type: array, items: {$ref: '#/components/schemas/BookLevel'}}
+        asks: {type: array, items: {$ref: '#/components/schemas/BookLevel'}}
+        spread: {type: [string, 'null']}
+        lastPrice: {type: [string, 'null']}
+    BookLevel:
+      type: object
+      properties: {price: {type: string}, quantity: {type: string}, cumulative: {type: string}}
+    SymbolStatus:
+      type: object
+      properties: {symbol: {type: string}, state: {type: string, enum: [CLOSED, OPEN, HALF_OPEN]}, reason: {type: [string, 'null']}, incidentStartedAt: {type: [string, 'null'], format: date-time}, incidentElapsedMs: {type: [integer, 'null']}, maxHaltDurationMs: {type: integer}}
+    Balances: {type: object, properties: {accountId: {type: string}, total: {type: string}, held: {type: string}, available: {type: string}, heldBySymbol: {type: array, items: {type: object}}}}
+    Positions: {type: object, properties: {items: {type: array, items: {type: object}}}}
+    Pnl: {type: object, properties: {realized: {type: string}, unrealized: {type: string}, total: {type: string}}}
+    Limits: {type: object, additionalProperties: false, properties: {accountId: {type: string}, maxOrderNotional: {type: string}, maxOpenOrders: {type: integer}, maxPositionPerSymbol: {type: string}}}
+    BreakerConfig: {type: object, additionalProperties: false, required: [windowTrades, volatilityThresholdBps, cooldownMs, maxHaltDurationMs], properties: {windowTrades: {type: integer, minimum: 5}, volatilityThresholdBps: {type: integer}, cooldownMs: {type: integer}, maxHaltDurationMs: {type: integer}}}
+    Run: {type: object, properties: {runId: {type: string}, filename: {type: string}, startedAt: {type: string, format: date-time}, finishedAt: {type: [string, 'null'], format: date-time}, counts: {type: object}}}
+    Trade: {type: object, properties: {tradeId: {type: string, pattern: '^[A-Z0-9]+-T[0-9]+$'}, price: {type: string}, quantity: {type: string}, ts: {type: string, format: date-time}, takerSide: {type: string, enum: [BUY, SELL]}}}
+    Break: {type: object, properties: {breakId: {type: string}, runId: {type: string}, type: {type: string}, tradeId: {type: string, pattern: '^[A-Z0-9]+-T[0-9]+$'}, internal: {type: [object, 'null']}, external: {type: [object, 'null']}, status: {type: string}, ageSeconds: {type: integer}}}
+    PaginatedOrders: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Order'}}, nextCursor: {type: [string, 'null']}}}
+    PaginatedInstruments: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Instrument'}}}}
+    PaginatedTrades: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Trade'}}, nextCursor: {type: [string, 'null']}}}
+    PaginatedReservations: {type: object, properties: {items: {type: array, items: {type: object}}, nextCursor: {type: [string, 'null']}}}
+    PaginatedLedger: {type: object, properties: {items: {type: array, items: {type: object}}, nextCursor: {type: [string, 'null']}}}
+    PaginatedRejections: {type: object, properties: {items: {type: array, items: {type: object}}, nextCursor: {type: [string, 'null']}}}
+    Breakers: {type: object, properties: {items: {type: array, items: {type: object}}}}
+    PaginatedRuns: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Run'}}, nextCursor: {type: [string, 'null']}}}
+    PaginatedBreaks: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Break'}}, nextCursor: {type: [string, 'null']}}}

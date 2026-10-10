@@ -6,6 +6,7 @@
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "@matchledger/common": "file:../common"
+    "@matchledger/common": "file:../common",
+    "redis": "4.7.1"
   }
 }

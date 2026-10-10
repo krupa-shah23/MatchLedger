@@ -4,3 +4,7 @@ dist
 .env
 coverage
 .DS_Store
+dist-test
+packages/benchmarks/packages
+docs/audits/vitest-results.json
+*.log

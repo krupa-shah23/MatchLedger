@@ -80,12 +80,12 @@ describe("Engine", () => {
     expect(engine.apply(place("bad", "BUY", 2_000n, 10n))[0]).toMatchObject({ reason: "EXCEEDS_MAX_PRICE" });
   });
 
-  it("rejects duplicate ids while resting and after filling", () => {
+  it("rejects duplicate ids only while resting", () => {
     const engine = new Engine(config);
     engine.apply(place("same", "SELL", 100n, 1n));
     expect(engine.apply(place("same", "BUY", 100n, 1n))[0]).toMatchObject({ reason: "DUPLICATE_ORDER_ID" });
     engine.apply(place("taker", "BUY", 100n, 1n));
-    expect(engine.apply(place("taker", "SELL", 100n, 1n))[0]).toMatchObject({ reason: "DUPLICATE_ORDER_ID" });
+    expect(engine.apply(place("taker", "SELL", 100n, 1n))[0]).toMatchObject({ type: "ORDER_ACCEPTED" });
   });
 
   it("rests a remainder at the tail and permits self-trade", () => {
@@ -159,12 +159,13 @@ describe("Engine", () => {
     expect(engine.snapshotView()).toEqual({ bids: [], asks: [], bidPrices: [], askPrices: [] });
   });
 
-  it("never reuses a cancelled order id", () => {
+  it("accepts a cancelled order id again because it is no longer resting", () => {
     const engine = new Engine(config);
     engine.apply(place("cancelled", "BUY", 100n, 1n));
     engine.apply({ kind: "CANCEL", ts: 2n, orderId: "cancelled" });
     expect(engine.apply(place("cancelled", "SELL", 100n, 1n, 3n))).toEqual([
-      { type: "ORDER_REJECTED", engineSeq: 4n, ts: 3n, orderId: "cancelled", reason: "DUPLICATE_ORDER_ID" },
+      { type: "ORDER_ACCEPTED", engineSeq: 4n, ts: 3n, orderId: "cancelled", accountId: "a", side: "SELL", orderType: "LIMIT", price: 100n, quantity: 1n },
+      { type: "ORDER_RESTED", engineSeq: 5n, ts: 3n, orderId: "cancelled", side: "SELL", price: 100n, remaining: 1n },
     ]);
   });
 

@@ -4,7 +4,7 @@ import { Engine } from "../src/matching/engine.js";
 import type { Command, Event, InstrumentConfig, PlaceOrder } from "../src/matching/types.js";
 import { assertInvariants } from "./helpers/assert-invariants.js";
 import { analyzeEvents } from "./helpers/event-analysis.js";
-import { validGtcSequenceArbitrary } from "./helpers/arbitraries.js";
+import { commandSequenceArbitrary, validGtcSequenceArbitrary } from "./helpers/arbitraries.js";
 import { ReferenceMatcher } from "./helpers/reference-matcher.js";
 
 const P1_RUNS = 5_000;
@@ -94,29 +94,55 @@ describe("engine properties", () => {
     }), { numRuns: OTHER_RUNS });
   });
 
-  it("P12 accounts for every accepted GTC instance", () => {
-    fc.assert(fc.property(validGtcSequenceArbitrary(config), (commands) => {
-      const { engine, steps } = runGtc(commands);
+  it("P12 accounts for every accepted GTC and IOC instance", () => {
+    fc.assert(fc.property(commandSequenceArbitrary(config), (commands) => {
+      const engine = new Engine(config);
+      const steps: { command: Command; events: Event[] }[] = [];
+      commands.forEach((command) => {
+        const events = engine.apply(command);
+        assertInvariants(engine);
+        steps.push({ command, events });
+      });
       const analysis = analyzeEvents(steps, engine.restingOrders());
       const resting = new Map(engine.restingOrders().map((order) => [order.orderId, order.remaining]));
+      const lastInstance = new Map<string, number>();
       analysis.instances.forEach((instance) => {
-        const remaining = resting.get(instance.orderId) ?? 0n;
+        if (!instance.rejected) lastInstance.set(instance.orderId, instance.instance);
+      });
+      analysis.instances.forEach((instance) => {
+        if (instance.rejected) return;
+        const isLast = lastInstance.get(instance.orderId) === instance.instance;
+        const remaining = instance.timeInForce === "GTC" && isLast ? (resting.get(instance.orderId) ?? 0n) : 0n;
         expect(instance.filled + instance.cancelled + remaining).toBe(instance.quantity);
       });
     }), { numRuns: OTHER_RUNS });
   });
 
-  it("P13 and P14 hold for the GTC regression subset", () => {
-    fc.assert(fc.property(validGtcSequenceArbitrary(config), (commands) => {
-      const first = runGtc(commands);
-      const second = runGtc(commands);
-      expect(first.steps).toEqual(second.steps);
-      expect(first.engine.restingOrders()).toEqual(second.engine.restingOrders());
+  it("P13 IOC never rests and trades stay within its limit; P14 replays identically", () => {
+    fc.assert(fc.property(commandSequenceArbitrary(config), (commands) => {
+      const run = (): { readonly steps: Event[][]; readonly resting: unknown } => {
+        const engine = new Engine(config);
+        const steps = normalise(commands).map((command) => {
+          const events = engine.apply(command);
+          assertInvariants(engine);
+          if (command.kind === "PLACE" && command.timeInForce === "IOC") {
+            events.forEach((event) => {
+              expect(event.type).not.toBe("ORDER_RESTED");
+              if (event.type === "TRADE_EXECUTED") {
+                expect(command.side === "BUY" ? event.price <= command.price : event.price >= command.price).toBe(true);
+              }
+            });
+          }
+          return events;
+        });
+        return { steps, resting: engine.restingOrders() };
+      };
+      expect(run()).toEqual(run());
     }), { numRuns: OTHER_RUNS });
   });
 
-  it("D1 is wired to the hand-written reference matcher", () => {
-    fc.assert(fc.property(validGtcSequenceArbitrary(config), (commands) => {
+  it("D1 engine equals the reference matcher (GTC, IOC, cancels, invalid input)", () => {
+    fc.assert(fc.property(commandSequenceArbitrary(config), (commands) => {
       const engine = new Engine(config);
       const reference = new ReferenceMatcher(config);
       normalise(commands).forEach((command, index) => {
@@ -131,6 +157,6 @@ describe("engine properties", () => {
         expect(actual).toEqual(expected);
       });
       expect(engine.restingOrders()).toEqual(reference.restingOrders());
-    }), { numRuns: OTHER_RUNS });
+    }), { numRuns: P1_RUNS });
   });
 });

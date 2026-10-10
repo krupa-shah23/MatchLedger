@@ -30,6 +30,10 @@ const trade = (engineSeq: bigint, ts: bigint, tradeId: string, taker: string, ma
   takerSide: side,
 });
 
+const brief = (e: Event): string =>
+  e.type === "TRADE_EXECUTED" ? `T:${e.makerOrderId}@${e.price.toString()}x${e.quantity.toString()}`
+  : e.type === "ORDER_CANCELLED" ? `C:${e.reason}:${e.remaining.toString()}` : e.type;
+
 describe("IOC orders", () => {
   it("U8 IOC with cap and empty book emits only the remainder cancellation", () => {
     const engine = new Engine(config);
@@ -60,7 +64,7 @@ describe("IOC orders", () => {
   it("U10 IOC remainder never rests", () => {
     const engine = new Engine(config);
     const command = place("ioc", "BUY", 100n, 5n, "IOC");
-    expect(() => engine.apply(command)).toThrow("IOC matching is not implemented");
+    expect(engine.apply(command).map(brief)).toEqual(["ORDER_ACCEPTED", "C:IOC_REMAINDER:5"]);
     expect(engine.restingOrders().some((order) => order.orderId === "ioc")).toBe(false);
     expect(engine.depth("BUY", 10)).toEqual([]);
     expectInvariants(engine);
@@ -118,18 +122,18 @@ describe("IOC orders", () => {
   it("U26 uses inclusive boundaries on both sides", () => {
     const buy = new Engine(config);
     buy.apply(place("ask", "SELL", 100n, 1n));
-    expect(() => buy.apply(place("equal", "BUY", 100n, 1n, "IOC"))).toThrow("IOC matching is not implemented");
+    expect(buy.apply(place("equal", "BUY", 100n, 1n, "IOC")).map(brief)).toEqual(["ORDER_ACCEPTED", "T:ask@100x1"]);
     expectInvariants(buy);
     const sell = new Engine(config);
     sell.apply(place("bid", "BUY", 100n, 1n));
-    expect(() => sell.apply(place("equal", "SELL", 100n, 1n, "IOC"))).toThrow("IOC matching is not implemented");
+    expect(sell.apply(place("equal", "SELL", 100n, 1n, "IOC")).map(brief)).toEqual(["ORDER_ACCEPTED", "T:bid@100x1"]);
     expectInvariants(sell);
   });
 
   it("U27 rejects a cancel after an IOC", () => {
     const engine = new Engine(config);
-    expect(() => engine.apply(place("o1", "BUY", 100n, 5n, "IOC"))).toThrow("IOC matching is not implemented");
-    expect(engine.apply(cancel("o1"))).toEqual([{ type: "CANCEL_REJECTED", engineSeq: 2n, ts: 0n, orderId: "o1", reason: "ORDER_NOT_RESTING" }]);
+    expect(engine.apply(place("o1", "BUY", 100n, 5n, "IOC")).map(brief)).toEqual(["ORDER_ACCEPTED", "C:IOC_REMAINDER:5"]);
+    expect(engine.apply(cancel("o1"))).toEqual([{ type: "CANCEL_REJECTED", engineSeq: 3n, ts: 0n, orderId: "o1", reason: "ORDER_NOT_RESTING" }]);
     expectInvariants(engine);
   });
 
@@ -152,7 +156,7 @@ describe("IOC orders", () => {
     const engine = new Engine(config);
     engine.apply(place("o1", "SELL", 100n, 10n));
     engine.apply(place("o2", "SELL", 100n, 10n));
-    expect(() => engine.apply(place("o3", "BUY", 100n, 4n, "IOC"))).toThrow("IOC matching is not implemented");
+    expect(engine.apply(place("o3", "BUY", 100n, 4n, "IOC")).map(brief)).toEqual(["ORDER_ACCEPTED", "T:o1@100x4"]);
     expectInvariants(engine);
   });
 
@@ -160,7 +164,7 @@ describe("IOC orders", () => {
     const engine = new Engine(config);
     engine.apply(place("o1", "SELL", 100n, 1n));
     engine.apply(place("o2", "SELL", 101n, 1n));
-    expect(() => engine.apply(place("o3", "BUY", 110n, 1n, "IOC"))).toThrow("IOC matching is not implemented");
+    expect(engine.apply(place("o3", "BUY", 110n, 1n, "IOC")).map(brief)).toEqual(["ORDER_ACCEPTED", "T:o1@100x1"]);
     expectInvariants(engine);
   });
 
@@ -168,14 +172,14 @@ describe("IOC orders", () => {
     const engine = new Engine(config);
     engine.apply(place("o1", "SELL", 101n, 1n));
     engine.apply(place("o2", "SELL", 102n, 1n));
-    expect(() => engine.apply(place("o3", "BUY", 110n, 5n, "IOC", "a1", 32n))).toThrow("IOC matching is not implemented");
+    expect(engine.apply(place("o3", "BUY", 110n, 5n, "IOC", "a1", 32n)).map(brief)).toEqual(["ORDER_ACCEPTED", "T:o1@101x1", "T:o2@102x1", "C:IOC_REMAINDER:3"]);
     expectInvariants(engine);
   });
 
   it("U33 allows self-trade for IOC", () => {
     const engine = new Engine(config);
     engine.apply(place("o1", "SELL", 100n, 1n, "GTC", "same"));
-    expect(() => engine.apply(place("o2", "BUY", 100n, 1n, "IOC", "same"))).toThrow("IOC matching is not implemented");
+    expect(engine.apply(place("o2", "BUY", 100n, 1n, "IOC", "same")).map(brief)).toEqual(["ORDER_ACCEPTED", "T:o1@100x1"]);
     expectInvariants(engine);
   });
 
@@ -184,14 +188,14 @@ describe("IOC orders", () => {
     engine.apply(place("resting", "BUY", 100n, 5n));
     expect(engine.apply(cancel("resting", 34n))).toEqual([{ type: "ORDER_CANCELLED", engineSeq: 3n, ts: 34n, orderId: "resting", remaining: 5n, reason: "USER_REQUEST" }]);
     expectInvariants(engine);
-    expect(() => engine.apply(place("ioc", "BUY", 99n, 1n, "IOC", "a1", 35n))).toThrow("IOC matching is not implemented");
+    expect(engine.apply(place("ioc", "BUY", 99n, 1n, "IOC", "a1", 35n)).map(brief)).toEqual(["ORDER_ACCEPTED", "C:IOC_REMAINDER:1"]);
     expectInvariants(engine);
   });
 
   it("echoes each IOC command timestamp on every event", () => {
     const engine = new Engine(config);
     const command = place("ts", "BUY", 100n, 1n, "IOC", "a1", 123n);
-    expect(() => engine.apply(command)).toThrow("IOC matching is not implemented");
+    expect(engine.apply(command).map((event) => event.ts)).toEqual([123n, 123n]);
     expectInvariants(engine);
   });
 });
