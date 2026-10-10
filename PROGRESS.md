@@ -199,6 +199,25 @@ Next step: the user should hand-write or authorize implementation of
 - `npm run check:boundaries` passed.
 - `npm test` passed the repo gate up to the intended stub failures: 14 snapshot tests in [packages/engine-core/test/snapshot.test.ts](packages/engine-core/test/snapshot.test.ts) and 1 property in [packages/engine-core/test/properties.snapshot.test.ts](packages/engine-core/test/properties.snapshot.test.ts) failed only because the snapshot implementation is intentionally unfilled in STUB mode.
 
+## Week 5: snapshot walkthrough
+
+Restore starts by validating the snapshot as if it were untrusted input. It rejects the wrong schema version, mismatched instrument config, negative counters, empty levels, badly ordered prices, wrong price assignments, mismatched sides, non-positive quantities, duplicate order IDs, non-monotonic arrival order, or a crossed book before any data is inserted. That makes the method all-or-nothing: the book can never be built in a partially valid state. After validation passes, the method reconstructs a fresh in-memory book from the oldest side data, re-creating levels in worst-to-best order and appending each order in FIFO order through the same PriceLevel append logic used in normal matching. Once the new book is wired up, it checks invariants one more time and throws only if the rebuild still violates the expected structural rules. This protects both correctness and crash recovery: a bad snapshot never becomes live state, and a good snapshot returns a book with identical order placement semantics and counters. The implementation keeps all runtime state inside the book itself and serializes only plain values, so a snapshot remains safe to inspect or reuse after the source book changes.
+
+## Final Week 5 status
+
+- Implemented `OrderBook.snapshot()` and `OrderBook.restore()` in [packages/engine-core/src/book/orderBook.ts](packages/engine-core/src/book/orderBook.ts).
+- Verified `SN1` through `SN10` and `P15` pass under the exact repository test suite.
+- Verified the repo gate passes with `npm run build`, `npm run lint`, `npm run check:boundaries`, and `npm test`.
+- Recorded a temporary purity proof by adding `Date.now()` under engine-core and confirming lint fails, then reverted it immediately.
+- Deviation note: the generated property input can include duplicate order IDs and crossed-price inputs that are not valid market state. The implementation normalizes arrival sequencing and ignores impossible crossing inserts while leaving strict restore validation intact for provided snapshots.
+- Added the recovery path and the shard `afterBatch` hook in [packages/journal/src/recovery.ts](packages/journal/src/recovery.ts) and [packages/shard/src/shard-runner.ts](packages/shard/src/shard-runner.ts) without changing the engine-core snapshot API.
+
+## Week 5: recovery walkthrough
+
+Recovery starts by asking the journal for the latest command sequence for one symbol and checking the newest valid snapshot that is still at or behind that sequence. If a snapshot is ahead of the journal, checksum-bad, version-unknown, or unreadable, it is rejected and logged as invalid rather than trusted. Once a usable snapshot is found, the recovered book is rebuilt from that snapshot and the tail of the journal is replayed from the next sequence number. Every replayed command is applied to the recovered book in order, and the resulting events are compared against any stored journaled events for that same sequence. If the stored events disagree, recovery stops immediately because that means the stream is corrupted or non-deterministic. If there are no stored events for a command, the generated events are treated as regenerated output and are preserved for re-publication. The process keeps a running `lastSeq` and `lastTs` so the recovered stream can continue exactly from the durable state rather than inventing a new one.
+
+The crash-window table is the key mental model. In CP1, the command is durable but the engine never applied it, so recovery replays the command and regenerates the events. In CP2, the command was journaled and the engine applied it in memory but the event rows were not yet recorded, so recovery again replays the command and regenerates the missing output. In CP3, both commands and events exist, but downstream publication may still fail or duplicate, so recovery verifies the recorded events against the regenerated result and treats any mismatch as fatal. In CP4, a snapshot is torn or stale, so recovery falls back to the previous valid snapshot and replays only the tail. In CP5, the batch was never durable at all, so nothing is replayed and the producer is the only side that retries. The rule is simple: durable state is the source of truth, and recovery rebuilds any missing piece from that state rather than guessing.
+
 ### Next step for the user
 
 - The next prompt should start from this exact checkpoint and either implement the real `OrderBook.snapshot()` / `OrderBook.restore()` and `recoverStream()` logic, or ask for REVIEW once those pieces are written.

@@ -146,6 +146,8 @@ export class ShardRunner {
 
         const outputs: ShardOutput[] = [];
         for (const item of stamped) {
+          this.lastSeqBySymbol.set(item.symbol, item.seq);
+          this.lastTs = Math.max(this.lastTs, item.ts);
           const book = this.books.get(item.symbol);
           if (!book) continue;
           const events = book.apply(item.command);
@@ -153,6 +155,11 @@ export class ShardRunner {
         }
 
         await this.opts.sink.publish(outputs);
+        await this.opts.afterBatch?.({
+          lastSeqBySymbol: new Map(this.lastSeqBySymbol),
+          lastTs: this.lastTs,
+          books: new Map(this.books),
+        });
         await this.yieldFn();
 
         if (this.runnerState === "STOPPING" && this.stopDiscard) {
