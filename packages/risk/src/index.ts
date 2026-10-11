@@ -9,6 +9,7 @@ export { SerializedRisk } from "./serialized-risk.js";
 export type { AccountNotice, OrderOwner, RouterResult, TradePosting } from "./router.js";
 export type { AccountState, ReserveRequest, ReserveResult, RiskHooks } from "./types.js";
 export { RiskStage } from "./stage.js";
+export { LeakSweeper } from "./sweeper.js";
 export { RiskStamper } from "./stamper.js";
 export { InMemoryRiskJournal } from "./in-memory-risk-journal.js";
 export * from "./core/index.js";
