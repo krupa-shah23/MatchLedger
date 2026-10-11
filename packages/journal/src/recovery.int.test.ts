@@ -17,9 +17,10 @@ describe.skipIf(!run)("RC: Recovery", () => {
 
   beforeEach(async () => {
     pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
+    await pool.query("DROP TABLE IF EXISTS schema_migrations CASCADE");
     await pool.query("DROP TABLE IF EXISTS journal CASCADE");
     await pool.query("DROP TABLE IF EXISTS snapshots CASCADE");
-    await runMigrations(pool, new URL("../migrations", import.meta.url).pathname);
+    await runMigrations(pool, new URL("../migrations", import.meta.url).pathname.replace("/dist/", "/src/"));
     journal = new PgJournal(pool, 1);
     snapshots = new PgSnapshotStore(pool);
   });

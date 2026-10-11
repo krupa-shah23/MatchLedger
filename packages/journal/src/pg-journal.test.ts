@@ -38,8 +38,8 @@ describe.skipIf(!run)("J: Journal", () => {
   it("J4: Gap in seq rejects", async () => {
     await expect(
       journal.append([
-        { symbol: "ABC", seq: 1, ts: 1000, command: {} },
-        { symbol: "ABC", seq: 3, ts: 2000, command: {} },
+        { symbol: "ABC", seq: 1, ts: 1000, command: {} } as any,
+        { symbol: "ABC", seq: 3, ts: 2000, command: {} } as any,
       ]),
     ).rejects.toThrow(JournalSequenceError);
   });
