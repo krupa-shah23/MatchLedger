@@ -56,6 +56,7 @@ export type BreakerCommand = TickCommand | HaltSymbolCommand | ResumeSymbolComma
 export type BreakerEvent =
   | {
       readonly type: "BreakerTripped";
+      readonly engineSeq?: bigint;
       readonly reason: "VOLATILITY" | "HALF_OPEN_BREACH" | "MANUAL";
       readonly volatilityBps?: bigint;
       readonly thresholdBps?: bigint;
@@ -66,22 +67,26 @@ export type BreakerEvent =
     }
   | {
       readonly type: "BreakerHalfOpened";
+      readonly engineSeq?: bigint;
       readonly trigger: "COOLDOWN" | "RESUME";
       readonly ts: number;
     }
   | {
       readonly type: "BreakerClosed";
+      readonly engineSeq?: bigint;
       readonly incidentDurationMs: number;
       readonly ts: number;
     }
   | {
       readonly type: "BreakerCommandIgnored";
+      readonly engineSeq?: bigint;
       readonly command: "HaltSymbol" | "ResumeSymbol";
       readonly reason: string;
       readonly ts: number;
     }
   | {
       readonly type: "HaltTimeoutCancelled";
+      readonly engineSeq?: bigint;
       readonly count: number;
       readonly incidentStartTs: number;
       readonly ts: number;

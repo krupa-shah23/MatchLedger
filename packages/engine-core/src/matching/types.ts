@@ -1,3 +1,5 @@
+import type { BreakerEvent } from "../breaker/types.js";
+
 export type Side = "BUY" | "SELL";
 export type OrderType = "LIMIT" | "IOC";
 export type TimeInForce = "GTC" | "IOC";
@@ -115,7 +117,8 @@ export type Event =
   | TradeExecuted
   | OrderCancelled
   | OrderRejected
-  | CancelRejected;
+  | CancelRejected
+  | BreakerEvent;
 
 export interface LevelView {
   readonly price: bigint;

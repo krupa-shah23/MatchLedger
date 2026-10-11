@@ -1,4 +1,4 @@
-export const CURRENT_VERSION = 1;
+export const CURRENT_VERSION = 2;
 
 export class UnknownSchemaVersionError extends Error {
   public constructor(public readonly version: unknown) {

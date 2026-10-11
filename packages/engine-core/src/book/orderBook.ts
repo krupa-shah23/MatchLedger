@@ -1,3 +1,4 @@
+import type { BreakerConfig } from "../breaker/types.js";
 import type { BookView, LevelView, Side } from "../matching/types.js";
 import type { BookSnapshot, InstrumentSpec, RestingOrderSnapshot } from "./snapshot.js";
 import { PriceLevel, OrderNode } from "./priceLevel.js";
@@ -173,19 +174,43 @@ export class OrderBook {
     };
 
     return {
-      version: 1,
+      version: 2,
       symbol: this.spec.symbol,
       spec: { ...this.spec },
       nextArrivalSeq: this.toSafeNumber(this.nextArrivalSeq),
       nextTradeSeq: this.toSafeNumber(this.nextTradeSeq),
       bids: snapshotSide("BUY", this.bids),
       asks: snapshotSide("SELL", this.asks),
+      breaker: undefined,
     };
   }
 
-  public static restore(spec: InstrumentSpec, snapshot: BookSnapshot): OrderBook {
-    if (snapshot.version !== 1) {
-      throw new InvalidSnapshotError("VERSION", `expected 1, got ${String(snapshot.version)}`);
+  public static restore(spec: InstrumentSpec, snapshot: BookSnapshot, breakerConfig?: BreakerConfig): OrderBook {
+    if (snapshot.version === 2) {
+      const hasBreaker = snapshot.breaker !== undefined;
+      if (hasBreaker && breakerConfig === undefined) {
+        throw new InvalidSnapshotError("SPEC_MISMATCH", "snapshot includes breaker state but no breaker config was supplied");
+      }
+      if (!hasBreaker && breakerConfig !== undefined) {
+        throw new InvalidSnapshotError("SPEC_MISMATCH", "snapshot is missing breaker state for the supplied breaker config");
+      }
+      if (hasBreaker && breakerConfig !== undefined) {
+        const actual = snapshot.breaker.config;
+        const matches =
+          actual.windowTrades === breakerConfig.windowTrades &&
+          actual.tripThresholdBps === breakerConfig.tripThresholdBps &&
+          actual.resetThresholdBps === breakerConfig.resetThresholdBps &&
+          actual.cooldownMs === breakerConfig.cooldownMs &&
+          actual.halfOpenBandBps === breakerConfig.halfOpenBandBps &&
+          actual.halfOpenMaxOrdersPerSec === breakerConfig.halfOpenMaxOrdersPerSec &&
+          actual.halfOpenStableMs === breakerConfig.halfOpenStableMs &&
+          actual.maxHaltDurationMs === breakerConfig.maxHaltDurationMs;
+        if (!matches) {
+          throw new InvalidSnapshotError("SPEC_MISMATCH", "snapshot breaker config does not match the supplied breaker config");
+        }
+      }
+    } else if (snapshot.version !== 1) {
+      throw new InvalidSnapshotError("VERSION", `expected 1 or 2, got ${String(snapshot.version)}`);
     }
     const snapshotSpec = snapshot.spec;
     if (

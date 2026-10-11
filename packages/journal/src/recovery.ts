@@ -1,5 +1,6 @@
 import { Engine, InvalidSnapshotError, OrderBook } from "@matchledger/engine-core";
-import type { InstrumentSpec } from "@matchledger/engine-core";
+import type { BreakerConfig, InstrumentSpec } from "@matchledger/engine-core";
+import { getUpcaster } from "@matchledger/common";
 import type { JournalReader, RecoveredState, ShardOutput, SnapshotStore } from "@matchledger/common";
 
 export type { JournalReader, RecoveredState, SnapshotCandidate, SnapshotStore } from "@matchledger/common";
@@ -83,6 +84,7 @@ export async function recoverStream(args: {
   readonly snapshots: SnapshotStore;
   readonly symbol: string;
   readonly spec: InstrumentSpec;
+  readonly breakerConfig?: BreakerConfig;
   readonly chunkSize?: number;
 }): Promise<RecoveryResult> {
   const chunkSize = args.chunkSize ?? 128;
@@ -107,12 +109,27 @@ export async function recoverStream(args: {
         throw new Error("DECODE");
       }
 
-      const snapshotVersion = (state as { readonly version?: number }).version ?? candidate.version;
-      if (snapshotVersion !== undefined && snapshotVersion !== 1) {
+      const snapshotVersion = Number((state as { readonly version?: number } | undefined)?.version ?? candidate.version ?? 1);
+      if (snapshotVersion === 1) {
+        const upcast = getUpcaster(1);
+        const normalized = upcast === undefined ? { ...(state as Record<string, unknown>), version: 2, breaker: undefined } : upcast(state);
+        const restored = OrderBook.restore(args.spec, normalized as Parameters<typeof OrderBook.restore>[1], args.breakerConfig) as unknown as ReplayBook;
+        const violations = restored.checkInvariants();
+        if (violations.length > 0) {
+          throw new Error(violations.join("; "));
+        }
+
+        book = restored;
+        snapshotUsed = { lastSeq: candidate.lastSeq };
+        lastSeq = candidate.lastSeq;
+        lastTs = candidate.lastTs ?? 0;
+        break;
+      }
+      if (snapshotVersion !== 2) {
         throw new Error("UNKNOWN_VERSION");
       }
 
-      const restored = OrderBook.restore(args.spec, state as Parameters<typeof OrderBook.restore>[1]) as unknown as ReplayBook;
+      const restored = OrderBook.restore(args.spec, state as Parameters<typeof OrderBook.restore>[1], args.breakerConfig) as unknown as ReplayBook;
       const violations = restored.checkInvariants();
       if (violations.length > 0) {
         throw new Error(violations.join("; "));

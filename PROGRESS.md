@@ -4,6 +4,11 @@
 
 ### Current task status
 
+- Completed the breaker snapshot/codec alignment required by the Week 7 contract: v2 snapshot data now carries optional breaker metadata, the v1-to-v2 upcast path is registered, and the breaker event/command codecs accept the halting/resume and trip events used by the engine.
+- Verification evidence: `npx vitest run packages/engine-core/test/snapshot.test.ts -t "SNB" && npx vitest run packages/common/src/codec.test.ts` passed, and `npm run build && npm run lint && npm run check:boundaries` also passed.
+- Remaining repo-wide discrepancy: `npm test` still fails on legacy snapshot assertion `SN5` in [packages/engine-core/test/snapshot.test.ts](packages/engine-core/test/snapshot.test.ts), which asserts that `version: 2` snapshots are invalid even though the Week 7 blueprint explicitly requires v2 snapshots with optional breaker metadata. This is a spec conflict, not a regression from the Week 7 breaker implementation; the code follows the Week 7 contract and the legacy SN5 assertion remains stale.
+
+
 - Added the missing risk adjustment path and recon preview/resolve workflow support to complete the Week 7 adjustment contract.
 - Tightened the new typed command objects so the repo-wide TypeScript check accepts the literal risk command shapes.
 - Aligned the trade-posting router expectation with the contract that includes the trade timestamp in each `TradePosting`.

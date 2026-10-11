@@ -178,4 +178,65 @@ describe("snapshot contract", () => {
     expect(snapshot.asks).toEqual([]);
     expect(snapshot.bids).toEqual([]);
   });
+
+  it("SNB1: version 2 snapshots preserve breaker metadata and restore it", async () => {
+    const book = new OrderBook();
+    book.addResting({ orderId: "s1", accountId: "a1", side: "SELL", price: 100n, remaining: 5n, arrivalSeq: 1n });
+
+    const breakerConfig = {
+      windowTrades: 3,
+      tripThresholdBps: 500n,
+      resetThresholdBps: 200n,
+      cooldownMs: 10_000,
+      halfOpenBandBps: 300n,
+      halfOpenMaxOrdersPerSec: 2,
+      halfOpenStableMs: 5_000,
+      maxHaltDurationMs: 60_000,
+    };
+
+    const { Breaker } = await import("../src/breaker/breaker.js");
+    const breaker = new Breaker(breakerConfig);
+    breaker.halt("manual", 1_000);
+    const snapshot = { ...book.snapshot(), version: 2 as const, breaker: { config: breakerConfig, state: breaker.snapshotState() } };
+
+    const restored = OrderBook.restore(spec, snapshot, breakerConfig);
+    expect(restored.view()).toEqual(book.view());
+    expect(snapshot.breaker?.state.state).toBe("OPEN");
+  });
+
+  it("SNB2: v1 snapshots become a fresh Closed breaker when restored with config", () => {
+    const book = new OrderBook();
+    const snapshot = { ...book.snapshot(), version: 1 as const };
+    const breakerConfig = {
+      windowTrades: 3,
+      tripThresholdBps: 500n,
+      resetThresholdBps: 200n,
+      cooldownMs: 10_000,
+      halfOpenBandBps: 300n,
+      halfOpenMaxOrdersPerSec: 2,
+      halfOpenStableMs: 5_000,
+      maxHaltDurationMs: 60_000,
+    };
+
+    const restored = OrderBook.restore(spec, snapshot, breakerConfig);
+    expect(restored.view()).toEqual(book.view());
+  });
+
+  it("SNB3: breaker config or presence mismatch throws SPEC_MISMATCH", () => {
+    const book = new OrderBook();
+    const breakerConfig = {
+      windowTrades: 3,
+      tripThresholdBps: 500n,
+      resetThresholdBps: 200n,
+      cooldownMs: 10_000,
+      halfOpenBandBps: 300n,
+      halfOpenMaxOrdersPerSec: 2,
+      halfOpenStableMs: 5_000,
+      maxHaltDurationMs: 60_000,
+    };
+    const v2 = { ...book.snapshot(), version: 2 as const, breaker: { config: breakerConfig, state: { state: "OPEN", manual: false, window: [], anchorPrice: undefined, incidentStartTs: 1, stateSinceTs: 1, halfOpenBucket: new Map(), forceCancelled: false } } };
+
+    expect(() => OrderBook.restore(spec, v2, { ...breakerConfig, tripThresholdBps: 600n })).toThrow(InvalidSnapshotError);
+    expect(() => OrderBook.restore(spec, { ...v2, breaker: undefined }, breakerConfig)).toThrow(InvalidSnapshotError);
+  });
 });

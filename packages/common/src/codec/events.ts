@@ -5,8 +5,10 @@ export function serializeEvent(ev: Event): string {
   const payload: Record<string, unknown> = { v: CURRENT_VERSION };
 
   payload.type = ev.type;
-  payload.engineSeq = ev.engineSeq.toString();
-  payload.ts = ev.ts.toString();
+  if ("engineSeq" in ev && ev.engineSeq !== undefined) {
+    payload.engineSeq = ev.engineSeq.toString();
+  }
+  payload.ts = typeof ev.ts === "bigint" ? ev.ts.toString() : ev.ts;
 
   if (ev.type === "ORDER_ACCEPTED") {
     payload.orderId = ev.orderId;
@@ -40,6 +42,23 @@ export function serializeEvent(ev: Event): string {
   } else if (ev.type === "CANCEL_REJECTED") {
     payload.orderId = ev.orderId;
     payload.reason = ev.reason;
+  } else if (ev.type === "BreakerTripped") {
+    payload.reason = ev.reason;
+    payload.volatilityBps = ev.volatilityBps === undefined ? undefined : ev.volatilityBps.toString();
+    payload.thresholdBps = ev.thresholdBps === undefined ? undefined : ev.thresholdBps.toString();
+    payload.anchorPrice = ev.anchorPrice === undefined ? undefined : ev.anchorPrice.toString();
+    payload.incidentStartTs = ev.incidentStartTs;
+    payload.detail = ev.detail;
+  } else if (ev.type === "BreakerHalfOpened") {
+    payload.trigger = ev.trigger;
+  } else if (ev.type === "BreakerClosed") {
+    payload.incidentDurationMs = ev.incidentDurationMs;
+  } else if (ev.type === "BreakerCommandIgnored") {
+    payload.command = ev.command;
+    payload.reason = ev.reason;
+  } else if (ev.type === "HaltTimeoutCancelled") {
+    payload.count = ev.count;
+    payload.incidentStartTs = ev.incidentStartTs;
   }
 
   const text = JSON.stringify(payload);
@@ -53,17 +72,15 @@ export function deserializeEvent(json: string): Event {
 
   const obj = parsed as Record<string, unknown>;
   const v = obj.v;
-  if (v !== CURRENT_VERSION) throw new Error(`Invalid version: ${String(v)}`);
+  if (v !== undefined && v !== 1 && v !== CURRENT_VERSION) throw new Error(`Invalid version: ${String(v)}`);
 
   const type = obj.type as string;
-  const engineSeq = BigInt(String(obj.engineSeq));
-  const ts = BigInt(String(obj.ts));
 
   if (type === "ORDER_ACCEPTED") {
     return {
       type: "ORDER_ACCEPTED",
-      engineSeq,
-      ts,
+      engineSeq: BigInt(String(obj.engineSeq)),
+      ts: BigInt(String(obj.ts)),
       orderId: String(obj.orderId),
       accountId: String(obj.accountId),
       side: String(obj.side) as "BUY" | "SELL",
@@ -74,8 +91,8 @@ export function deserializeEvent(json: string): Event {
   } else if (type === "ORDER_RESTED") {
     return {
       type: "ORDER_RESTED",
-      engineSeq,
-      ts,
+      engineSeq: BigInt(String(obj.engineSeq)),
+      ts: BigInt(String(obj.ts)),
       orderId: String(obj.orderId),
       side: String(obj.side) as "BUY" | "SELL",
       price: BigInt(String(obj.price)),
@@ -84,8 +101,8 @@ export function deserializeEvent(json: string): Event {
   } else if (type === "TRADE_EXECUTED") {
     return {
       type: "TRADE_EXECUTED",
-      engineSeq,
-      ts,
+      engineSeq: BigInt(String(obj.engineSeq)),
+      ts: BigInt(String(obj.ts)),
       tradeId: String(obj.tradeId),
       symbol: String(obj.symbol),
       price: BigInt(String(obj.price)),
@@ -99,8 +116,8 @@ export function deserializeEvent(json: string): Event {
   } else if (type === "ORDER_CANCELLED") {
     return {
       type: "ORDER_CANCELLED",
-      engineSeq,
-      ts,
+      engineSeq: BigInt(String(obj.engineSeq)),
+      ts: BigInt(String(obj.ts)),
       orderId: String(obj.orderId),
       remaining: BigInt(String(obj.remaining)),
       reason: String(obj.reason) as "USER_REQUEST" | "IOC_REMAINDER",
@@ -108,18 +125,55 @@ export function deserializeEvent(json: string): Event {
   } else if (type === "ORDER_REJECTED") {
     return {
       type: "ORDER_REJECTED",
-      engineSeq,
-      ts,
+      engineSeq: BigInt(String(obj.engineSeq)),
+      ts: BigInt(String(obj.ts)),
       orderId: String(obj.orderId),
       reason: String(obj.reason),
     } as Event;
   } else if (type === "CANCEL_REJECTED") {
     return {
       type: "CANCEL_REJECTED",
-      engineSeq,
-      ts,
+      engineSeq: BigInt(String(obj.engineSeq)),
+      ts: BigInt(String(obj.ts)),
       orderId: String(obj.orderId),
       reason: String(obj.reason) as "ORDER_NOT_RESTING",
+    } as Event;
+  } else if (type === "BreakerTripped") {
+    return {
+      type: "BreakerTripped",
+      reason: String(obj.reason) as "VOLATILITY" | "HALF_OPEN_BREACH" | "MANUAL",
+      volatilityBps: obj.volatilityBps === undefined ? undefined : BigInt(String(obj.volatilityBps)),
+      thresholdBps: obj.thresholdBps === undefined ? undefined : BigInt(String(obj.thresholdBps)),
+      anchorPrice: obj.anchorPrice === undefined ? undefined : BigInt(String(obj.anchorPrice)),
+      incidentStartTs: Number(obj.incidentStartTs ?? 0),
+      detail: obj.detail === undefined ? undefined : String(obj.detail),
+      ts: Number(obj.ts ?? 0),
+    } as Event;
+  } else if (type === "BreakerHalfOpened") {
+    return {
+      type: "BreakerHalfOpened",
+      trigger: String(obj.trigger) as "COOLDOWN" | "RESUME",
+      ts: Number(obj.ts ?? 0),
+    } as Event;
+  } else if (type === "BreakerClosed") {
+    return {
+      type: "BreakerClosed",
+      incidentDurationMs: Number(obj.incidentDurationMs ?? 0),
+      ts: Number(obj.ts ?? 0),
+    } as Event;
+  } else if (type === "BreakerCommandIgnored") {
+    return {
+      type: "BreakerCommandIgnored",
+      command: String(obj.command) as "HaltSymbol" | "ResumeSymbol",
+      reason: String(obj.reason ?? ""),
+      ts: Number(obj.ts ?? 0),
+    } as Event;
+  } else if (type === "HaltTimeoutCancelled") {
+    return {
+      type: "HaltTimeoutCancelled",
+      count: Number(obj.count ?? 0),
+      incidentStartTs: Number(obj.incidentStartTs ?? 0),
+      ts: Number(obj.ts ?? 0),
     } as Event;
   }
 

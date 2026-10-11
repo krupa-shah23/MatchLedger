@@ -11,6 +11,7 @@
     "@matchledger/engine-core": "file:../engine-core",
     "@matchledger/journal": "file:../journal",
     "@matchledger/ledger": "file:../ledger",
+    "@matchledger/recon": "file:../recon",
     "@matchledger/risk": "file:../risk",
     "@matchledger/shard": "file:../shard"
   }

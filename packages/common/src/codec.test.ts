@@ -142,5 +142,33 @@ describe("Codec", () => {
       expect(back.bids).toHaveLength(0);
       expect(back.asks).toHaveLength(0);
     });
+
+    it("CDB1: Tick/HaltSymbol/ResumeSymbol round-trips", () => {
+      const commands = [
+        { type: "Tick", ts: 1000 },
+        { type: "HaltSymbol", reason: "manual halt", ts: 1100 },
+        { type: "ResumeSymbol", ts: 1200 },
+      ] as const;
+
+      for (const cmd of commands) {
+        const json = serializeCommand(cmd as any);
+        const back = deserializeCommand(json);
+        expect(back).toMatchObject(cmd);
+      }
+    });
+
+    it("CDB2: Breaker events round-trip", () => {
+      const events = [
+        { type: "BreakerTripped", reason: "VOLATILITY", thresholdBps: 500n, incidentStartTs: 1000, ts: 2000 },
+        { type: "BreakerHalfOpened", trigger: "COOLDOWN", ts: 1200 },
+        { type: "BreakerClosed", incidentDurationMs: 1500, ts: 3000 },
+      ] as const;
+
+      for (const ev of events) {
+        const json = serializeEvent(ev as any);
+        const back = deserializeEvent(json);
+        expect(back).toMatchObject(ev);
+      }
+    });
   });
 });

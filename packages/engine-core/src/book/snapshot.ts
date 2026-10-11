@@ -1,3 +1,5 @@
+import type { BreakerConfig, BreakerSnapshotState } from "../breaker/types.js";
+
 export type RestingOrderSnapshot = {
   readonly orderId: string;
   readonly accountId: string;
@@ -23,13 +25,17 @@ export type InstrumentSpec = {
 export type SnapshotSpec = InstrumentSpec;
 
 export type BookSnapshot = {
-  readonly version: 1;
+  readonly version: 1 | 2;
   readonly symbol: string;
   readonly spec: SnapshotSpec;
   readonly nextArrivalSeq: number;
   readonly nextTradeSeq: number;
   readonly bids: readonly LevelSnapshot[];
   readonly asks: readonly LevelSnapshot[];
+  readonly breaker?: {
+    readonly config: BreakerConfig;
+    readonly state: BreakerSnapshotState;
+  };
 };
 
 export type SnapshotErrorReason =

@@ -19,7 +19,18 @@ export function serializeCommand(cmd: unknown): string {
     payload.type = "CANCEL";
     payload.orderId = c.orderId;
   } else if (c.kind === "TICK") {
-    payload.type = "TICK";
+    payload.type = "Tick";
+    payload.ts = Number(c.ts ?? 0);
+  } else if (c.type === "Tick") {
+    payload.type = "Tick";
+    payload.ts = Number(c.ts ?? 0);
+  } else if (c.type === "HaltSymbol") {
+    payload.type = "HaltSymbol";
+    payload.reason = c.reason;
+    payload.ts = Number(c.ts ?? 0);
+  } else if (c.type === "ResumeSymbol") {
+    payload.type = "ResumeSymbol";
+    payload.ts = Number(c.ts ?? 0);
   }
 
   const text = JSON.stringify(payload);
@@ -33,7 +44,7 @@ export function deserializeCommand(json: string): Command {
 
   const obj = parsed as Record<string, unknown>;
   const v = obj.v;
-  if (v !== CURRENT_VERSION) throw new Error(`Invalid schema version: ${String(v)}`);
+  if (v !== undefined && v !== 1 && v !== CURRENT_VERSION) throw new Error(`Invalid schema version: ${String(v)}`);
 
   const type = obj.type;
   if (type === "PLACE") {
@@ -54,11 +65,22 @@ export function deserializeCommand(json: string): Command {
       ts: 0n,
       orderId: String(obj.orderId),
     } as Command;
-  } else if (type === "TICK") {
+  } else if (type === "Tick") {
     return {
-      kind: "TICK",
-      ts: 0n,
-    } as Command;
+      type: "Tick",
+      ts: Number(obj.ts ?? 0),
+    } as any;
+  } else if (type === "HaltSymbol") {
+    return {
+      type: "HaltSymbol",
+      reason: String(obj.reason ?? ""),
+      ts: Number(obj.ts ?? 0),
+    } as any;
+  } else if (type === "ResumeSymbol") {
+    return {
+      type: "ResumeSymbol",
+      ts: Number(obj.ts ?? 0),
+    } as any;
   }
 
   throw new Error(`Unknown command type: ${String(type)}`);
