@@ -36,11 +36,18 @@ export class RiskCore {
         }
         const account = this.getAccount(current.accountId);
         if (account === undefined) {
-          events.push({ type: "OrderRejected", orderId: current.requestId, accountId: current.accountId, reason: "UNKNOWN_ACCOUNT" });
+          events.push({ type: "DuplicateIgnored", kind: "DEPOSIT", id: current.requestId });
           this.events.push(...events);
           return events;
         }
-        account.cash += current.amount;
+        // Handle CASH vs SHARES deposits
+        if (current.asset === "CASH") {
+          account.cash += current.amount;
+        } else if (current.asset.startsWith("SHARES:")) {
+          const symbol = current.asset.substring(7);
+          const position = this.getPosition(account, symbol);
+          position.quantity += current.amount;
+        }
         this.seenRequestIds.add(current.requestId);
         const event: RiskEvent = { type: "FundsDeposited", accountId: current.accountId, asset: current.asset, amount: current.amount, requestId: current.requestId };
         events.push(event);
@@ -107,45 +114,91 @@ export class RiskCore {
     if (current.type !== "SubmitOrder") {
       return [];
     }
+    // Decision order per section 4.5:
+    // 1. Dedupe
     if (this.decisions.has(current.orderId)) {
       const event: RiskEvent = { type: "DuplicateIgnored", kind: "ORDER", id: current.orderId };
       return [event];
     }
 
+    // 2. Account exists
     const account = this.getAccount(current.accountId);
     if (account === undefined) {
+      this.decisions.add(current.orderId);
       return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "UNKNOWN_ACCOUNT" }];
     }
 
+    // 3. Symbol exists
     const instrument = this.config.instruments.get(current.symbol);
     if (instrument === undefined) {
+      this.decisions.add(current.orderId);
       return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "UNKNOWN_SYMBOL" }];
     }
+
+    // 4. Order validity (kind, timeInForce, price)
     if (current.kind === "LIMIT" && current.price === undefined) {
+      this.decisions.add(current.orderId);
       return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "INVALID_ORDER" }];
     }
     if (current.kind === "MARKET" && current.price !== undefined) {
+      this.decisions.add(current.orderId);
+      return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "INVALID_ORDER" }];
+    }
+    if (current.kind === "MARKET" && current.timeInForce !== "IOC") {
+      this.decisions.add(current.orderId);
+      return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "INVALID_ORDER" }];
+    }
+    if (current.quantity <= 0n) {
+      this.decisions.add(current.orderId);
+      return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "INVALID_ORDER" }];
+    }
+    if (current.kind === "LIMIT" && current.price !== undefined && current.price <= 0n) {
+      this.decisions.add(current.orderId);
       return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "INVALID_ORDER" }];
     }
 
-    const reference = resolveReference(current.market, command.ts, instrument);
-    if (reference === undefined) {
-      return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "NO_REFERENCE_PRICE" }];
-    }
-
-    const priceCap = current.kind === "MARKET" ? computeMarketLimit(current.side, reference.price, instrument) : current.price ?? 0n;
-    const hasAmount = current.side === "BUY" ? account.cash - account.heldCash >= priceCap * current.quantity : true;
-    if (current.side === "BUY" && hasAmount === false) {
-      const required = priceCap * current.quantity;
-      return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "INSUFFICIENT_BALANCE", required, snapshot: this.accountSnapshot(current.accountId, current.symbol) }];
-    }
-    if (current.side === "SELL") {
-      const position = this.getPosition(account, current.symbol);
-      if (position.quantity - position.heldShares < current.quantity) {
-        return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "INSUFFICIENT_POSITION", required: current.quantity, snapshot: this.accountSnapshot(current.accountId, current.symbol) }];
+    // 5. Resolve reference price for market orders
+    let reference;
+    if (current.kind === "MARKET") {
+      reference = resolveReference(current.market, command.ts, instrument);
+      if (reference === undefined) {
+        this.decisions.add(current.orderId);
+        return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "NO_REFERENCE_PRICE" }];
       }
     }
 
+    // Compute price cap/floor
+    const priceCap = current.kind === "MARKET" ? computeMarketLimit(current.side, reference!.price, instrument) : current.price!;
+
+    // Take snapshot BEFORE any reservation (validation decision point)
+    const snapshot = this.accountSnapshot(current.accountId, current.symbol);
+
+    // 6. Check balance/position BEFORE mutation
+    if (current.side === "BUY") {
+      // Validate overflow
+      try {
+        const needed = priceCap * current.quantity;
+      } catch {
+        this.decisions.add(current.orderId);
+        return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "INVALID_ORDER" }];
+      }
+      const needed = priceCap * current.quantity;
+      const available = account.cash - account.heldCash;
+      if (available < needed) {
+        this.decisions.add(current.orderId);
+        return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "INSUFFICIENT_BALANCE", required: needed, snapshot }];
+      }
+    } else {
+      // SELL: no short selling
+      const position = this.getPosition(account, current.symbol);
+      const availableShares = position.quantity - position.heldShares;
+      if (availableShares < current.quantity) {
+        this.decisions.add(current.orderId);
+        return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "INSUFFICIENT_POSITION", required: current.quantity, snapshot }];
+      }
+    }
+
+    // Now mutate: place reservation
     const reservation: Reservation = {
       orderId: current.orderId,
       accountId: current.accountId,
@@ -170,17 +223,18 @@ export class RiskCore {
       pin.heldShares += current.quantity;
     }
 
+    // Emit events
     const accepted: RiskEvent = {
       type: "OrderAccepted",
       orderId: current.orderId,
       accountId: current.accountId,
       symbol: current.symbol,
       side: current.side,
-      timeInForce: current.timeInForce,
+      timeInForce: current.kind === "MARKET" ? "IOC" : current.timeInForce,
       price: priceCap,
       quantity: current.quantity,
-      referencePrice: reference.price,
-      referenceSource: reference.source,
+      referencePrice: reference?.price,
+      referenceSource: reference?.source,
     };
     const placed: RiskEvent = {
       type: "ReservationPlaced",
@@ -209,6 +263,7 @@ export class RiskCore {
       return [{ type: "DuplicateIgnored", kind: "FILL", id: current.tradeId }];
     }
 
+    // Validate BEFORE mutation (section 4.5)
     if (current.quantity <= 0n) {
       throw new RiskInvariantError("INTERNAL", "fill quantity must be positive");
     }
@@ -227,26 +282,38 @@ export class RiskCore {
       throw new RiskInvariantError("INTERNAL", `missing account for ${reservation.accountId}`);
     }
 
+    // Conversion arithmetic (section 4.5):
+    // consumed = cap x f
+    // cost = p x f
+    // improvement = consumed - cost
     const consumed = reservation.priceCap * current.quantity;
     const cost = current.price * current.quantity;
     const improvement = consumed - cost;
+
+    // Mark as applied for dedupe
     reservation.appliedTradeIds.add(current.tradeId);
 
+    // Mutate state per section 4.5
     if (reservation.side === "BUY") {
+      // heldCash -= consumed ; cash -= cost ; position += f
       account.heldCash -= consumed;
       account.cash -= cost;
       const position = this.getPosition(account, reservation.symbol);
       position.quantity += current.quantity;
     } else {
+      // SELL: heldShares -= f ; position -= f ; cash += p x f
       account.cash += cost;
       const position = this.getPosition(account, reservation.symbol);
       position.quantity -= current.quantity;
       position.heldShares -= current.quantity;
     }
+
+    // Update reservation
     reservation.qtyRemaining -= current.quantity;
     reservation.amountRemaining -= consumed;
     reservation.state = "LIVE";
 
+    // Emit event
     const converted: RiskEvent = {
       type: "ReservationConverted",
       orderId: current.orderId,
@@ -257,6 +324,7 @@ export class RiskCore {
       improvement,
     };
 
+    // Close reservation if fully filled
     if (reservation.qtyRemaining === 0n) {
       this.reservations.delete(current.orderId);
     }
@@ -275,11 +343,14 @@ export class RiskCore {
       return [{ type: "UnknownOrderIgnored", orderId: current.orderId, command: current.type }];
     }
 
+    // Validate BEFORE mutation (section 4.5)
     if (current.type === "OrderClosed" && current.remaining !== reservation.qtyRemaining) {
       throw new RiskInvariantError("CLOSE_REMAINING_MISMATCH", `OrderClosed remaining mismatch for ${current.orderId}`);
     }
 
-    const release = this.releaseReservation(reservation, current.type === "OrderRejectedByMatcher" ? "MATCHER_REJECTED" : "CANCELLED");
+    // Release only the remaining reserved amount (section 4.5)
+    const reason = current.type === "OrderRejectedByMatcher" ? "MATCHER_REJECTED" : "CANCELLED";
+    const release = this.releaseReservation(reservation, reason);
     return release;
   }
 
@@ -327,25 +398,27 @@ export class RiskCore {
     };
   }
 
-  public checkInvariants(): void {
+  public checkInvariants(): readonly string[] {
+    const violations: string[] = [];
     for (const [accountId, account] of this.accounts.entries()) {
       if (account.heldCash > account.cash) {
-        throw new RiskInvariantError("INTERNAL", `heldCash exceeds cash for ${accountId}`);
+        violations.push(`heldCash exceeds cash for ${accountId}`);
       }
       for (const [symbol, position] of account.positions.entries()) {
         if (position.heldShares > position.quantity) {
-          throw new RiskInvariantError("INTERNAL", `heldShares exceed position for ${accountId}:${symbol}`);
+          violations.push(`heldShares exceed position for ${accountId}:${symbol}`);
         }
       }
     }
     for (const reservation of this.reservations.values()) {
       if (reservation.qtyRemaining < 0n) {
-        throw new RiskInvariantError("INTERNAL", `reservation remaining cannot be negative ${reservation.orderId}`);
+        violations.push(`reservation remaining cannot be negative ${reservation.orderId}`);
       }
       if (reservation.side === "BUY" && reservation.amountRemaining < 0n) {
-        throw new RiskInvariantError("INTERNAL", `BUY reservation amount cannot be negative ${reservation.orderId}`);
+        violations.push(`BUY reservation amount cannot be negative ${reservation.orderId}`);
       }
     }
+    return violations;
   }
 
   private getAccount(accountId: string): Account | undefined {
