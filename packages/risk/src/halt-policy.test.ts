@@ -28,7 +28,7 @@ describe("halt policy (HA series)", () => {
     c.apply({ partition: 0, seq: 3, ts: 50, command: { type: "SubmitOrder", orderId: "o1", accountId: "a", symbol: "T", side: "BUY", kind: "LIMIT", timeInForce: "GTC", quantity: 10n, price: 100n, market: { lastTradePrice: 100n, lastTradeTs: 30, bestBid: 95n, bestAsk: 105n } } });
     const held1 = c.view("a").heldCash;
     c.haltedSymbols.add("T");
-    const ev = c.apply({ partition: 0, seq: 4, ts: 50, command: { type: "OrderClosed", orderId: "o1", remaining: 10n, reason: "USER_CANCEL" } });
+    const ev = c.apply({ partition: 0, seq: 4, ts: 50, command: { type: "OrderClosed", orderId: "o1", remaining: 10n, reason: "CANCELLED" } });
     const held2 = c.view("a").heldCash;
     expect(held1).toBeGreaterThan(0n);
     expect(held2).toBeLessThan(held1);
