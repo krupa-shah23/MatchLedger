@@ -18,6 +18,10 @@ export type RecoveredStreamState = {
   readonly lastTs: number;
 };
 
+export type BreakerConfigState = {
+  readonly closed?: boolean;
+};
+
 export type ShardRunnerOptions = {
   readonly symbols: ReadonlyMap<string, InstrumentConfig>;
   readonly clock: Clock;
@@ -30,6 +34,7 @@ export type ShardRunnerOptions = {
   readonly bookFactory?: (symbol: string, spec: InstrumentConfig) => BookLike;
   readonly recovered?: RecoveredState;
   readonly afterBatch?: (ctx: AfterBatchContext) => Promise<void>;
+  readonly breakerConfigs?: ReadonlyMap<string, BreakerConfigState>;
 };
 
 type Queued = { readonly symbol: string; readonly command: EngineCommand };
@@ -78,6 +83,22 @@ export class ShardRunner {
   public get state(): RunnerState { return this.runnerState; }
   public get discarded(): number { return this.discardedCount; }
   public get done(): Promise<ShardExit> { return this.donePromise; }
+
+  public symbolsNeedingTicks(): readonly string[] {
+    const symbols: string[] = [];
+    for (const symbol of this.opts.symbols.keys()) {
+      const breakerState = this.opts.breakerConfigs?.get(symbol);
+      if (breakerState?.closed === true) continue;
+      const book = this.books.get(symbol);
+      const requiresTick = typeof (book as { needsTick?: () => boolean } | undefined)?.needsTick === "function"
+        ? (book as { needsTick: () => boolean }).needsTick()
+        : true;
+      if (requiresTick) {
+        symbols.push(symbol);
+      }
+    }
+    return symbols;
+  }
 
   public tryEnqueue(symbol: string, command: EngineCommand): EnqueueResult {
     if (this.runnerState === "STOPPING" || this.runnerState === "STOPPED" || this.runnerState === "FAILED" || this.queue.isClosed) {
