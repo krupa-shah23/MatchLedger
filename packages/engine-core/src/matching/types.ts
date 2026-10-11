@@ -44,7 +44,7 @@ export type RejectReason =
   | "EXCEEDS_MAX_QUANTITY"
   | "EXCEEDS_MAX_PRICE";
 
-export type CancelReason = "USER_REQUEST" | "IOC_REMAINDER";
+export type CancelReason = "USER_REQUEST" | "IOC_REMAINDER" | "HALT_TIMEOUT";
 export type CancelRejectReason = "ORDER_NOT_RESTING";
 
 export interface OrderAccepted {

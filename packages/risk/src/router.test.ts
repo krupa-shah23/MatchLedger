@@ -99,6 +99,7 @@ describe("engine event router", () => {
         quantity: 3n,
         buyerAccountId: "buyer",
         sellerAccountId: "maker",
+        ts: 10,
       },
     ]);
   });
@@ -184,5 +185,16 @@ describe("engine event router", () => {
     const result = router.onShardOutputs([batch]);
     expect(result.notices[0]).toEqual({ accountId: "seller", command: { type: "OrderAcked", orderId: "a1" } });
     expect(marketView.snapshotFor("ACME")).toEqual({ lastTradePrice: 102n, lastTradeTs: 10, bestBid: 100n });
+  });
+
+  it("RT10: HALT_TIMEOUT cancellations release reservations as OrderClosed with the halt timeout reason", () => {
+    const router = new EngineEventRouter({ marketView: new MarketView() });
+    router.registerOrder("h1", { accountId: "holder", symbol: "ACME", side: "BUY" });
+    const result = router.onShardOutputs([
+      output("ACME", 1, [{ type: "ORDER_CANCELLED", engineSeq: 9n, ts: 9n, orderId: "h1", remaining: 2n, reason: "HALT_TIMEOUT" }]),
+    ]);
+    expect(result.notices).toStrictEqual([
+      { accountId: "holder", command: { type: "OrderClosed", orderId: "h1", remaining: 2n, reason: "HALT_TIMEOUT" } },
+    ]);
   });
 });

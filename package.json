@@ -19,6 +19,7 @@
     "bench": "npm --workspace @matchledger/benchmarks run bench"
   },
   "devDependencies": {
+    "@types/node": "26.6.5",
     "eslint": "10.11.0",
     "fast-check": "4.10.2",
     "typescript": "6.0.3",

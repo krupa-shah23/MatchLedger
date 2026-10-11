@@ -21,6 +21,7 @@ export type TradePosting = {
   readonly quantity: bigint;
   readonly buyerAccountId: string;
   readonly sellerAccountId: string;
+  readonly ts?: number;
 };
 
 export type RouterResult = {
@@ -128,6 +129,7 @@ export class EngineEventRouter {
               quantity: event.quantity,
               buyerAccountId,
               sellerAccountId,
+              ts: output.ts,
             });
 
             const takerRemaining = (event as { takerRemaining?: bigint }).takerRemaining;
@@ -147,7 +149,7 @@ export class EngineEventRouter {
               ignoredOrders += 1;
               continue;
             }
-            const reason = event.reason === "IOC_REMAINDER" ? "IOC_REMAINDER" : "CANCELLED";
+            const reason = event.reason === "IOC_REMAINDER" ? "IOC_REMAINDER" : event.reason === "HALT_TIMEOUT" ? "HALT_TIMEOUT" : "CANCELLED";
             notices.push({
               accountId: owner.accountId,
               command: {

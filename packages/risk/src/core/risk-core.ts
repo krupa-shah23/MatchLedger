@@ -7,10 +7,12 @@ import type { Account, Reservation, RiskSnapshot } from "./state.js";
 export class RiskCore {
   public readonly decisions = new Set<string>();
   public readonly seenRequestIds = new Set<string>();
+  public readonly haltedSymbols = new Set<string>();
   public readonly accounts = new Map<string, Account>();
   public readonly reservations = new Map<string, Reservation>();
   public readonly events: RiskEvent[] = [];
   public readonly commandLog: RiskCommand[] = [];
+  public readonly adjustmentIds = new Set<string>();
 
   public constructor(private readonly config: RiskConfig = { instruments: new Map() }) {}
 
@@ -54,6 +56,20 @@ export class RiskCore {
         this.events.push(event);
         break;
       }
+      case "HaltSymbol": {
+        this.haltedSymbols.add(current.symbol);
+        const event: RiskEvent = { type: "SymbolStatusChanged", symbol: current.symbol, status: "HALTED", reason: current.reason };
+        events.push(event);
+        this.events.push(event);
+        break;
+      }
+      case "ResumeSymbol": {
+        this.haltedSymbols.delete(current.symbol);
+        const event: RiskEvent = { type: "SymbolStatusChanged", symbol: current.symbol, status: "ACTIVE" };
+        events.push(event);
+        this.events.push(event);
+        break;
+      }
       case "SubmitOrder": {
         const result = this.onSubmitOrder(command);
         this.events.push(...result);
@@ -76,6 +92,11 @@ export class RiskCore {
       }
       case "OrderRejectedByMatcher": {
         const result = this.onClose(command);
+        this.events.push(...result);
+        return result;
+      }
+      case "ApplyAdjustment": {
+        const result = this.applyAdjustment(command);
         this.events.push(...result);
         return result;
       }
@@ -133,6 +154,13 @@ export class RiskCore {
     if (instrument === undefined) {
       this.decisions.add(current.orderId);
       return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "UNKNOWN_SYMBOL" }];
+    }
+
+    // 3a. Symbol is halted; reject before reservation is ever created.
+    if (this.haltedSymbols.has(current.symbol)) {
+      const snapshot = this.accountSnapshot(current.accountId, current.symbol);
+      this.decisions.add(current.orderId);
+      return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "SYMBOL_HALTED", snapshot }];
     }
 
     // 4. Order validity (kind, timeInForce, price)
@@ -420,6 +448,47 @@ export class RiskCore {
       }
     }
     return violations;
+  }
+
+  private applyAdjustment(command: StampedRiskCommand): readonly RiskEvent[] {
+    const current = command.command;
+    if (current.type !== "ApplyAdjustment") {
+      return [];
+    }
+
+    if (this.adjustmentIds.has(current.adjustmentId)) {
+      return [{ type: "AdjustmentRejected", accountId: current.accountId, asset: current.asset, amount: current.amount, adjustmentId: current.adjustmentId, reason: "HOLD_INVARIANT" }];
+    }
+
+    const account = this.getAccount(current.accountId);
+    if (account === undefined) {
+      return [{ type: "AdjustmentRejected", accountId: current.accountId, asset: current.asset, amount: current.amount, adjustmentId: current.adjustmentId, reason: "UNKNOWN_ACCOUNT" }];
+    }
+    if (current.amount === 0n) {
+      return [{ type: "AdjustmentRejected", accountId: current.accountId, asset: current.asset, amount: current.amount, adjustmentId: current.adjustmentId, reason: "ZERO_AMOUNT" }];
+    }
+
+    if (current.asset === "CASH") {
+      if (account.cash + current.amount < account.heldCash) {
+        return [{ type: "AdjustmentRejected", accountId: current.accountId, asset: current.asset, amount: current.amount, adjustmentId: current.adjustmentId, reason: "HOLD_INVARIANT" }];
+      }
+      account.cash += current.amount;
+      this.adjustmentIds.add(current.adjustmentId);
+      return [{ type: "AccountAdjusted", accountId: current.accountId, asset: current.asset, amount: current.amount, adjustmentId: current.adjustmentId }];
+    }
+
+    if (current.asset.startsWith("SHARES:")) {
+      const symbol = current.asset.slice("SHARES:".length);
+      const position = this.getPosition(account, symbol);
+      if (position.quantity + current.amount < position.heldShares) {
+        return [{ type: "AdjustmentRejected", accountId: current.accountId, asset: current.asset, amount: current.amount, adjustmentId: current.adjustmentId, reason: "HOLD_INVARIANT" }];
+      }
+      position.quantity += current.amount;
+      this.adjustmentIds.add(current.adjustmentId);
+      return [{ type: "AccountAdjusted", accountId: current.accountId, asset: current.asset, amount: current.amount, adjustmentId: current.adjustmentId }];
+    }
+
+    return [{ type: "AdjustmentRejected", accountId: current.accountId, asset: current.asset, amount: current.amount, adjustmentId: current.adjustmentId, reason: "UNKNOWN_ACCOUNT" }];
   }
 
   private getAccount(accountId: string): Account | undefined {

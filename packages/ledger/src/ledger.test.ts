@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { MAX_AMOUNT } from "@matchledger/common";
 
-import { EXTERNAL, Ledger, UnbalancedTransactionError } from "./ledger.js";
+import { EXTERNAL, Ledger, SUSPENSE, UnbalancedTransactionError } from "./ledger.js";
 
 describe("ledger", () => {
   it("LG1: balanced deposit and trade are accepted", () => {
@@ -154,5 +154,15 @@ describe("ledger", () => {
       "e3",
     );
     expect(ledger.balance("A", "SHARES:ACME") + ledger.balance("B", "SHARES:ACME") + ledger.balance(EXTERNAL, "SHARES:ACME")).toBe(0n);
+  });
+
+  it("LG9: postAdjustment creates a balanced suspense leg and preserves asset totals", () => {
+    const ledger = new Ledger();
+    ledger.postDeposit({ accountId: "A", asset: "CASH", amount: 1000n, requestId: "debit-1", refEventId: "e1" });
+    expect(ledger.postAdjustment({ adjustmentId: "adj-1", accountId: "A", asset: "CASH", amount: 250n, refEventId: "e2" }).posted).toBe(true);
+    expect(ledger.balance("A", "CASH")).toBe(1250n);
+    expect(ledger.balance(SUSPENSE, "CASH")).toBe(-250n);
+    expect(ledger.assetTotal("CASH")).toBe(0n);
+    expect(ledger.checkInvariants()).toStrictEqual([]);
   });
 });

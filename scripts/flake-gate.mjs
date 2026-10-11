@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 const DEFAULT_RUNS = 20;
-const DEFAULT_PATHS = ["packages/api", "packages/shard", "packages/risk", "packages/common", "packages/ledger", "packages/system-tests"];
+const DEFAULT_PATHS = ["packages/api", "packages/shard", "packages/risk", "packages/common", "packages/ledger", "packages/recon", "packages/system-tests"];
 
 const args = process.argv.slice(2);
 

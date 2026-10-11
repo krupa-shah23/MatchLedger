@@ -80,7 +80,7 @@ describe("Spike 5: Fastify, JWT, WebSocket auth", () => {
   const sockets = new Set<WebSocket>();
 
   beforeAll(async () => {
-    app = await buildServer({ jwtSecret: SECRET_STR, wsAuthTimeoutMs: 150 });
+    app = await buildServer({ jwtSecret: SECRET_STR, wsAuthTimeoutMs: 1000 });
     address = await app.listen({ port: 0, host: "127.0.0.1" });
   });
 

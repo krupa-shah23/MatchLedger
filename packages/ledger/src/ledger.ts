@@ -23,9 +23,11 @@ export type TradePosting = {
   quantity: bigint;
   buyerAccountId: string;
   sellerAccountId: string;
+  ts?: number;
 };
 
 export const EXTERNAL = "@EXTERNAL";
+export const SUSPENSE = "@SUSPENSE";
 
 export class UnbalancedTransactionError extends Error {
   public constructor(message = "Transaction legs do not sum to zero per asset") {
@@ -111,6 +113,20 @@ export class Ledger {
         { accountId: t.sellerAccountId, asset: "CASH", amount: price * quantity },
         { accountId: t.buyerAccountId, asset: `SHARES:${t.symbol}`, amount: quantity },
         { accountId: t.sellerAccountId, asset: `SHARES:${t.symbol}`, amount: -quantity },
+      ],
+    });
+  }
+
+  public postAdjustment(args: { adjustmentId: string; accountId: string; asset: string; amount: bigint; refEventId: string }): { posted: boolean } {
+    if (args.amount === 0n) {
+      throw new RangeError("Adjustment amount must be non-zero");
+    }
+    return this.post({
+      txId: `adj:${args.adjustmentId}`,
+      refEventId: args.refEventId,
+      legs: [
+        { accountId: args.accountId, asset: args.asset, amount: args.amount },
+        { accountId: SUSPENSE, asset: args.asset, amount: -args.amount },
       ],
     });
   }

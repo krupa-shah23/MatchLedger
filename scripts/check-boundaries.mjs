@@ -57,6 +57,24 @@ for (const path of await findTypeScriptFiles("packages/common/src")) {
   }
 }
 
+for (const path of await findTypeScriptFiles("packages/recon/src/core")) {
+  if (path.endsWith(".test.ts") || path.endsWith(".spec.ts")) {
+    continue;
+  }
+  const source = await readFile(path, "utf8");
+  if (/\bfrom\s+["']node:|import\s+["']node:/.test(source) || /\bfrom\s+["']@matchledger\/[A-Za-z0-9_-]+["']/.test(source) && !/\bfrom\s+["']@matchledger\/common["']/.test(source)) {
+    errors.push(`${path}: recon core may only import type from @matchledger/common and no node:* imports`);
+  }
+  for (const banned of ["Date", "Math.random", "setTimeout", "setInterval", "setImmediate", "queueMicrotask", "process", "crypto", "fetch"]) {
+    if (new RegExp(`\\b${banned}\\b`).test(source)) {
+      errors.push(`${path}: ${banned} is forbidden in recon core`);
+    }
+  }
+  if (/\bawait\b|\bPromise\b|\bnew\s+Promise\b/.test(source)) {
+    errors.push(`${path}: recon core must remain synchronous and promise-free`);
+  }
+}
+
 if (errors.length > 0) {
   console.error(`Dependency boundary check failed:\n${errors.map((error) => `- ${error}`).join("\n")}`);
   process.exit(1);

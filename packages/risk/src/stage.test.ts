@@ -58,4 +58,65 @@ describe("risk stage basics", () => {
     expect(journal.all()).toHaveLength(2);
     expect(stage.state).toBe("STOPPED");
   });
+
+  it("rejects new submits for halted symbols before placing a reservation", async () => {
+    const journal = new InMemoryRiskJournal();
+    const stage = new RiskStage({
+      partitions: 2,
+      config,
+      clock: { now: () => 50 },
+      journalFor: () => journal,
+      outbox: { publish: async () => undefined },
+      marketInput: () => ({ lastTradePrice: 100n, lastTradeTs: 30, bestBid: 95n, bestAsk: 105n }),
+      commandCapacity: 8,
+      maxBatch: 2,
+    });
+
+    stage.start();
+    expect(stage.openAccount("acct-2")).toBe("ACCEPTED");
+    const partition = stage.core(0);
+    partition.apply({
+      partition: 0,
+      seq: 1,
+      ts: 50,
+      command: { type: "OpenAccount", accountId: "acct-2" },
+    });
+    partition.haltedSymbols.add("ACME");
+    const events = partition.onSubmitOrder({
+      partition: 0,
+      seq: 2,
+      ts: 50,
+      command: {
+        type: "SubmitOrder",
+        orderId: "o-halt",
+        accountId: "acct-2",
+        symbol: "ACME",
+        side: "BUY",
+        kind: "LIMIT",
+        timeInForce: "GTC",
+        quantity: 2n,
+        price: 101n,
+        market: { lastTradePrice: 100n, lastTradeTs: 30, bestBid: 95n, bestAsk: 105n },
+      },
+    });
+
+    expect(events).toStrictEqual([
+      {
+        type: "OrderRejected",
+        orderId: "o-halt",
+        accountId: "acct-2",
+        reason: "SYMBOL_HALTED",
+        snapshot: {
+          cash: 0n,
+          heldCash: 0n,
+          availableCash: 0n,
+          positionQuantity: 0n,
+          heldShares: 0n,
+          availableShares: 0n,
+        },
+      },
+    ]);
+    expect(partition.reservations.size).toBe(0);
+    await stage.stop({ drain: true });
+  });
 });

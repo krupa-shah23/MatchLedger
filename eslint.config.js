@@ -16,5 +16,5 @@ export default [
     "no-restricted-syntax": ["error", { selector: "AwaitExpression", message: "engine-core is synchronous" }, { selector: "FunctionDeclaration[async=true], FunctionExpression[async=true], ArrowFunctionExpression[async=true]", message: "engine-core is synchronous" }, { selector: "NewExpression[callee.name='Promise']", message: "engine-core is synchronous" }],
     "no-restricted-imports": ["error", { patterns: [{ regex: "^(node:|[^./])", message: "engine-core imports only relative own files" }] }],
   } },
-  { files: ["packages/risk/src/core/**/*.ts", "packages/ledger/src/**/*.ts"], rules: pureRestrictedRules },
+  { files: ["packages/risk/src/core/**/*.ts", "packages/ledger/src/**/*.ts", "packages/recon/src/core/**/*.ts"], ignores: ["**/*.test.ts", "**/*.spec.ts"], rules: pureRestrictedRules },
 ];

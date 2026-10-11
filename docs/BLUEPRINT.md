@@ -414,7 +414,7 @@ Lockfile is law. Commit package-lock.json, install with npm ci in CI and Docker,
 Pin the runtime. .nvmrc and "engines": { "node": ">=24 <25" } in the root package.json, and the same Node major in the Dockerfile and CI.
 Pin the toolchain as a set. TypeScript, ESLint, typescript-eslint, Vitest and Vite move together. Upgrade them in one dedicated commit, after checking each one's peer ranges with npm view.
 Ignore automatic major bumps of TypeScript, ESLint and the Kafka client until you have read the peer ranges (4.5, items 1 and 2). If you use Dependabot or Renovate, configure ignore rules for those majors.
-There are twelve backend packages plus the web/ app in one npm workspaces monorepo. The circuit breaker is a folder inside engine-core (engine-core/src/breaker), not a package. The new `packages/system-tests` workspace exists only for cross-package wiring tests without creating a forbidden dependency edge, so it may import the engine and the backend packages but no package may import it. Respect the dependency map below:
+There are twelve backend packages plus the web/ app in one npm workspaces monorepo. The circuit breaker is a folder inside engine-core (engine-core/src/breaker), not a package. The new `packages/system-tests` workspace exists only for cross-package wiring tests without creating a forbidden dependency edge, so it may import the engine and the backend packages but no package may import it. The new `packages/recon/src/core/**` pure-zone is also linted separately: it may import type-only `@matchledger/common`, it may not import `node:*`, and it cannot use `Date`, `Math.random`, `await`, `Promise`, `setTimeout`, or any other forbidden runtime API. Respect the dependency map below:
 Package
 May depend on
 Must not depend on

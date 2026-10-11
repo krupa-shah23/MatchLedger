@@ -2,11 +2,20 @@
 
 ## Week 7 — V1-V5 status and decisions
 
+### Current task status
+
+- Added the missing risk adjustment path and recon preview/resolve workflow support to complete the Week 7 adjustment contract.
+- Tightened the new typed command objects so the repo-wide TypeScript check accepts the literal risk command shapes.
+- Aligned the trade-posting router expectation with the contract that includes the trade timestamp in each `TradePosting`.
+- Verified with `npm run build && npm run lint && npm run check:boundaries && npm test && npm run test:flake`.
+- Status: green. No deferred items from this patch.
+
 ### Week 7 implementation status
 
 - Implemented `Breaker` state machine in [packages/engine-core/src/breaker/breaker.ts](packages/engine-core/src/breaker/breaker.ts): closed/open/half-open transitions, rolling-window volatility detection, manual halt/resume, cooldown, stable-close behavior, and halt-timeout handling.
 - Updated the independent differential model in [packages/engine-core/test/reference-breaker.ts](packages/engine-core/test/reference-breaker.ts) to follow the same contract for property-based validation.
 - Corrected the invalid-config assertion in [packages/engine-core/test/breaker.test.ts](packages/engine-core/test/breaker.test.ts) to reflect the actual config validation rule.
+- Implemented the halt-policy contract in the risk stage: early `SYMBOL_HALTED` rejection before reservation creation and `HALT_TIMEOUT` release mapping through the router.
 - Verified with `npm run build && npm run lint && npm run check:boundaries && npm test`; the repo is green and the breaker suite passes.
 
 | # | Check | Status | Decision |
@@ -311,4 +320,13 @@ The API websocket test was racing the socket lifecycle: it sent the auth message
   - `npm run test:flake` → passed with 20/20 green runs.
 - Deviation from the hand-written Week 6 implementation: the lifecycle logic remains intentionally deferred to honor the stub contract and the user’s review handoff.
 - Status: green stubbed checkpoint; implementation is ready for the next explicit REVIEW/hand-write step.
+
+## Final status — recon + flake gate fix
+
+- Added the missing Node typings and TS global type config in [tsconfig.base.json](tsconfig.base.json) and [package.json](package.json), which resolved the recon build break from missing `Buffer`/`node:crypto` declarations.
+- Hardened the matcher guard in [packages/recon/src/core/matcher.ts](packages/recon/src/core/matcher.ts) to handle `noUncheckedIndexedAccess` explicitly before reading the first statement row.
+- Included the recon package in the lint and flake gate paths via [eslint.config.js](eslint.config.js) and [scripts/flake-gate.mjs](scripts/flake-gate.mjs), and kept the recon purity rule focused on source code while excluding legitimate test files from the pure-zone gate.
+- Stabilized the WebSocket auth flake in [packages/api/src/index.test.ts](packages/api/src/index.test.ts) by using a deterministic auth timeout that leaves enough time for the socket to open and for the valid token flow to complete before server-side timeout enforcement.
+- Verified with `npm run build && npm run lint && npm run check:boundaries && npm test && npm run test:flake`.
+- Result: green across the full repo gate; the flake gate reported 20/20 green.
 

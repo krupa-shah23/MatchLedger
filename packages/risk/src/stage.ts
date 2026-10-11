@@ -112,6 +112,10 @@ export class RiskStage {
     return this.enqueueCommand({ type: "Deposit", accountId, asset, amount, requestId });
   }
 
+  public adjust(accountId: string, asset: string, amount: bigint, adjustmentId: string): EnqueueResult {
+    return this.enqueueCommand({ type: "ApplyAdjustment", accountId, asset, amount, adjustmentId });
+  }
+
   public notify(notice: { readonly accountId: string; readonly command: RiskCommand }): EnqueueResult {
     if (this.state === "STOPPED" || this.state === "FAILED") {
       return "CLOSED";

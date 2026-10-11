@@ -47,13 +47,17 @@ export type RiskRejectReason =
   | "NO_REFERENCE_PRICE"
   | "UNKNOWN_ACCOUNT"
   | "UNKNOWN_SYMBOL"
-  | "INVALID_ORDER";
+  | "INVALID_ORDER"
+  | "SYMBOL_HALTED"
+  | "ZERO_AMOUNT"
+  | "HOLD_INVARIANT";
 
 export type ReleaseReason =
   | "CANCELLED"
   | "IOC_REMAINDER"
   | "MATCHER_REJECTED"
-  | "NEVER_REACHED_MATCHER";
+  | "NEVER_REACHED_MATCHER"
+  | "HALT_TIMEOUT";
 
 export type RiskCommand =
   | { readonly type: "OpenAccount"; readonly accountId: string }
@@ -70,10 +74,13 @@ export type RiskCommand =
       readonly price?: bigint;
       readonly market: MarketInput;
     }
+  | { readonly type: "HaltSymbol"; readonly symbol: string; readonly reason?: string }
+  | { readonly type: "ResumeSymbol"; readonly symbol: string }
   | { readonly type: "OrderAcked"; readonly orderId: string }
   | { readonly type: "FillApplied"; readonly orderId: string; readonly tradeId: string; readonly price: bigint; readonly quantity: bigint }
   | { readonly type: "OrderClosed"; readonly orderId: string; readonly remaining: bigint; readonly reason: ReleaseReason }
   | { readonly type: "OrderRejectedByMatcher"; readonly orderId: string; readonly reason: string }
+  | { readonly type: "ApplyAdjustment"; readonly adjustmentId: string; readonly accountId: string; readonly asset: string; readonly amount: bigint }
   | { readonly type: "SweepProbe"; readonly olderThanMs: number }
   | { readonly type: "ReleaseUnreached"; readonly orderId: string };
 
@@ -128,6 +135,34 @@ export type RiskEvent =
       readonly amount: bigint;
       readonly quantity: bigint;
       readonly reason: ReleaseReason;
+    }
+  | {
+      readonly type: "AccountAdjusted";
+      readonly accountId: string;
+      readonly asset: string;
+      readonly amount: bigint;
+      readonly adjustmentId: string;
+    }
+  | {
+      readonly type: "AdjustmentRejected";
+      readonly accountId: string;
+      readonly asset: string;
+      readonly amount: bigint;
+      readonly adjustmentId: string;
+      readonly reason: RiskRejectReason;
+    }
+  | {
+      readonly type: "SymbolStatusChanged";
+      readonly symbol: string;
+      readonly status: "ACTIVE" | "HALTED";
+      readonly reason?: string;
+    }
+  | {
+      readonly type: "HaltTimeoutCancelled";
+      readonly symbol: string;
+      readonly count: number;
+      readonly incidentStartTs: number;
+      readonly ts: number;
     }
   | { readonly type: "SweepCandidates"; readonly candidates: readonly Readonly<{ readonly orderId: string; readonly symbol: string }>[] }
   | { readonly type: "DuplicateIgnored"; readonly kind: "ORDER" | "FILL" | "DEPOSIT"; readonly id: string }
