@@ -114,6 +114,27 @@ describe("breaker stub contract", () => {
     expect(() => breaker.needsTick()).not.toThrow();
   });
 
+  it("K7: breaker state replays deterministically from a log", () => {
+    const b1 = new Breaker(config);
+    const b2 = new Breaker(config);
+    const trades = [100n, 101n, 100n, 102n, 100n];
+    b1.onTrades(trades, 1_000);
+    b1.advance(11_000);
+    b1.advance(16_000);
+    b2.onTrades(trades, 1_000);
+    b2.advance(11_000);
+    b2.advance(16_000);
+    expect(b1.needsTick()).toBe(b2.needsTick());
+  });
+
+  it("K9: manual halt and resume stays open until stable", () => {
+    const breaker = new Breaker(config);
+    breaker.halt("manual", 2_000);
+    expect(() => breaker.advance(9_000)).not.toThrow();
+    breaker.resume(9_000);
+    expect(() => breaker.advance(14_000)).not.toThrow();
+  });
+
   it("D2: differential reference-breaker stays in sync on random sequences", () => {
     fc.assert(
       fc.property(

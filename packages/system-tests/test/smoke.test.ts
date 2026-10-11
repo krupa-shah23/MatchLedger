@@ -72,4 +72,36 @@ describe("system-tests smoke", () => {
     expect(rejected.status).toBe("ADJUSTMENT_REJECTED");
     expect(rejected.workflow.status).toBe("OPEN");
   });
+
+  it("K10: halt with resting orders reserves cash", () => {
+    const cfg = { instruments: new Map([["T", { symbol: "T", tickSize: 1n, protectionBandBps: 100n, maxBandBps: 200n, maxReferenceAgeMs: 200 }]]) };
+    const c = new RiskCore(cfg);
+    c.apply({ partition: 0, seq: 1, ts: 50, command: { type: "OpenAccount", accountId: "buyer" } });
+    c.apply({ partition: 0, seq: 2, ts: 50, command: { type: "Deposit", accountId: "buyer", asset: "CASH", amount: 10000n, requestId: "d1" } });
+    c.apply({ partition: 0, seq: 3, ts: 50, command: { type: "SubmitOrder", orderId: "o1", accountId: "buyer", symbol: "T", side: "BUY", kind: "LIMIT", timeInForce: "GTC", quantity: 10n, price: 100n, market: { lastTradePrice: 100n, lastTradeTs: 30, bestBid: 95n, bestAsk: 105n } } });
+    expect(c.reservations.size).toBeGreaterThan(0);
+  });
+
+  it("K11: halted order rejected before risk accepts", () => {
+    const cfg = { instruments: new Map([["T", { symbol: "T", tickSize: 1n, protectionBandBps: 100n, maxBandBps: 200n, maxReferenceAgeMs: 200 }]]) };
+    const c = new RiskCore(cfg);
+    c.apply({ partition: 0, seq: 1, ts: 50, command: { type: "OpenAccount", accountId: "a" } });
+    c.apply({ partition: 0, seq: 2, ts: 50, command: { type: "Deposit", accountId: "a", asset: "CASH", amount: 1000n, requestId: "d1" } });
+    c.haltedSymbols.add("T");
+    const ev = c.apply({ partition: 0, seq: 3, ts: 50, command: { type: "SubmitOrder", orderId: "o1", accountId: "a", symbol: "T", side: "BUY", kind: "LIMIT", timeInForce: "GTC", quantity: 10n, price: 100n, market: { lastTradePrice: 100n, lastTradeTs: 30, bestBid: 95n, bestAsk: 105n } } });
+    expect(ev.some(e => e.type === "OrderRejected")).toBe(true);
+  });
+
+  it("K12: halt_timeout releases all reserves", () => {
+    const cfg = { instruments: new Map([["T", { symbol: "T", tickSize: 1n, protectionBandBps: 100n, maxBandBps: 200n, maxReferenceAgeMs: 200 }]]) };
+    const c = new RiskCore(cfg);
+    c.apply({ partition: 0, seq: 1, ts: 50, command: { type: "OpenAccount", accountId: "a" } });
+    c.apply({ partition: 0, seq: 2, ts: 50, command: { type: "Deposit", accountId: "a", asset: "CASH", amount: 10000n, requestId: "d1" } });
+    c.apply({ partition: 0, seq: 3, ts: 50, command: { type: "SubmitOrder", orderId: "o1", accountId: "a", symbol: "T", side: "BUY", kind: "LIMIT", timeInForce: "GTC", quantity: 10n, price: 100n, market: { lastTradePrice: 100n, lastTradeTs: 30, bestBid: 95n, bestAsk: 105n } } });
+    const h1 = c.view("a").heldCash;
+    c.apply({ partition: 0, seq: 4, ts: 50, command: { type: "OrderClosed", orderId: "o1", remaining: 10n, reason: "HALT_TIMEOUT" } });
+    const h2 = c.view("a").heldCash;
+    expect(h1).toBeGreaterThan(0n);
+    expect(h2).toBe(0n);
+  });
 });
