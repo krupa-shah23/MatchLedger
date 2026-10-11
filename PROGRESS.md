@@ -216,6 +216,23 @@ Next step: the user should hand-write or authorize implementation of
 - `npm run check:boundaries` passed.
 - `npm test` passed the repo gate up to the intended stub failures: 14 snapshot tests in [packages/engine-core/test/snapshot.test.ts](packages/engine-core/test/snapshot.test.ts) and 1 property in [packages/engine-core/test/properties.snapshot.test.ts](packages/engine-core/test/properties.snapshot.test.ts) failed only because the snapshot implementation is intentionally unfilled in STUB mode.
 
+## Week 6 — risk-core and partition-stage checkpoint
+
+- Done:
+  - Implemented the hand-written `RiskCore` lifecycle in [packages/risk/src/core/risk-core.ts](packages/risk/src/core/risk-core.ts) for account creation, deposits, order submission, ack/fill/close handling, duplicate filtering, and replay-safe snapshot derivation.
+  - Added the staging scaffolding in [packages/risk/src/stage.ts](packages/risk/src/stage.ts), including account-partition dispatch, bounded command queueing, the single-loop batch flow, and fail-stop behavior on journal/outbox/core errors.
+  - Added the in-memory journal and stamper contracts in [packages/risk/src/in-memory-risk-journal.ts](packages/risk/src/in-memory-risk-journal.ts) and [packages/risk/src/stamper.ts](packages/risk/src/stamper.ts).
+  - Added regression coverage in [packages/risk/src/stage.test.ts](packages/risk/src/stage.test.ts).
+- How verified:
+  - `npm run build && npm run lint && npm run check:boundaries && npm test`
+  - `npm run test:flake`
+  - Result: build passed, lint passed, dependency boundaries passed, unit suite passed, and the flake gate reported `20/20 green`.
+- Deviations from docs:
+  - The repo still intentionally keeps the broader Week 6 system-test matrix and the deep reservation lifecycle proofs as the next hand-written review step; this checkpoint is the contract-and-loop foundation, not the final multi-symbol risk-stage completion.
+  - `packages/engine-core` and `packages/shard` remained untouched, so `git diff` on those paths remains empty.
+- Next step:
+  - Extend the `RiskCore` lifecycle tests to the full RL/K/C1 series and then wire the end-to-end `RiskStage` -> `ShardRunner` -> `EngineEventRouter` -> `Ledger` checks from the Week 6 spec.
+
 ## Week 5: snapshot walkthrough
 
 Restore starts by validating the snapshot as if it were untrusted input. It rejects the wrong schema version, mismatched instrument config, negative counters, empty levels, badly ordered prices, wrong price assignments, mismatched sides, non-positive quantities, duplicate order IDs, non-monotonic arrival order, or a crossed book before any data is inserted. That makes the method all-or-nothing: the book can never be built in a partially valid state. After validation passes, the method reconstructs a fresh in-memory book from the oldest side data, re-creating levels in worst-to-best order and appending each order in FIFO order through the same PriceLevel append logic used in normal matching. Once the new book is wired up, it checks invariants one more time and throws only if the rebuild still violates the expected structural rules. This protects both correctness and crash recovery: a bad snapshot never becomes live state, and a good snapshot returns a book with identical order placement semantics and counters. The implementation keeps all runtime state inside the book itself and serializes only plain values, so a snapshot remains safe to inspect or reuse after the source book changes.
