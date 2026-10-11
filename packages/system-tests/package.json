@@ -1,0 +1,17 @@
+{
+  "name": "@matchledger/system-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@matchledger/common": "file:../common",
+    "@matchledger/engine-core": "file:../engine-core",
+    "@matchledger/journal": "file:../journal",
+    "@matchledger/ledger": "file:../ledger",
+    "@matchledger/risk": "file:../risk",
+    "@matchledger/shard": "file:../shard"
+  }
+}

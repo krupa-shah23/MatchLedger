@@ -6,7 +6,6 @@
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "@matchledger/common": "file:../common",
-    "@matchledger/journal": "file:../journal"
+    "@matchledger/common": "file:../common"
   }
 }

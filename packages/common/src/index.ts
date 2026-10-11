@@ -3,7 +3,28 @@ export { parseQuantity } from "./quantity.js";
 export type { ParsedQuantity, QuantityError } from "./quantity.js";
 export type { AfterBatchContext, BookPort, JournalReader, RecoveredState, SnapshotCandidate, SnapshotRecord, SnapshotStore } from "./recovery-types.js";
 export type { Clock, EventSink, JournalAppender, ShardOutput, StampedCommand } from "./shard-ports.js";
+export { MAX_AMOUNT } from "./risk-types.js";
+export type {
+  AccountSnapshot,
+  InstrumentRiskConfig,
+  MarketInput,
+  OrderKind,
+  ReleaseReason,
+  RiskCommand,
+  RiskConfig,
+  RiskEvent,
+  RiskJournalAppender,
+  RiskOutbox,
+  RiskOutput,
+  RiskRejectReason,
+  RiskSide,
+  RiskTimeInForce,
+  StampedRiskCommand,
+} from "./risk-types.js";
 export { BoundedQueue } from "./bounded-queue.js";
+export { AsyncQueue } from "./async-queue.js";
+export { fnv1a32, partitionOf } from "./partition.js";
+export { acceptedToPlaceOrder } from "./order-translation.js";
 export { SeqDeduper } from "./seq-deduper.js";
 export { serializeCommand, deserializeCommand } from "./codec/commands.js";
 export { serializeEvent, deserializeEvent } from "./codec/events.js";

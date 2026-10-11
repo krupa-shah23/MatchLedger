@@ -59,6 +59,22 @@
 | Architecture reference | Rewrote the architecture document as the single status-qualified reference for system context, package boundaries, component responsibilities, order lifecycle, events, Kafka, data model, correctness, failures, security, observability, deployment, and build status. | docs/architecture.md | Documentation-only; claims cite blueprint sections and ambiguities are listed under Assumptions. | Complete |
 | Week 2 — Completion | Added OrderBook/Engine checkInvariants, depth, restingOrders; tests U18, U20, Example 1 views; invariants checked after every command in P1; decision 24. | book/orderBook.ts, matching/engine.ts | build/lint/test results below | Done |
 
+### Week 6 — stubbed risk-stage contract
+
+- Done:
+  - Added the Week 6 common risk protocol, `AsyncQueue`, `partitionOf`, `fnv1a32`, and `acceptedToPlaceOrder` utilities, plus the initial risk pure helpers for money and market reference math.
+  - Added the new `packages/system-tests` workspace skeleton and the repository boundary/lint updates needed for the Week 6 dependency map.
+  - Added the Week 6 risk-core stub contract for the three hand-written lifecycle methods: `onSubmitOrder`, `onFill`, and `onClose`.
+  - The repo is green under the required gate: build, lint, boundary checks, unit tests, and the 20/20 flake gate.
+- How verified:
+  - `npm run build && npm run lint && npm run check:boundaries && npm test && npm run test:flake`
+  - Result: all succeeded; the flake gate reported `20/20 green`.
+- Deviations from docs:
+  - The hard lifecycle logic remains intentionally stubbed to honor the `MODE: STUB` rule; the exact method contract and spec are in place for the next review pass.
+  - The repo already had Week 4 prototypes in place, and they remained intact as required.
+- Next step:
+  - Hand-write the true `RiskCore` lifecycle methods and expand the week-6 core tests to the full RL/K/C1 series.
+
 | Week 3 — IOC stub and tests | Added `TimeInForce`, migrated GTC helpers/generators, changed user cancel events to `USER_REQUEST`, added EX1–EX3 carry-over tests, and added the U8–U34 IOC suite with an explicit unimplemented IOC branch. | packages/engine-core/src/matching/types.ts, packages/engine-core/src/matching/engine.ts, packages/engine-core/test | `npm run build`, `npm run lint`, and `npm run check:boundaries` pass. Week 2 plus EX1–EX3: 23 passed. Full suite: 51 passed, 6 fail. IOC suite: 12 passed and 6 fail with `IOC matching is not implemented` (U8, U9, U22, U23, U24, U25). | STUB complete; IOC implementation is next |
 
 ## Week 3 deviations and next step

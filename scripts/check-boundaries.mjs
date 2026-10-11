@@ -7,12 +7,13 @@ const allowed = new Map([
   ["journal", ["@matchledger/engine-core", "@matchledger/common", "pg"]],
   ["shard", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/journal", "@confluentinc/kafka-javascript"]],
   ["risk", ["@matchledger/common"]],
-  ["ledger", ["@matchledger/common", "@matchledger/journal"]],
+  ["ledger", ["@matchledger/common"]],
   ["recon", ["@matchledger/common", "@matchledger/journal"]],
   ["projections", ["@matchledger/common", "pg", "redis", "@confluentinc/kafka-javascript"]],
   ["api", ["@matchledger/common", "@matchledger/journal", "@matchledger/projections", "@matchledger/risk", "@matchledger/recon", "fastify", "@fastify/websocket", "jose", "prom-client", "ws"]],
   ["simulator", ["@matchledger/common", "@confluentinc/kafka-javascript"]],
   ["benchmarks", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/shard", "@matchledger/risk", "tinybench"]],
+  ["system-tests", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/shard", "@matchledger/risk", "@matchledger/ledger", "@matchledger/journal"]],
   ["web", ["@matchledger/common"]],
 ]);
 
