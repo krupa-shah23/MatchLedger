@@ -106,7 +106,7 @@ describe("breaker stub contract", () => {
 
   it("BR11: config validation rejects invalid settings", () => {
     const invalid: BreakerConfig = { ...config, resetThresholdBps: 600n };
-    expect(() => new Breaker(invalid)).not.toThrow();
+    expect(() => new Breaker(invalid)).toThrow();
   });
 
   it("BR12: needsTick is false only when closed", () => {

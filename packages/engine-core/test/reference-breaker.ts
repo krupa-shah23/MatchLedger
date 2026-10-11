@@ -1,4 +1,5 @@
 import type { BreakerConfig, BreakerState } from "../src/breaker/types.js";
+import { volatilityBps } from "../src/breaker/volatility.js";
 
 export type ReferenceState = {
   readonly state: BreakerState;
@@ -39,29 +40,99 @@ export class ReferenceBreaker {
     };
   }
 
+  private currentVolatility(): bigint {
+    if (this.window.length !== this.config.windowTrades) {
+      return 0n;
+    }
+    return volatilityBps(this.window);
+  }
+
+  private tripOpen(ts: number, reason: "VOLATILITY" | "HALF_OPEN_BREACH"): void {
+    const volatility = this.currentVolatility();
+    if (volatility <= this.config.tripThresholdBps) {
+      return;
+    }
+    this.state = "OPEN";
+    this.manual = false;
+    this.stateSinceTs = ts;
+    this.anchorPrice = this.window[0];
+    this.incidentStartTs ??= ts;
+    this.forceCancelled = false;
+    this.halfOpenBucket.clear();
+    if (reason === "HALF_OPEN_BREACH") {
+      void reason;
+    }
+  }
+
   public onTrades(prices: readonly bigint[], ts: number): void {
     if (prices.length === 0) {
       return;
     }
+
     for (const price of prices) {
       this.window.push(price);
       if (this.window.length > this.config.windowTrades) {
         this.window.shift();
       }
     }
-    this.stateSinceTs = ts;
+
+    if (this.state === "OPEN") {
+      return;
+    }
+    if (this.state === "CLOSED") {
+      this.tripOpen(ts, "VOLATILITY");
+      return;
+    }
+    if (this.state === "HALF_OPEN") {
+      this.tripOpen(ts, "HALF_OPEN_BREACH");
+    }
   }
 
   public advance(ts: number): void {
-    this.stateSinceTs = ts;
+    if (this.state !== "CLOSED" && this.incidentStartTs !== undefined && !this.forceCancelled && ts - this.incidentStartTs > this.config.maxHaltDurationMs) {
+      this.forceCancelled = true;
+      return;
+    }
+
+    if (this.state === "OPEN" && ts - this.stateSinceTs >= this.config.cooldownMs) {
+      this.state = "HALF_OPEN";
+      this.stateSinceTs = ts;
+      this.window.length = 0;
+      this.anchorPrice = undefined;
+      this.halfOpenBucket.clear();
+      return;
+    }
+
+    if (this.state === "HALF_OPEN" && ts - this.stateSinceTs >= this.config.halfOpenStableMs) {
+      const volatility = this.currentVolatility();
+      if (this.window.length < this.config.windowTrades || volatility <= this.config.resetThresholdBps) {
+        const incidentStart = this.incidentStartTs ?? ts;
+        this.state = "CLOSED";
+        this.manual = false;
+        this.window.length = 0;
+        this.anchorPrice = undefined;
+        this.incidentStartTs = undefined;
+        this.stateSinceTs = ts;
+        this.forceCancelled = false;
+        this.halfOpenBucket.clear();
+        void incidentStart;
+      }
+    }
   }
 
   public halt(reason: string, ts: number): void {
-    this.manual = true;
+    if (this.state === "OPEN") {
+      return;
+    }
+
     this.state = "OPEN";
+    this.manual = true;
     this.stateSinceTs = ts;
     this.incidentStartTs ??= ts;
     this.forceCancelled = false;
+    this.window.length = 0;
+    this.anchorPrice = undefined;
+    this.halfOpenBucket.clear();
     if (reason) {
       void reason;
     }
@@ -72,6 +143,7 @@ export class ReferenceBreaker {
       this.state = "HALF_OPEN";
       this.stateSinceTs = ts;
       this.window.length = 0;
+      this.anchorPrice = undefined;
       this.halfOpenBucket.clear();
     }
   }

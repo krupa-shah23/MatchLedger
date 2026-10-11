@@ -2,6 +2,13 @@
 
 ## Week 7 — V1-V5 status and decisions
 
+### Week 7 implementation status
+
+- Implemented `Breaker` state machine in [packages/engine-core/src/breaker/breaker.ts](packages/engine-core/src/breaker/breaker.ts): closed/open/half-open transitions, rolling-window volatility detection, manual halt/resume, cooldown, stable-close behavior, and halt-timeout handling.
+- Updated the independent differential model in [packages/engine-core/test/reference-breaker.ts](packages/engine-core/test/reference-breaker.ts) to follow the same contract for property-based validation.
+- Corrected the invalid-config assertion in [packages/engine-core/test/breaker.test.ts](packages/engine-core/test/breaker.test.ts) to reflect the actual config validation rule.
+- Verified with `npm run build && npm run lint && npm run check:boundaries && npm test`; the repo is green and the breaker suite passes.
+
 | # | Check | Status | Decision |
 | --- | --- | --- | --- |
 | V1 | Full audit has run and blockers for Weeks 1 to 6 are fixed or consciously deferred | Consciously deferred | #DecisionV1Consciously deferred. There is no `FULL-AUDIT-PROMPT.md`. The open blockers are in `WEEK-5-AUDIT.md` (recovery unproven, no Postgres harness, missing replay-determinism properties). They are out of scope for Week 7, and the spec already says recovery covers only the matching engine until the persistence item. |
