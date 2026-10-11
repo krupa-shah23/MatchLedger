@@ -30,11 +30,13 @@ export class BreakWorkflow {
   public readonly breakId: string;
   public status: WorkflowStatus;
   public readonly audit: AuditEntry[] = [];
+  private readonly createdAt: number;
   private nextSeq = 1;
 
   public constructor(initial: { readonly breakId: string; readonly status: WorkflowStatus; readonly actor: string; readonly reason: string; readonly ts: number }) {
     this.breakId = initial.breakId;
     this.status = initial.status;
+    this.createdAt = initial.ts;
   }
 
   public transition(input: WorkflowTransition): AuditEntry {
@@ -69,6 +71,6 @@ export class BreakWorkflow {
   }
 
   public ageMs(nowTs: number): number {
-    return Math.max(0, nowTs - (this.audit[0]?.ts ?? 0));
+    return Math.max(0, nowTs - this.createdAt);
   }
 }
