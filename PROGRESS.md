@@ -1,5 +1,16 @@
 # Progress
 
+## Week 7 — V1-V5 status and decisions
+
+| # | Check | Status | Decision |
+| --- | --- | --- | --- |
+| V1 | Full audit has run and blockers for Weeks 1 to 6 are fixed or consciously deferred | Consciously deferred | #DecisionV1Consciously deferred. There is no `FULL-AUDIT-PROMPT.md`. The open blockers are in `WEEK-5-AUDIT.md` (recovery unproven, no Postgres harness, missing replay-determinism properties). They are out of scope for Week 7, and the spec already says recovery covers only the matching engine until the persistence item. |
+| V2 | Gate green: `npm ci`, build, lint, `check:boundaries`, `npm test`; `npm run test:flake` 20/20 | Green after the lint fix | V2Green after the lint fix. |
+| V3 | Week 6 state known; Week 7 needs the risk stage, router and wiring from Week 6 for the end-to-end halt tests | Green enough for Week 7 | V3Week 6 stage, router and wiring exist and the smoke test passes. Run all of Prompts 1–5. The “not proven” wording is about recovery, not the risk path. |
+| V4 | Week 5 snapshot exists (`OrderBook.snapshot()` / `restore()`); if snapshot codec or recovery exists, extend them | Snapshot/recovery exist but are unproven | V4Snapshot and recovery code exist but are unproven. Prompt 2 extends them (snapshot v2, upcaster, `breakerConfigs`), and the gap goes in the README. |
+| V5 | You can draw the Week 6 reservation lifecycle and explain why the risk core takes time as an input | Whiteboard check | V5Do this one yourself on the whiteboard. It’s your check, not Copilot’s. |
+
+
 | Step | What was done | How (key files/commands) | Tests/verification | Status |
 | --- | --- | --- | --- | --- |
 | Week 1 | Created workspace skeleton, docs, and exact tool pins. | package.json, packages, web, npm view, tsc --init | `npm run build`, `npm run lint`, and `npm run test` all passed. | Complete |
