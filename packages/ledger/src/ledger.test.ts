@@ -138,7 +138,7 @@ describe("ledger", () => {
     expect(ledger.assetTotal("SHARES:ACME")).toBe(0n);
   });
 
-  it("P6: symbol totals across all accounts including @EXTERNAL sum to zero", () => {
+  it("P6: symbol totals across all accounts including @EXTERNAL and @SUSPENSE sum to zero", () => {
     const ledger = new Ledger();
     ledger.postDeposit({ accountId: "A", asset: "CASH", amount: 500n, requestId: "a1", refEventId: "e1" });
     ledger.postDeposit({ accountId: "B", asset: "SHARES:ACME", amount: 5n, requestId: "b1", refEventId: "e2" });
@@ -153,7 +153,10 @@ describe("ledger", () => {
       },
       "e3",
     );
-    expect(ledger.balance("A", "SHARES:ACME") + ledger.balance("B", "SHARES:ACME") + ledger.balance(EXTERNAL, "SHARES:ACME")).toBe(0n);
+    const suspenseCash = ledger.balance(SUSPENSE, "CASH");
+    const totals = ledger.balance("A", "SHARES:ACME") + ledger.balance("B", "SHARES:ACME") + ledger.balance(EXTERNAL, "SHARES:ACME") + ledger.balance(SUSPENSE, "SHARES:ACME");
+    expect(totals).toBe(0n);
+    expect(suspenseCash).toBe(0n);
   });
 
   it("LG9: postAdjustment creates a balanced suspense leg and preserves asset totals", () => {
