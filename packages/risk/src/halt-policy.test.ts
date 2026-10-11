@@ -17,7 +17,8 @@ describe("halt policy (HA series)", () => {
     c.apply({ partition: 0, seq: 2, ts: 50, command: { type: "Deposit", accountId: "a", asset: "CASH", amount: 1000n, requestId: "d1" } });
     c.haltedSymbols.add("T");
     const ev = c.apply({ partition: 0, seq: 3, ts: 50, command: { type: "SubmitOrder", orderId: "o1", accountId: "a", symbol: "T", side: "BUY", kind: "LIMIT", timeInForce: "GTC", quantity: 10n, price: 100n, market: { lastTradePrice: 100n, lastTradeTs: 30, bestBid: 95n, bestAsk: 105n } } });
-    expect(ev.some(e => e.type === "OrderRejected" && (e as any).reason === "SYMBOL_HALTED")).toBe(true);
+    const rejected = ev.find(e => e.type === "OrderRejected");
+    expect(rejected && (rejected as { reason: string }).reason === "SYMBOL_HALTED").toBe(true);
     expect(c.reservations.size).toBe(0);
   });
 
@@ -28,7 +29,7 @@ describe("halt policy (HA series)", () => {
     c.apply({ partition: 0, seq: 3, ts: 50, command: { type: "SubmitOrder", orderId: "o1", accountId: "a", symbol: "T", side: "BUY", kind: "LIMIT", timeInForce: "GTC", quantity: 10n, price: 100n, market: { lastTradePrice: 100n, lastTradeTs: 30, bestBid: 95n, bestAsk: 105n } } });
     const held1 = c.view("a").heldCash;
     c.haltedSymbols.add("T");
-    const ev = c.apply({ partition: 0, seq: 4, ts: 50, command: { type: "OrderClosed", orderId: "o1", remaining: 10n, reason: "CANCELLED" } });
+    c.apply({ partition: 0, seq: 4, ts: 50, command: { type: "OrderClosed", orderId: "o1", remaining: 10n, reason: "CANCELLED" } });
     const held2 = c.view("a").heldCash;
     expect(held1).toBeGreaterThan(0n);
     expect(held2).toBeLessThan(held1);

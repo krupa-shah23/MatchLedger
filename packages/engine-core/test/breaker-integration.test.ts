@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { Breaker } from "../src/breaker/breaker.js";
-import { bandBounds, volatilityBps } from "../src/breaker/volatility.js";
 import type { BreakerConfig } from "../src/breaker/types.js";
 
 const cfg: BreakerConfig = {
