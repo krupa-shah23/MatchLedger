@@ -1,3 +1,23 @@
+export type Account = {
+  cash: bigint;
+  heldCash: bigint;
+  positions: Map<string, { quantity: bigint; heldShares: bigint }>;
+};
+
+export type Reservation = {
+  orderId: string;
+  accountId: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  priceCap: bigint;
+  qtyRemaining: bigint;
+  amountRemaining: bigint;
+  state: "PENDING_ACK" | "LIVE";
+  placedTs: number;
+  placedSeq: number;
+  appliedTradeIds: Set<string>;
+};
+
 export type AccountRecord = Readonly<{
   readonly cash: bigint;
   readonly heldCash: bigint;
@@ -16,4 +36,20 @@ export type ReservationRecord = Readonly<{
   readonly placedTs: number;
   readonly placedSeq: number;
   readonly appliedTradeIds: ReadonlySet<string>;
+}>;
+
+export type AccountView = Readonly<{
+  readonly cash: bigint;
+  readonly heldCash: bigint;
+  readonly availableCash: bigint;
+  readonly positions: ReadonlyMap<string, Readonly<{ readonly quantity: bigint; readonly heldShares: bigint; readonly availableShares: bigint }>>;
+}>;
+
+export type RiskSnapshot = Readonly<{
+  readonly accounts: ReadonlyArray<readonly [string, AccountRecord]>;
+  readonly reservations: ReadonlyArray<readonly [string, ReservationRecord]>;
+  readonly dedupe: Readonly<{
+    readonly decidedOrders: number;
+    readonly seenRequestIds: number;
+  }>;
 }>;

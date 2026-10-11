@@ -266,3 +266,13 @@ The API websocket test was racing the socket lifecycle: it sent the auth message
 
 **Next:** Run mutations in worktree (docs/audits/WEEK-5-AUDIT.md section 6); implement scripts/chaos-kill.mjs for OS SIGKILL; commit decisions 1-16.
 
+## Week 6 — risk stub checkpoint (verified)
+
+- Added the Week 6 risk-core contract surface in [packages/risk/src/core/state.ts](packages/risk/src/core/state.ts), [packages/risk/src/core/index.ts](packages/risk/src/core/index.ts), and [packages/risk/src/core/errors.ts](packages/risk/src/core/errors.ts).
+- Kept the three lifecycle methods intentionally stubbed in [packages/risk/src/core/risk-core.ts](packages/risk/src/core/risk-core.ts): `onSubmitOrder`, `onFill`, and `onClose` remain in `MODE: STUB` and do not mutate state.
+- Verified the repo gate remains green with the exact required commands:
+  - `npm run build && npm run lint && npm run check:boundaries && npm test` → passed; Vitest reported 25 test files passed and 129 tests passed.
+  - `npm run test:flake` → passed with 20/20 green runs.
+- Deviation from the hand-written Week 6 implementation: the lifecycle logic remains intentionally deferred to honor the stub contract and the user’s review handoff.
+- Status: green stubbed checkpoint; implementation is ready for the next explicit REVIEW/hand-write step.
+
