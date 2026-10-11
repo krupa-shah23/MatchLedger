@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { RiskCore } from "./core/risk-core.js";
 import { RiskStage } from "./stage.js";
 import { InMemoryRiskJournal } from "./in-memory-risk-journal.js";
 import { RiskStamper } from "./stamper.js";
@@ -118,5 +119,75 @@ describe("risk stage basics", () => {
     ]);
     expect(partition.reservations.size).toBe(0);
     await stage.stop({ drain: true });
+  });
+
+  it("preserves halt state in the snapshot and exposes held-by-symbol view totals", () => {
+    const core = new RiskCore(config);
+    core.apply({
+      partition: 0,
+      seq: 1,
+      ts: 50,
+      command: { type: "OpenAccount", accountId: "acct-3" },
+    });
+    core.apply({
+      partition: 0,
+      seq: 2,
+      ts: 50,
+      command: { type: "Deposit", accountId: "acct-3", asset: "CASH", amount: 1000n, requestId: "dep-1" },
+    });
+    core.apply({
+      partition: 0,
+      seq: 3,
+      ts: 50,
+      command: {
+        type: "SubmitOrder",
+        orderId: "o-placed",
+        accountId: "acct-3",
+        symbol: "ACME",
+        side: "BUY",
+        kind: "LIMIT",
+        timeInForce: "GTC",
+        quantity: 2n,
+        price: 100n,
+        market: { lastTradePrice: 100n, lastTradeTs: 30, bestBid: 95n, bestAsk: 105n },
+      },
+    });
+    core.apply({
+      partition: 0,
+      seq: 4,
+      ts: 50,
+      command: { type: "HaltSymbol", symbol: "ACME", reason: "manual" },
+    });
+
+    expect(core.snapshot().haltedSymbols).toStrictEqual(["ACME"]);
+    expect(core.view("acct-3")).toMatchObject({
+      heldBySymbol: [{ symbol: "ACME", amount: 200n, reason: "RESTING_ORDER" }],
+    });
+    const rejected = core.onSubmitOrder({
+      partition: 0,
+      seq: 5,
+      ts: 50,
+      command: {
+        type: "SubmitOrder",
+        orderId: "o-halt-2",
+        accountId: "acct-3",
+        symbol: "ACME",
+        side: "BUY",
+        kind: "LIMIT",
+        timeInForce: "GTC",
+        quantity: 1n,
+        price: 99n,
+        market: { lastTradePrice: 100n, lastTradeTs: 30, bestBid: 95n, bestAsk: 105n },
+      },
+    });
+
+    expect(rejected).toStrictEqual([
+      {
+        type: "OrderRejected",
+        orderId: "o-halt-2",
+        accountId: "acct-3",
+        reason: "SYMBOL_HALTED",
+      },
+    ]);
   });
 });

@@ -2,7 +2,7 @@ import type { AccountSnapshot, RiskCommand, RiskConfig, RiskEvent, StampedRiskCo
 
 import { RiskInvariantError } from "./errors.js";
 import { computeMarketLimit, resolveReference } from "./reference.js";
-import type { Account, Reservation, RiskSnapshot } from "./state.js";
+import type { Account, AccountView, Reservation, RiskSnapshot } from "./state.js";
 
 export class RiskCore {
   public readonly decisions = new Set<string>();
@@ -396,6 +396,46 @@ export class RiskCore {
     return [];
   }
 
+  public view(accountId: string): AccountView {
+    const account = this.accounts.get(accountId);
+    if (account === undefined) {
+      return {
+        cash: 0n,
+        heldCash: 0n,
+        availableCash: 0n,
+        positions: new Map(),
+        heldBySymbol: [],
+      };
+    }
+
+    const positions = new Map([...account.positions.entries()].map(([symbol, position]) => [symbol, {
+      quantity: position.quantity,
+      heldShares: position.heldShares,
+      availableShares: position.quantity - position.heldShares,
+    }])) as ReadonlyMap<string, Readonly<{ readonly quantity: bigint; readonly heldShares: bigint; readonly availableShares: bigint }>>;
+
+    const heldBySymbol = [...this.reservations.values()]
+      .filter((reservation) => reservation.accountId === accountId)
+      .reduce((map, reservation) => {
+        const amount = reservation.side === "BUY" ? reservation.amountRemaining : reservation.qtyRemaining;
+        const existing = map.get(reservation.symbol);
+        if (existing === undefined) {
+          map.set(reservation.symbol, { symbol: reservation.symbol, amount, reason: "RESTING_ORDER" });
+          return map;
+        }
+        map.set(reservation.symbol, { symbol: reservation.symbol, amount: existing.amount + amount, reason: "RESTING_ORDER" });
+        return map;
+      }, new Map<string, { symbol: string; amount: bigint; reason: "RESTING_ORDER" }>());
+
+    return {
+      cash: account.cash,
+      heldCash: account.heldCash,
+      availableCash: account.cash - account.heldCash,
+      positions,
+      heldBySymbol: [...heldBySymbol.values()].sort((left, right) => left.symbol.localeCompare(right.symbol)),
+    };
+  }
+
   public snapshot(): RiskSnapshot {
     const accounts = [...this.accounts.entries()].map(([accountId, account]) => [accountId, {
       cash: account.cash,
@@ -420,6 +460,7 @@ export class RiskCore {
     return {
       accounts,
       reservations,
+      haltedSymbols: [...this.haltedSymbols].sort(),
       dedupe: {
         decidedOrders: this.decisions.size,
         seenRequestIds: this.seenRequestIds.size,

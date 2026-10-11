@@ -38,16 +38,24 @@ export type ReservationRecord = Readonly<{
   readonly appliedTradeIds: ReadonlySet<string>;
 }>;
 
+export type HeldBySymbol = Readonly<{
+  readonly symbol: string;
+  readonly amount: bigint;
+  readonly reason: "RESTING_ORDER";
+}>;
+
 export type AccountView = Readonly<{
   readonly cash: bigint;
   readonly heldCash: bigint;
   readonly availableCash: bigint;
   readonly positions: ReadonlyMap<string, Readonly<{ readonly quantity: bigint; readonly heldShares: bigint; readonly availableShares: bigint }>>;
+  readonly heldBySymbol: ReadonlyArray<HeldBySymbol>;
 }>;
 
 export type RiskSnapshot = Readonly<{
   readonly accounts: ReadonlyArray<readonly [string, AccountRecord]>;
   readonly reservations: ReadonlyArray<readonly [string, ReservationRecord]>;
+  readonly haltedSymbols: ReadonlyArray<string>;
   readonly dedupe: Readonly<{
     readonly decidedOrders: number;
     readonly seenRequestIds: number;
