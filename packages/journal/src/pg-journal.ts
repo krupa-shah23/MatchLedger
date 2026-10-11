@@ -26,7 +26,7 @@ export class PgJournal implements JournalAppender, JournalReader {
     const bySeq = new Map<string, number>();
     for (const item of batch as any[]) {
       const last = bySeq.get(item.symbol) ?? 0;
-      if (item.seq <= last) throw new JournalSequenceError(`dup/gap seq in batch for ${item.symbol}`);
+      if (item.seq !== last + 1) throw new JournalSequenceError(`dup/gap seq in batch for ${item.symbol}`);
       bySeq.set(item.symbol, item.seq);
     }
 
