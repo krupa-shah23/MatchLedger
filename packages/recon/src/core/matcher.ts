@@ -1,3 +1,5 @@
+import { civilFromDays } from "./dates.js";
+
 export type BreakType = "MISSING_EXTERNAL" | "MISSING_INTERNAL" | "QUANTITY_MISMATCH" | "PRICE_MISMATCH" | "SETTLEMENT_MISMATCH" | "DUPLICATE" | "LATE";
 
 export type InternalTradeRecord = Readonly<{
@@ -118,26 +120,25 @@ function parsePrice(value: string, priceDecimals: number): bigint | undefined {
   }
   const normalized = fraction.padEnd(priceDecimals, "0");
   const sign = raw.startsWith("-") ? -1n : 1n;
-  return sign * (BigInt(whole || "0") * 10n ** BigInt(priceDecimals) + BigInt(normalized));
+  const scaled = BigInt(whole || "0") * 10n ** BigInt(priceDecimals) + (normalized === "" ? 0n : BigInt(normalized));
+  return sign * scaled;
 }
 
 function settlementDate(ts: number, lagDays: number): string {
   const timeMs = BigInt(Math.trunc(ts));
-  const days = timeMs / 86_400_000n + BigInt(lagDays);
-  const civil = getCivilFromDays(days);
+  const days = floorDivBigInt(timeMs, 86_400_000n) + BigInt(lagDays);
+  const civil = civilFromDays(days);
   return `${civil.year}-${String(civil.month).padStart(2, "0")}-${String(civil.day).padStart(2, "0")}`;
 }
 
-function getCivilFromDays(days: bigint): { readonly year: number; readonly month: number; readonly day: number } {
-  const z = days + 719468n;
-  const era = z / 146097n;
-  const doe = z - era * 146097n;
-  const yoe = (doe - doe / 1460n + doe / 36524n - doe / 146096n) / 365n;
-  const year = yoe + era * 400n;
-  const doy = doe - (365n * yoe + yoe / 4n - yoe / 100n);
-  const mp = (5n * doy + 2n) / 153n;
-  const day = doy - ((153n * mp + 2n) / 5n) + 1n;
-  const month = mp + (mp < 10n ? 3n : -9n);
-  const resolvedYear = year + (month <= 2n ? 1n : 0n);
-  return { year: Number(resolvedYear), month: Number(month), day: Number(day) };
+function floorDivBigInt(value: bigint, divisor: bigint): bigint {
+  const quotient = value / divisor;
+  const remainder = value % divisor;
+  if (remainder === 0n) {
+    return quotient;
+  }
+  if ((value < 0n) !== (divisor < 0n)) {
+    return quotient - 1n;
+  }
+  return quotient;
 }

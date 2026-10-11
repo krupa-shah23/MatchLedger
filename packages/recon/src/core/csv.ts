@@ -13,12 +13,33 @@ export class RecordParser {
   private currentRow: string[] = [];
   private inQuotes = false;
   private rowStarted = false;
+  private cellStarted = false;
   private rowNumber = 1;
 
   public push(chunk: string | Uint8Array): void {
-    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    let text: string;
+    if (typeof chunk === "string") {
+      text = chunk;
+    } else {
+      try {
+        text = new TextDecoder("utf-8", { fatal: true }).decode(chunk);
+      } catch {
+        this.errors.push({ rowNumber: this.rowNumber, reason: "invalid utf-8" });
+        return;
+      }
+    }
     for (let index = 0; index < text.length; index += 1) {
       const char = text[index];
+      if (this.inQuotes && (char === "\r" || char === "\n")) {
+        this.field += char;
+        this.cellStarted = true;
+        this.rowStarted = true;
+        if (char === "\r" && text[index + 1] === "\n") {
+          this.field += "\n";
+          index += 1;
+        }
+        continue;
+      }
       if (char === "\r") {
         if (text[index + 1] === "\n") {
           index += 1;
@@ -35,11 +56,13 @@ export class RecordParser {
       if (char === '"') {
         if (this.inQuotes && text[index + 1] === '"') {
           this.field += '"';
+          this.cellStarted = true;
           index += 1;
           continue;
         }
-        this.inQuotes = !this.inQuotes;
+        this.cellStarted = true;
         this.rowStarted = true;
+        this.inQuotes = !this.inQuotes;
         continue;
       }
       if (char === "," && !this.inQuotes) {
@@ -47,6 +70,7 @@ export class RecordParser {
         continue;
       }
       this.field += char;
+      this.cellStarted = true;
       this.rowStarted = true;
     }
   }
@@ -54,6 +78,7 @@ export class RecordParser {
   public finish(): readonly string[][] {
     if (this.inQuotes) {
       this.errors.push({ rowNumber: this.rowNumber, reason: "unterminated quoted field" });
+      this.field = this.field.replace(/(?:\r\n|\r|\n)+$/, "");
       this.inQuotes = false;
     }
     if (this.rowStarted || this.currentRow.length > 0 || this.field.length > 0) {
@@ -68,21 +93,23 @@ export class RecordParser {
   }
 
   private finishCell(): void {
+    if (this.currentRow.length === 0 && this.field.length === 0 && !this.cellStarted && !this.rowStarted) {
+      return;
+    }
     this.currentRow.push(this.field);
     this.field = "";
+    this.cellStarted = false;
   }
 
   private finishRow(): void {
     if (!this.rowStarted && this.currentRow.length === 0 && this.field.length === 0) {
       return;
     }
-    const row = [...this.currentRow];
-    if (row.length > 0 || this.field.length > 0) {
-      this.rows.push(row);
-    }
+    this.rows.push([...this.currentRow]);
     this.rowNumber += 1;
     this.currentRow = [];
     this.field = "";
+    this.cellStarted = false;
     this.inQuotes = false;
     this.rowStarted = false;
   }
@@ -109,6 +136,7 @@ export function parsePriceMinor(raw: string, priceDecimals: number): bigint | un
   if (fraction.length > priceDecimals) {
     return undefined;
   }
-  const scaled = BigInt(whole || "0") * 10n ** BigInt(priceDecimals) + BigInt((fraction + "0".repeat(priceDecimals - fraction.length)).padEnd(priceDecimals, "0"));
+  const scaledFraction = fraction === "" ? 0n : BigInt(fraction.padEnd(priceDecimals, "0"));
+  const scaled = BigInt(whole || "0") * 10n ** BigInt(priceDecimals) + scaledFraction;
   return scaled * sign;
 }

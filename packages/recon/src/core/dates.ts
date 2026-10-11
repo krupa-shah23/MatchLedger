@@ -4,6 +4,18 @@ export type CivilDate = {
   readonly day: number;
 };
 
+function floorDivBigInt(value: bigint, divisor: bigint): bigint {
+  const quotient = value / divisor;
+  const remainder = value % divisor;
+  if (remainder === 0n) {
+    return quotient;
+  }
+  if ((value < 0n) !== (divisor < 0n)) {
+    return quotient - 1n;
+  }
+  return quotient;
+}
+
 export function civilFromDays(days: number | bigint): CivilDate {
   const value = typeof days === "bigint" ? days : BigInt(days);
   const z = value + 719468n;
@@ -26,7 +38,7 @@ export function civilFromDays(days: number | bigint): CivilDate {
 
 export function settlementDate(ts: number | bigint, lagDays: number): string {
   const timeMs = typeof ts === "bigint" ? ts : BigInt(Math.trunc(ts));
-  const days = timeMs / 86_400_000n + BigInt(lagDays);
+  const days = floorDivBigInt(timeMs, 86_400_000n) + BigInt(lagDays);
   const civil = civilFromDays(days);
   return `${civil.year}-${String(civil.month).padStart(2, "0")}-${String(civil.day).padStart(2, "0")}`;
 }
