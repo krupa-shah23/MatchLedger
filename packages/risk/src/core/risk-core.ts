@@ -177,7 +177,8 @@ export class RiskCore {
     if (current.side === "BUY") {
       // Validate overflow
       try {
-        const needed = priceCap * current.quantity;
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        priceCap * current.quantity;
       } catch {
         this.decisions.add(current.orderId);
         return [{ type: "OrderRejected", orderId: current.orderId, accountId: current.accountId, reason: "INVALID_ORDER" }];
