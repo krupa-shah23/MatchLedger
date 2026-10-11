@@ -181,12 +181,20 @@ describe("risk stage basics", () => {
       },
     });
 
-    expect(rejected).toStrictEqual([
+    expect(rejected).toMatchObject([
       {
         type: "OrderRejected",
         orderId: "o-halt-2",
         accountId: "acct-3",
         reason: "SYMBOL_HALTED",
+        snapshot: {
+          cash: 1000n,
+          heldCash: 200n,
+          availableCash: 800n,
+          positionQuantity: 0n,
+          heldShares: 0n,
+          availableShares: 0n,
+        },
       },
     ]);
   });

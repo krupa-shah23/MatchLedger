@@ -90,8 +90,9 @@ export class ShardRunner {
       const breakerState = this.opts.breakerConfigs?.get(symbol);
       if (breakerState?.closed === true) continue;
       const book = this.books.get(symbol);
-      const requiresTick = typeof (book as { needsTick?: () => boolean } | undefined)?.needsTick === "function"
-        ? (book as { needsTick: () => boolean }).needsTick()
+      const maybeNeedsTick = book as { needsTick?: () => boolean } | undefined;
+      const requiresTick = typeof maybeNeedsTick?.needsTick === "function"
+        ? maybeNeedsTick.needsTick()
         : true;
       if (requiresTick) {
         symbols.push(symbol);

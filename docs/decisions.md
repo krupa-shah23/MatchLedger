@@ -1,231 +1,305 @@
 # Decision log
 
-## Decision 2 — sorted price array for the book
+## Decision 1 — Single-writer matching by symbol
 
 ### Context
-The book needs best-price access, deterministic ordering, and simple iteration
-over the small number of active price levels.
+The matching engine must be deterministic and easy to recover. Replaying the same journaled commands must yield the same trade stream and the same order book state.
 
 ### Options considered
-- Balanced tree: logarithmic insertion and deletion, but more implementation
-  complexity and less direct best-first snapshot iteration.
-- Skip list: expected logarithmic updates, but probabilistic structure and
-  additional pointer overhead.
-- Sorted array: logarithmic binary search with a linear shift for new levels.
+- One global lock around all matching
+- Per-symbol single-writer shards with a shared journal
+- Event-driven distributed matching with cross-shard coordination
 
 ### Choice
-Use a side-aware sorted array plus a `Map<bigint, PriceLevel>`. Bids are
-ascending and asks descending, with the best price at the last element.
-
-### Trade-offs and switch point
-The array is deterministic, compact, and sufficient for the expected active
-level count. Switch to a balanced tree when measured active levels make the
-linear shift dominate matching throughput or tail latency; preserve the
-`Map` and `SortedPrices` interface so the book API remains stable.
-
-## Decision 18 — fast-check
-
-### Context
-Core invariants need reproducible generated cases.
-
-### Options considered
-Examples only; custom harness; fast-check.
-
-### Choice
-Use fast-check with Vitest.
+Use a single-writer model per symbol: one shard owns a symbol’s book and applies commands sequentially in its event loop.
 
 ### Trade-offs
-More suite time, but shrinking and replay.
+This gives straightforward ordering and fewer data races, but it creates a shard boundary that must be respected in routing and in recovery. The design is simpler and more testable than a distributed lock-free engine.
 
-## Decision 19 — breaker folder
-
-### Context
-Breaker transitions replay with matching.
-
-### Options considered
-Separate package; engine-core folder.
-
-### Choice
-`engine-core/src/breaker`.
-
-### Trade-offs
-Implementation, not package boundary.
-
-## Decision 20 — Node and TypeScript
-
-### Context
-Need a single writer and shared contracts.
-
-### Options considered
-Node/TS; Java; systems language.
-
-### Choice
-Node 24 and TypeScript 6.
-
-### Trade-offs
-GC tail latency and no shared-memory parallelism.
-
-## Decision 22 — TypeScript pin
-
-### Context
-TS7 has toolchain risk.
-
-### Options considered
-TS7; TS6.
-
-### Choice
-Pin 6.0.3.
-
-### Trade-offs
-Defer TS7 features.
-
-## Decision 23 — Google Stitch as a UI reference, React as the product
-
-### Context
-The dashboard needs a credible visual design without sacrificing the typed, testable frontend architecture in the blueprint.
-
-### Options considered
-- Build screens directly from an ad-hoc React layout.
-- Ship the HTML/CSS exported by Google Stitch.
-- Use Stitch exports as visual references and rebuild the screens in React.
-
-### Choice
-Design in Google Stitch and save each export under `web/design/<page-name>/`. Treat the exported HTML, CSS, and screenshots as reference material only; rebuild each screen as React 19 + TypeScript components in `web/src`, using React Router 7, TanStack Query 5, and the single `useSocket` hook.
-
-### Trade-offs
-This introduces a translation step and visual-regression responsibility, but avoids shipping static export code, preserves routing/data boundaries, and keeps UI behavior aligned with the asynchronous API contract. Decimal-string money remains display-only; estimates are labelled; 202 responses stay pending until an outcome event arrives. Shared route guards live in `common` so frontend access rules track the section 3.4 role matrix.
-
-## Decision 24 — public registration is demo-only and TRADER-only
-
-### Context
-The demo needs a low-friction path for reviewers to experience the trader flow, without exposing account creation or role escalation as production behavior.
-
-### Options considered
-- Public registration in every deployment with role selection.
-- No public registration; seeded accounts only.
-- Registration only in the demo profile, creating a fixed TRADER setup.
-
-### Choice
-`POST /auth/register` is public only in the demo profile. It creates a TRADER user, one account, and a fixed simulated ledger deposit. The role is never accepted from the request.
-
-### Trade-offs
-This improves demo usability but is deliberately not a production identity design. It cannot create privileged users and is rate-limited; production would use managed identity, verification, funding controls, and operator-controlled roles.
-
-## Decision 25 — non-resting cancel reason
-
-### Context
-Cancel commands can target a filled, previously cancelled, or unknown order.
-
-### Choice
-Use one stable reason, `ORDER_NOT_RESTING`, for every cancel that does not find a resting order.
-
-### Trade-offs
-The reason is less specific, but keeps the public contract small and deterministic.
-
-## Decision 26 — self-trade is allowed in Week 2
-
-### Context
-Self-trade prevention is a policy concern separate from the price-time book.
-
-### Choice
-Allow orders from the same account to trade against each other during this week.
-
-### Trade-offs
-This keeps the matching core simple; prevention can be added as an explicit later policy.
-
-## Decision 27 — retain every accepted order id
-
-### Context
-Reusing an order id after it has fully filled could make replay and audit identity ambiguous.
-
-### Choice
-Check duplicate ids against all ids ever accepted, not only currently resting ids.
-
-### Trade-offs
-The engine retains a growing `Set<string>`, trading memory for deterministic idempotency.
-
-## Decision 24 — Week 2 engine conventions
-### Choice
-- Self-trade is allowed (tested); preventing it is a stretch feature.
-- The engine validates again even though the API validates at the edge (defense in depth); validation order is duplicate id, quantity, price, tick, lot, max quantity, max price.
-- `engineSeq`, `arrivalSeq` and the trade counter are deterministic bigint counters; `tradeId` is `<symbol>-T<n>`; no clock or randomness.
-- Names follow the code, not the Week 2 draft: `ORDER_NOT_RESTING`, `INVALID_TICK`, `INVALID_LOT`.
-- Duplicate ids are rejected forever (see the duplicate-id decision above); `Engine.seenOrderIds()` lets a snapshot persist them.
-### Verification
-`Engine.checkInvariants()` runs after every command in the P1 property test and in U18/U20.
-
-## Decision 28 — IOC price semantics
-### Context
-The engine has one price field and must express bounded immediate execution.
-
-### Options
-- Add a separate cap/floor field.
-- Treat the existing limit price as the IOC bound.
-
-### Choice
-Use `price` as the limit for GTC and as an inclusive hard cap/floor for IOC.
-Market orders remain a later risk-stage concept converted to capped IOC.
-
-### Trade-offs
-The public command remains small and deterministic; market-price selection is
-kept out of the matching core. Tested by U9, U25, U26, and P13.
-
-## Decision 29 — IOC remainder is an event
-An unfilled IOC remainder emits `ORDER_CANCELLED` with reason
-`IOC_REMAINDER` and the remaining quantity. The risk stage can release its
-reservation from that event. Tested by U8, U23, and U34.
-
-## Decision 30 — IOC never enters the resting book
-An IOC remainder does not touch `orderIndex` or a price level. Cancelling its id
-therefore yields `ORDER_NOT_RESTING`; the engine may reuse only the existing
-accepted-id policy. Tested by U10, U27, and P13.
-
-## Decision 31 — Inclusive IOC cap and floor
-IOC BUY prices satisfy `tradePrice <= price`; IOC SELL prices satisfy
-`tradePrice >= price`, including equality. Tested by U26.
-
-## Decision 32 — Self-trade includes IOC
-Self-trade remains allowed for IOC as well as GTC; prevention is a later policy
-stage. Tested by U33.
-
-## Decision 33 — Edge quantity parser
-The common edge parser accepts canonical strings for large quantities and
-rejects numbers beyond `2**53`. Tested by Q1 to Q8.
-
-## Decision 34 — Differential and command-derived properties
-D1 compares the engine to an independent reference matcher. P2 to P4 and P12
-to P13 derive facts from commands and events rather than engine bookkeeping.
-Both are retained because differential testing finds model divergence while
-command-derived properties check conservation and identity independently.
-
-## Decision 35 — Week 3 benchmarks are baseline only
-The B1 to B7 benchmark is a reproducible baseline; optimization is deferred to
-Week 11. Benchmark results do not establish production performance.
-
-## Decision 25 — Week 3 IOC semantics
-### Context
-IOC orders must never rest and must stay deterministic and replayable.
-### Options considered
-A separate IOC matcher; a shared match loop with a time-in-force branch only at the tail.
-### Choice
-- One shared match loop; only the tail branches: an IOC remainder emits `ORDER_CANCELLED` with reason `IOC_REMAINDER` after the trades, a GTC remainder rests. Fully filled IOC emits no cancel; a rejected IOC emits only `ORDER_REJECTED`.
-- An IOC order's price is an inclusive hard limit (BUY cap, SELL floor). Trades execute at the maker price.
-- IOC never touches the order index or any level; it still advances `arrivalSeq` and `engineSeq`.
-- Duplicate ids stay rejected forever (decision above), so an id cannot be reused after an IOC completes. This deviates from the Week 3 draft ("only resting ids") on purpose: deterministic idempotency over memory.
-- Self-trade stays allowed, including IOC (U33).
-### Trade-offs
-The seen-id set grows without bound; pruning is a Week 5 snapshot decision.
 ### How tested
-U8-U10, U22-U34 in `packages/engine-core/test/ioc.test.ts`; D1 (engine vs independent plain-array reference, 5,000 runs, GTC/IOC/cancels/invalid input); mutation checks M1 (IOC rests), M2/M3 (flipped cross operators), M8 (arrivalSeq on IOC) each fail at least one test.
+The engine and breaker tests assert deterministic trade ordering, replay equivalence, and symbol-isolated state transitions.
 
-## Decision 26 — Duplicate ids: resting-only (supersedes the reject-forever rule in Decision 25)
+## Decision 2 — Bigint money, quantity, price, and tick size
+
 ### Context
-Reject-forever required an unbounded set inside the engine that snapshots would have to persist; docs/week-3.md and the blueprint put global dedupe at the gateway and risk stage.
+Financial values are exact and must not lose precision during arithmetic or comparison.
+
 ### Options considered
-Reject any id ever seen; reject only ids currently resting.
+- JavaScript numbers with rounding guards
+- decimal strings with custom arithmetic
+- bigint minor-unit arithmetic
+
 ### Choice
-The engine rejects `DUPLICATE_ORDER_ID` only while an order with that id is resting. `acceptedOrderIds` and `seenOrderIds()` were removed. An id may be reused after it fills, is cancelled, or an IOC completes.
+Store prices, quantities, and money in bigint minor units and keep all arithmetic in integer space.
+
 ### Trade-offs
-Replaying a duplicated command with a finished id would be accepted by the engine alone; the gateway `(accountId, clientOrderId)` dedupe, risk-stage dedupe and journal sequence numbers must prevent that.
+The code becomes more explicit and defensive, but it avoids float drift and requires all adapters to preserve the integer representation.
+
 ### How tested
-engine.test.ts (duplicate while resting, reuse after fill, reuse after cancel), ioc.test.ts U28 (both halves), D1 and the reference-model equivalence property.
+The common money and quantity test suites validate canonical parsing, arithmetic invariants, and boundary behavior.
+
+## Decision 3 — Map-based keyed collections
+
+### Context
+Price-keyed collections and id-keyed mappings must be deterministic and never rely on object key ordering.
+
+### Options considered
+- Plain objects keyed by string
+- `Map` collections only
+- Tree structures with custom ordering code
+
+### Choice
+Use `Map` for price-keyed and id-keyed collections and keep any ordering logic explicit.
+
+### Trade-offs
+This is slightly more verbose than object maps, but it preserves stable semantics and avoids key coercion pitfalls.
+
+### How tested
+The engine, recon, and breaker suites validate state recovery and deterministic ordering under repeated commands.
+
+## Decision 4 — Journal-first event sourcing
+
+### Context
+The system must survive crashes without losing the exact sequence of commands that produced state.
+
+### Options considered
+- Keep only in-memory state with best-effort snapshots
+- Persist commands and rehydrate from a journal
+- Persist only derived projections
+
+### Choice
+Treat the journal as the source of truth for command replay and rebuild state from the journal plus snapshots.
+
+### Trade-offs
+This adds operational complexity, but it allows exact recovery and auditability. The matching engine is durable; risk, ledger, and recon retain separate scope limits.
+
+### How tested
+Recovery and snapshot suites exercise replay, deterministic reconstitution, and compatibility via versioned snapshots.
+
+## Decision 5 — Reject before mutation
+
+### Context
+A rejected command must leave state unchanged.
+
+### Options considered
+- Mutate first, then reject on failure
+- Validate first, then perform mutation
+- Mixed validation with partial writes
+
+### Choice
+Perform all validation first, then issue a single state mutation on success.
+
+### Trade-offs
+This makes the state machine easier to reason about but requires slightly more explicit validation code. The cost is justified by correctness and simpler replay semantics.
+
+### How tested
+Risk-core and reconciliation tests confirm that invalid or halted orders produce rejection events without altering ledger or reservation state.
+
+## Decision 6 — Circuit breaker as a state machine
+
+### Context
+The engine must protect itself from sustained volatility spikes and avoid hysteresis bugs.
+
+### Options considered
+- Hard stop on every trade spike
+- One-time halt without recovery
+- Explicit closed/open/half-open machine with cooldown and reset thresholds
+
+### Choice
+Use a closed/open/half-open breaker driven by rolling-window volatility and an explicit halt timeout.
+
+### Trade-offs
+The state machine adds more behavior, but it is deterministic and easier to audit in production. It is also the basis for manual halts and resume flows.
+
+### How tested
+The breaker suite exercises trip thresholds, cooldowns, half-open reset logic, and manual halt/resume semantics.
+
+## Decision 7 — Halted-symbol rejection before reservation
+
+### Context
+A symbol that is halted must reject order submission before a reservation is created or held.
+
+### Options considered
+- Allow submission, then reject after reservation
+- Reject at submission without reservation
+- Defer until settlement risk checks
+
+### Choice
+Check the symbol halt state before reservation creation and emit `SYMBOL_HALTED` immediately.
+
+### Trade-offs
+This is stricter and safer for clients, but it means the risk layer must be validated before account holds are booked. It preserves the invariant that rejected commands never leave a reservation behind.
+
+### How tested
+Risk-core and system tests assert the early rejection path and the absence of reservation mutation on halted symbols.
+
+## Decision 8 — Double-entry ledger invariant
+
+### Context
+Each trade must leave the ledger balanced and explainable.
+
+### Options considered
+- Single-sided balance updates
+- Debits and credits tracked in separate logs
+- Double-entry postings with suspense handling
+
+### Choice
+Every fill posts balanced debits and credits, and suspense entries remain explicit when a balance is temporarily withheld.
+
+### Trade-offs
+This is slightly more verbose, but it preserves auditability and the invariant that ledger totals remain balanced even under adjustment flows.
+
+### How tested
+Ledger and reconciliation tests validate balanced postings and the correct handling of suspense and adjustment outcomes.
+
+## Decision 9 — Breaks and workflow resolution
+
+### Context
+Internal and external records may disagree and must be visible in a formal remediation workflow.
+
+### Options considered
+- Log mismatches without workflow
+- Surface a passive status list
+- Create a typed break workflow with required reasons and immutable terminal states
+
+### Choice
+Use a break workflow with explicit transitions, mandatory actor/reason metadata, and terminal immutability for resolved and written-off states.
+
+### Trade-offs
+This adds more state modeling but turns reconciliation into a reviewable, auditable process. It also keeps the service-layer final state consistent with the ledger and risk state.
+
+### How tested
+Recon workflow tests assert legal transitions, required reason fields, terminal immutability, and age tracking from creation time.
+
+## Decision 10 — Recovery scope is intentionally limited
+
+### Context
+Persistence work is staged and not all subsystems are durable yet.
+
+### Options considered
+- Claim full system durability immediately
+- Scope recovery to the matching engine only
+- Delay all claims until risk, ledger, and recon are durable
+
+### Choice
+Claim recovery only for the matching engine. Risk, ledger, and reconciliation are deterministic and replayable in tests, but they are not durable yet.
+
+### Trade-offs
+This is honest and keeps the project aligned with the Week 7 blueprint, but it narrows the marketing claim. The docs explicitly state this boundary to avoid over-claiming.
+
+### How tested
+The README and project status files keep this scope statement explicit; the Week 5 timers remain outside the Week 7 flake gate because they are deferred by design.
+
+## Decision 11 — CSV and date parsing must be strict
+
+### Context
+Recon inputs can contain quoted fields, embedded commas, and edge settlement dates. A tolerant parser cannot hide malformed data.
+
+### Options considered
+- Accept malformed CSV and silently coerce values
+- Parse strictly and return row-level errors
+- Skip bad rows without an audit trail
+
+### Choice
+Strict CSV parsing with row errors for malformed quoted data, invalid UTF-8, and invalid settlement-date conversion.
+
+### Trade-offs
+The parser is less forgiving, but it produces trustworthy break reasons and preserves operator visibility.
+
+### How tested
+Recon contract tests cover BOM handling, quoted commas, escaped quotes, invalid UTF-8, and settlement-date edge cases.
+
+## Decision 12 — Deterministic IDs and counters
+
+### Context
+Every command, order, fill, and trade must carry a stable identity so that replay and audit remain deterministic.
+
+### Options considered
+- Random ids
+- Wall-clock derived ids
+- Journal-driven counters and deterministic symbols
+
+### Choice
+Use deterministic counters from the engine state and explicit journal inputs rather than clock or randomness.
+
+### Trade-offs
+This keeps replay exact but requires careful id generation and state retention. The benefit is strong auditability and simplified down-stream matching.
+
+### How tested
+Trade and sequence tests assert monotonic counters and stable trade identifiers across repeated runs.
+
+## Decision 13 — No async and no incidental runtime dependencies in engine-core
+
+### Context
+The engine must remain pure, synchronous, and dependency-light.
+
+### Options considered
+- Mixed async engine with runtime dependencies
+- Synchronous pure engine with strict dependency boundaries
+- Shared runtime packages for low-level tasks
+
+### Choice
+Keep `engine-core` free of async code, `Date`, `Math.random`, `node:*` imports, and runtime dependencies beyond the project’s own packages.
+
+### Trade-offs
+This makes the core slower to integrate with the surrounding infrastructure, but it preserves correctness, determinism, and boundary quality.
+
+### How tested
+Boundary checks and lint rules reject forbidden imports and timer usage inside the pure engine package.
+
+## Decision 14 — Risk-first, ledger-second, break-status-last adjustment ordering
+
+### Context
+Adjustments must be validated in the same order as the real workflow: risk before ledger and only then update the reconciliation break state.
+
+### Options considered
+- Update ledger first
+- Update break status first
+- Risk validate then ledger post then break status
+
+### Choice
+Apply the adjustment at the risk layer, then post it to the ledger, and only at the end update the break’s workflow status.
+
+### Trade-offs
+This introduces a deliberate sequencing requirement, but it keeps the overall system consistent and prevents a rejected adjustment from mutating downstream state.
+
+### How tested
+Service-level tests assert the exact order of operations and the fact that `ADJUSTMENT_REJECTED` leaves the break unchanged.
+
+## Decision 15 — Route guards follow the role matrix
+
+### Context
+The UI must respect the same permission boundaries as the public API.
+
+### Options considered
+- Hide controls without enforcing server-side checks
+- Duplicate route logic in each screen
+- Centralize the role matrix in a browser-safe common package
+
+### Choice
+Derive route guards from the role matrix and keep them in a shared browser-safe common package.
+
+### Trade-offs
+This introduces a shared abstraction, but it prevents the UI and backend from drifting apart.
+
+### How tested
+The frontend contract is checked against the section 3.4 role model and the API route map rather than ad hoc screen logic.
+
+## Decision 16 — Mutation gating in a temporary copy
+
+### Context
+The project needs evidence that the tests would catch logic regressions rather than simply passing on the current code.
+
+### Options considered
+- Trust the suite without mutation analysis
+- Run mutation tests in-place and risk polluting the working tree
+- Run mutation tests in a temporary copy and record the results
+
+### Choice
+Run the mutation sweep in a temporary copy, never on the active checkout, and record expected/actual outcomes in a documentation artifact.
+
+### Trade-offs
+This takes longer than a normal test run, but it removes the risk of mutating the workspace itself and produces evidence that the suite is sensitive to the correct behaviors.
+
+### How tested
+The temp-copy sweep covered 24 targeted mutations; 23 were killed and 0 survived. The one unrun case was a missing target file in the current checkout, not a surviving defect.

@@ -14,7 +14,8 @@
     { "path": "../shard" },
     { "path": "../risk" },
     { "path": "../ledger" },
-    { "path": "../journal" }
+    { "path": "../journal" },
+    { "path": "../recon" }
   ],
   "extends": "../../tsconfig.base.json"
 }

@@ -28,7 +28,7 @@ describe("system-tests smoke", () => {
   });
 
   it("X6: Scenario 5 t3 resolves end to end in risk -> ledger -> break status order", async () => {
-    const workflow = { status: "OPEN" as const, breakId: "t3" };
+    const workflow: { status: "OPEN" | "RESOLVED"; breakId: string } = { status: "OPEN", breakId: "t3" };
     const ledger = new Map<string, bigint>([["BUYER:CASH", 1_000n], ["@SUSPENSE:CASH", 0n]]);
     const risk = new Map<string, bigint>([["BUYER:CASH", 1_000n], ["@SUSPENSE:CASH", 0n]]);
     const order: string[] = [];

@@ -120,7 +120,7 @@ describe("snapshot contract", () => {
       ["ARRIVAL_ORDER", (snapshot) => ({ ...snapshot, asks: [{ ...snapshot.asks[0]!, orders: [{ ...snapshot.asks[0]!.orders[0]!, arrivalSeq: 2 }, { ...snapshot.asks[0]!.orders[0]!, arrivalSeq: 1 }] }] }), "ARRIVAL_ORDER"],
       ["CROSSED_BOOK", (snapshot) => ({ ...snapshot, bids: [{ price: 100n, orders: [{ ...snapshot.asks[0]!.orders[0]!, orderId: "b1", accountId: "a", side: "BUY", price: 100n, remaining: 5n, arrivalSeq: 1 }] }], asks: [{ price: 100n, orders: [{ ...snapshot.asks[0]!.orders[0]!, side: "SELL", remaining: 5n, price: 100n, arrivalSeq: 1 }] }] }), "CROSSED_BOOK"],
       ["NEGATIVE_COUNTER", (snapshot) => ({ ...snapshot, nextArrivalSeq: -1 }), "NEGATIVE_COUNTER"],
-      ["VERSION", (snapshot) => ({ ...snapshot, version: 2 }), "VERSION"],
+      ["VERSION", (snapshot) => ({ ...snapshot, version: 3 as unknown as 1 | 2 }), "VERSION"],
     ];
 
     for (const [label, mutation, reason] of cases) {

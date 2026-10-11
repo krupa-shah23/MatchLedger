@@ -97,7 +97,6 @@ describe("recon contract", () => {
   it("PA9: streaming writes are stable across fragment boundaries", () => {
     const text = 'tradeId,symbol,quantity\n"t1","ACME, Inc.",10\n"t2","MSFT",5\n';
     const frameA = new RecordParser();
-    const frameB = new RecordParser();
     const chunks = [text.slice(0, 12), text.slice(12, 29), text.slice(29, 45), text.slice(45)];
     for (const chunk of chunks) {
       frameA.push(chunk);
@@ -136,7 +135,6 @@ describe("recon contract", () => {
     fc.assert(
       fc.property(fc.integer({ min: -10_000_000_000, max: 10_000_000_000 }), fc.integer({ min: 0, max: 5 }), (ts, lag) => {
         const days = Math.floor(ts / 86_400_000);
-        const reference = new Date(Date.UTC(1970, 0, 1) + days * 86_400_000);
         const shifted = new Date(Date.UTC(1970, 0, 1) + (days + lag) * 86_400_000);
         const expectedSettlement = `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
         expect(settlementDate(ts, lag)).toBe(expectedSettlement);
@@ -329,7 +327,7 @@ describe("recon contract", () => {
     }) => {
       const expected: Array<{ tradeId: string; type: string; count?: number; internalQuantity?: bigint; externalQuantity?: bigint; internalPrice?: bigint; externalPrice?: bigint; internalSettlement?: string; externalSettlement?: string; externalTs?: number; internalTs?: number }> = [];
       const internalById = new Map(input.internalTrades.map((trade) => [trade.tradeId, trade]));
-      const externalById = new Map<string, typeof input.statementRows>();
+      const externalById = new Map<string, Array<(typeof input.statementRows)[number]>>();
       for (const row of input.statementRows) {
         const rows = externalById.get(row.tradeId) ?? [];
         rows.push(row);
