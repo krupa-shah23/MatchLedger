@@ -29,3 +29,21 @@ These are not part of the Week 7 gate and should not be used to block the comple
 
 ### Recovery scope
 Recovery covers the matching engine only; risk, ledger and recon are not durable.
+
+## Week 8 preflight status
+
+Week 8 implementation is blocked at Step 1. `docs/week-8.md` is present in the worktree as an untracked user-provided spec and has been preserved.
+
+### Verification run
+- `npm ci` completed; npm reported one high-severity audit finding.
+- `npm run build`, `npm run lint`, and `npm run check:boundaries` passed.
+- `npm test` passed 250 tests and skipped 42 tests across 7 files.
+- `npm run test:integration` could not run: the root package has no such script.
+- `docker compose ps` reported no running services. `docker compose ps -a` showed the Postgres container exited; the Compose image tag is `postgres:18`, but no live server version was verified.
+- `packages/engine-core` and `packages/shard/src/shard-runner.ts` have no diff.
+
+### Week 5 acceptance coverage
+The source test names found are J1, J4, J9, SS1, RC1, RC2, RC9, RC10, and R1. The journal/snapshot/recovery Postgres suites are guarded by `RUN_CONTAINERS` or `RUN_INTEGRATION` and were skipped in the default unit run. P7 is absent. Missing required IDs include J2-J3, J5-J8, J10-J14, SS2-SS7, and RC3-RC8, RC11-RC12. Consequently Week 5 is not proven and no Week 8 implementation steps were started.
+
+### Next step
+Restore the Week 5 integration setup and acceptance tests, start Postgres 18, and provide a root `test:integration` command. Re-run the full Step 1 gate and flake gate; begin Week 8 only after all required Week 5 IDs pass without skips.
