@@ -1,6 +1,6 @@
-import type { AccountSnapshot, RiskCommand, RiskConfig, RiskEvent, StampedRiskCommand } from "@matchledger/common";
+import type { AccountSnapshot, RiskCommand, RiskConfig, RiskEvent, RiskState, StampedRiskCommand } from "@matchledger/common";
 
-import { RiskInvariantError } from "./errors.js";
+import { InvalidRiskStateError, RiskInvariantError } from "./errors.js";
 import { computeMarketLimit, resolveReference } from "./reference.js";
 import type { Account, AccountView, Reservation, RiskSnapshot } from "./state.js";
 
@@ -15,6 +15,62 @@ export class RiskCore {
   public readonly adjustmentIds = new Set<string>();
 
   public constructor(private readonly config: RiskConfig = { instruments: new Map() }) {}
+
+  public static restore(config: RiskConfig, state: RiskState, partition?: number): RiskCore {
+    void config;
+    void state;
+    void partition;
+    throw new InvalidRiskStateError("VERSION", "RiskCore.restore: hand-written (docs/WEEK-8.md 4.3)");
+  }
+
+  public exportState(): RiskState {
+    const instrumentEntries = [...this.config.instruments.values()].sort((left, right) => left.symbol.localeCompare(right.symbol));
+    const accounts = [...this.accounts.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([accountId, account]) => ({
+        accountId,
+        cash: account.cash,
+        heldCash: account.heldCash,
+        positions: [...account.positions.entries()]
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([symbol, position]) => ({ symbol, quantity: position.quantity, heldShares: position.heldShares })),
+      }));
+    const reservations = [...this.reservations.values()]
+      .sort((left, right) => left.placedSeq - right.placedSeq || left.orderId.localeCompare(right.orderId))
+      .map((reservation) => ({
+        orderId: reservation.orderId,
+        accountId: reservation.accountId,
+        symbol: reservation.symbol,
+        side: reservation.side,
+        priceCap: reservation.priceCap,
+        qtyRemaining: reservation.qtyRemaining,
+        amountRemaining: reservation.amountRemaining,
+        state: reservation.state,
+        placedTs: reservation.placedTs,
+        placedSeq: reservation.placedSeq,
+        appliedTradeIds: [...reservation.appliedTradeIds].sort((left, right) => left.localeCompare(right)),
+      }));
+
+    return {
+      version: 1,
+      partition: 0,
+      instruments: instrumentEntries.map((instrument) => ({
+        symbol: instrument.symbol,
+        tickSize: instrument.tickSize,
+        maxPrice: instrument.maxPrice,
+        protectionBandBps: instrument.protectionBandBps,
+        maxBandBps: instrument.maxBandBps,
+        referencePriceTicks: instrument.referencePriceTicks,
+        maxReferenceAgeMs: instrument.maxReferenceAgeMs,
+      })),
+      accounts,
+      reservations,
+      decidedOrders: [...this.decisions].sort((left, right) => left.localeCompare(right)),
+      seenRequestIds: [...this.seenRequestIds].sort((left, right) => left.localeCompare(right)),
+      seenAdjustmentIds: [...this.adjustmentIds].sort((left, right) => left.localeCompare(right)),
+      haltedSymbols: [...this.haltedSymbols].sort((left, right) => left.localeCompare(right)),
+    };
+  }
 
   public apply(command: StampedRiskCommand): readonly RiskEvent[] {
     const events: RiskEvent[] = [];

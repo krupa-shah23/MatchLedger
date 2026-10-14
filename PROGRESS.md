@@ -47,3 +47,19 @@ The source test names found are J1, J4, J9, SS1, RC1, RC2, RC9, RC10, and R1. Th
 
 ### Next step
 Restore the Week 5 integration setup and acceptance tests, start Postgres 18, and provide a root `test:integration` command. Re-run the full Step 1 gate and flake gate; begin Week 8 only after all required Week 5 IDs pass without skips.
+
+## Week 8 stub checkpoint
+
+This task added the explicit Week 8 recovery contract surface without starting the durable replay work:
+- `packages/common/src/risk-types.ts` now defines the serialized `RiskState` snapshot model.
+- `packages/common/src/index.ts` exports the new `RiskState` type.
+- `packages/risk/src/core/errors.ts` defines `InvalidRiskStateError` for invalid restore payloads.
+- `packages/risk/src/core/risk-core.ts` now exposes `exportState()` and a deliberately hard-stopping `restore()` stub that throws an `InvalidRiskStateError`.
+
+### Verification run
+- `npm run build` passed.
+- `npm run lint` passed.
+- `npm run check:boundaries` passed.
+- `npm test` passed: 37 files, 250 tests passed, 42 skipped.
+
+This is intentionally a stub checkpoint, not the durable recovery implementation. The repo remains blocked on the missing Week 5 integration proof and root `test:integration` gate described above.

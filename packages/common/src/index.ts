@@ -18,6 +18,7 @@ export type {
   RiskOutput,
   RiskRejectReason,
   RiskSide,
+  RiskState,
   RiskTimeInForce,
   StampedRiskCommand,
 } from "./risk-types.js";

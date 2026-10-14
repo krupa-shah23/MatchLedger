@@ -12,3 +12,23 @@ export class RiskInvariantError extends Error {
     this.code = code;
   }
 }
+
+export class InvalidRiskStateError extends Error {
+  public readonly reason:
+    | "VERSION"
+    | "CONFIG_MISMATCH"
+    | "DUPLICATE_RESERVATION"
+    | "UNKNOWN_ACCOUNT"
+    | "RESERVATION_NOT_DECIDED"
+    | "AMOUNT_MISMATCH"
+    | "HELD_MISMATCH"
+    | "OVER_HELD"
+    | "NEGATIVE"
+    | "INVARIANT";
+
+  public constructor(reason: InvalidRiskStateError["reason"], message: string) {
+    super(message);
+    this.name = "InvalidRiskStateError";
+    this.reason = reason;
+  }
+}

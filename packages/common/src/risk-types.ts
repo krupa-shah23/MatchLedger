@@ -32,6 +32,47 @@ export type RiskConfig = Readonly<{
   readonly instruments: ReadonlyMap<string, InstrumentRiskConfig>;
 }>;
 
+export type RiskState = Readonly<{
+  readonly version: 1;
+  readonly partition: number;
+  readonly instruments: ReadonlyArray<Readonly<{
+    readonly symbol: string;
+    readonly tickSize: bigint;
+    readonly maxPrice?: bigint;
+    readonly protectionBandBps: bigint;
+    readonly maxBandBps: bigint;
+    readonly referencePriceTicks?: bigint;
+    readonly maxReferenceAgeMs: number;
+  }>>;
+  readonly accounts: ReadonlyArray<Readonly<{
+    readonly accountId: string;
+    readonly cash: bigint;
+    readonly heldCash: bigint;
+    readonly positions: ReadonlyArray<Readonly<{
+      readonly symbol: string;
+      readonly quantity: bigint;
+      readonly heldShares: bigint;
+    }>>;
+  }>>;
+  readonly reservations: ReadonlyArray<Readonly<{
+    readonly orderId: string;
+    readonly accountId: string;
+    readonly symbol: string;
+    readonly side: RiskSide;
+    readonly priceCap: bigint;
+    readonly qtyRemaining: bigint;
+    readonly amountRemaining: bigint;
+    readonly state: "PENDING_ACK" | "LIVE";
+    readonly placedTs: number;
+    readonly placedSeq: number;
+    readonly appliedTradeIds: readonly string[];
+  }>>;
+  readonly decidedOrders: readonly string[];
+  readonly seenRequestIds: readonly string[];
+  readonly seenAdjustmentIds: readonly string[];
+  readonly haltedSymbols: readonly string[];
+}>;
+
 export type AccountSnapshot = Readonly<{
   readonly cash: bigint;
   readonly heldCash: bigint;
