@@ -17,7 +17,8 @@
     "test:flake": "node scripts/flake-gate.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "bench": "npm --workspace @matchledger/benchmarks run bench",
-    "chaos:pipeline": "node scripts/chaos-pipeline.mjs"
+    "chaos:pipeline": "node scripts/chaos-pipeline.mjs",
+    "test:mutations": "node scripts/mutate.mjs"
   },
   "devDependencies": {
     "@types/node": "26.6.5",

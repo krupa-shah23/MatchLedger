@@ -1,0 +1,164 @@
+[
+  {
+    "id": "M1",
+    "description": "skip one command in recovery (lastSeq + 2)",
+    "file": "packages/journal/src/recovery.ts",
+    "find": "const lastSeq = result.rows[0]?.lastSeq ?? 0;\n  const commands = await args.journal.readCommands(args.symbol, lastSeq, args.chunkSize);",
+    "replace": "const lastSeq = result.rows[0]?.lastSeq ?? 0;\n  const commands = await args.journal.readCommands(args.symbol, lastSeq + 1, args.chunkSize);",
+    "tests": ["packages/risk/src/recovery/recover-risk-partition.test.ts"],
+    "expectFail": ["RR2", "RR3"]
+  },
+  {
+    "id": "M2",
+    "description": "RiskCore.restore ignores decidedOrders",
+    "file": "packages/risk/src/core/risk-core.ts",
+    "find": "this.decidedOrders = new Set(restored.decidedOrders);",
+    "replace": "this.decidedOrders = new Set();",
+    "tests": ["packages/risk/src/core/risk-core.test.ts"],
+    "expectFail": ["RX5"]
+  },
+  {
+    "id": "M3",
+    "description": "restore ignores haltedSymbols",
+    "file": "packages/risk/src/core/risk-core.ts",
+    "find": "this.haltedSymbols = new Set(restored.haltedSymbols);",
+    "replace": "this.haltedSymbols = new Set();",
+    "tests": ["packages/risk/src/core/risk-core.test.ts"],
+    "expectFail": ["RX5"]
+  },
+  {
+    "id": "M4",
+    "description": "restore ignores appliedTradeIds",
+    "file": "packages/risk/src/core/risk-core.ts",
+    "find": "this.appliedTradeIds = new Set(restored.appliedTradeIds);",
+    "replace": "this.appliedTradeIds = new Set();",
+    "tests": ["packages/risk/src/core/risk-core.test.ts"],
+    "expectFail": ["RX5", "RM4"]
+  },
+  {
+    "id": "M5",
+    "description": "DurableRiskOutbox forwards before journaling",
+    "file": "packages/risk/src/persistence/durable-risk-outbox.ts",
+    "find": "await this.journal.append(commands);\n    const forward = this.outbox.forward(notices);",
+    "replace": "const forward = this.outbox.forward(notices);\n    await this.journal.append(commands);",
+    "tests": ["packages/risk/src/persistence/durable-risk-outbox.test.ts"],
+    "expectFail": ["DO1"]
+  },
+  {
+    "id": "M6",
+    "description": "owner row inserted outside event transaction",
+    "file": "packages/risk/src/persistence/durable-risk-outbox.ts",
+    "find": "await this.sql.query(\n      `INSERT INTO order_owners (order_id, account_id, symbol, side) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,",
+    "replace": "// await this.sql.query(\n      // `INSERT INTO order_owners (order_id, account_id, symbol, side) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,",
+    "tests": ["packages/risk/src/persistence/durable-risk-outbox.test.ts"],
+    "expectFail": ["DO2"]
+  },
+  {
+    "id": "M7",
+    "description": "redelivery skips engine-journal check",
+    "file": "packages/runtime/src/recover-pipeline.ts",
+    "find": "if (journal.hasCommandForOrder(engineStream, orderId)) {\n        return;\n      }",
+    "replace": "// Skip engine journal check\n      // if (journal.hasCommandForOrder(engineStream, orderId)) {\n      //   return;\n      // }",
+    "tests": ["packages/system-tests/test/crash-windows.test.ts"],
+    "expectFail": ["PR1", "PR2", "PR3"]
+  },
+  {
+    "id": "M8",
+    "description": "redelivery disabled",
+    "file": "packages/runtime/src/recover-pipeline.ts",
+    "find": "// Step 5: Redelivery (TODO)",
+    "replace": "// Step 5: Redelivery DISABLED FOR TESTING",
+    "tests": ["packages/system-tests/test/crash-windows.test.ts"],
+    "expectFail": ["PR2", "RCP3"]
+  },
+  {
+    "id": "M9",
+    "description": "notice catch-up disabled",
+    "file": "packages/runtime/src/recover-pipeline.ts",
+    "find": "// Step 4: Notice catch-up (TODO)",
+    "replace": "// Step 4: Notice catch-up DISABLED FOR TESTING",
+    "tests": ["packages/system-tests/test/crash-windows.test.ts"],
+    "expectFail": ["RM4", "RCP5"]
+  },
+  {
+    "id": "M10",
+    "description": "ledger catch-up not idempotent",
+    "file": "packages/ledger/src/pg-ledger-store.ts",
+    "find": "ON CONFLICT (tx_id, leg_idx) DO NOTHING",
+    "replace": "-- ON CONFLICT removed: no idempotence",
+    "tests": ["packages/ledger/src/pg-ledger-store.test.ts"],
+    "expectFail": ["LP2"]
+  },
+  {
+    "id": "M11",
+    "description": "ledger append not atomic",
+    "file": "packages/ledger/src/pg-ledger-store.ts",
+    "find": "SELECT * FROM UNNEST($1::text[], $2::int[], $3::text[], $4::text[], $5::jsonb[], $6::jsonb[], $7::text[])",
+    "replace": "-- Simulating non-atomic: would loop inserts, not unnest",
+    "tests": ["packages/ledger/src/pg-ledger-store.test.ts"],
+    "expectFail": ["LP1"]
+  },
+  {
+    "id": "M12",
+    "description": "recon transition without optimistic WHERE",
+    "file": "packages/recon/src/persistence/pg-recon-store.ts",
+    "find": "WHERE break_id = $3 AND status = $4",
+    "replace": "WHERE break_id = $3",
+    "tests": ["packages/recon/src/persistence/pg-recon-store.test.ts"],
+    "expectFail": ["RDB4", "RDB5"]
+  },
+  {
+    "id": "M13",
+    "description": "risk codec drops MarketInput",
+    "file": "packages/common/src/codec/commands.ts",
+    "find": "market?: MarketInput;",
+    "replace": "// market?: MarketInput; -- dropped",
+    "tests": ["packages/common/src/codec/commands.test.ts"],
+    "expectFail": ["RCD4"]
+  },
+  {
+    "id": "M14",
+    "description": "snapshot taken before last command applied",
+    "file": "packages/journal/src/recovery.ts",
+    "find": "for (const command of commands) {\n    const result = await args.journal.appendCommand(command);\n    book.apply(command);\n  }",
+    "replace": "for (const command of commands) {\n    book.apply(command);\n    const result = await args.journal.appendCommand(command);\n  }",
+    "tests": ["packages/journal/src/recovery.test.ts"],
+    "expectFail": ["P24"]
+  },
+  {
+    "id": "M15",
+    "description": "risk stamper forgets lastTs",
+    "file": "packages/risk/src/stamper.ts",
+    "find": "this.lastTs.set(partition, state.lastTs);",
+    "replace": "// this.lastTs.set(partition, state.lastTs); -- forgotten",
+    "tests": ["packages/risk/src/stamper.test.ts"],
+    "expectFail": ["RR11"]
+  },
+  {
+    "id": "M16",
+    "description": "ledger catch-up before shard recovery",
+    "file": "packages/runtime/src/recover-pipeline.ts",
+    "find": "// Step 6a: Ledger catch-up (moved earlier, deviation 1)\n    const ledgerStore = new PgLedgerStore(config.sql);",
+    "replace": "// MUTATION: moved after shard\n    const ledgerStore = new PgLedgerStore(config.sql);",
+    "tests": ["packages/system-tests/test/crash-windows.test.ts"],
+    "expectFail": ["PR4"]
+  },
+  {
+    "id": "M17",
+    "description": "router catch-up applies gap detection",
+    "file": "packages/risk/src/router.ts",
+    "find": "// Skip sequence-gap detection (the items are intentionally sparse)",
+    "replace": "// MUTATION: apply gap detection",
+    "tests": ["packages/risk/src/router.test.ts"],
+    "expectFail": ["RM3"]
+  },
+  {
+    "id": "M18",
+    "description": "Ledger.restore skips checkInvariants",
+    "file": "packages/ledger/src/ledger.ts",
+    "find": "const issues = ledger.checkInvariants();\n    if (issues.length > 0) {\n      throw new RestoreError(`Invariant violations: ${issues.join(\", \")}`);",
+    "replace": "// MUTATION: skip invariant check\n    // const issues = ledger.checkInvariants();\n    // if (issues.length > 0) {",
+    "tests": ["packages/ledger/src/ledger.test.ts"],
+    "expectFail": ["LP4"]
+  }
+]
