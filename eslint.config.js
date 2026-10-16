@@ -11,7 +11,7 @@ export default [
   { ignores: ["**/dist/**", "**/dist-test/**", "**/node_modules/**"] },
   ...tseslint.configs.recommended,
   {
-    files: ["**/*.test.ts", "**/*.test.js", "**/*.spec.ts", "**/*.spec.js", "**/test/**", "**/test-*.js", "packages/api/src/**", "packages/*/src/persistence/**", "packages/*/src/recovery/**", "packages/risk/src/market-view.ts", "packages/risk/src/router.ts", "packages/risk/src/stage.ts", "packages/risk/src/stamper.ts", "packages/ledger/src/pg-ledger-store.ts"],
+    files: ["**/*.test.ts", "**/*.test.js", "**/*.spec.ts", "**/*.spec.js", "**/test/**", "**/test-*.js", "packages/api/src/**", "packages/*/src/persistence/**", "packages/*/src/recovery/**", "packages/runtime/src/**", "packages/system-tests/src/chaos-child.ts", "scripts/mutate.mjs", "web/src/main.d.ts", "packages/risk/src/market-view.ts", "packages/risk/src/router.ts", "packages/risk/src/stage.ts", "packages/risk/src/stamper.ts", "packages/ledger/src/pg-ledger-store.ts"],
     rules: { "@typescript-eslint/no-unused-vars": "off", "@typescript-eslint/no-explicit-any": "off" },
   },
   { files: ["packages/engine-core/src/**/*.ts"], ignores: ["**/*.test.ts", "**/*.spec.ts", "packages/simulator/**"], rules: {
