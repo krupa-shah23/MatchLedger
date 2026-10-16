@@ -50,8 +50,8 @@ async function recoverEnginePartitions(config: RecoveryConfig) {
 }
 
 export async function recoverPipeline(config: RecoveryConfig): Promise<PipelineHandle> {
-  let runner: any = null;
-  let stage: any = null;
+  const runner: any = null;
+  const stage: any = null;
 
   try {
     // Step 0: Postgres check

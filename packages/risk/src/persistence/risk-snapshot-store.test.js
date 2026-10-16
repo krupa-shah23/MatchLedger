@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { createSqlExecutor, setUpIsolatedSchema } from "@matchledger/journal";
 import { RiskSnapshotStore } from "./risk-snapshot-store.js";

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { createSqlExecutor, setUpIsolatedSchema } from "@matchledger/journal";
 import { PgRiskJournal } from "./pg-risk-journal.js";

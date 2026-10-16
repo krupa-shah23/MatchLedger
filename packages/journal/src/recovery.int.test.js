@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createPool } from "./pool.js";
 import { runMigrations } from "./migrate.js";

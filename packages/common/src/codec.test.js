@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { describe, it, expect } from "vitest";
 import { serializeCommand, deserializeCommand } from "./codec/commands.js";
 import { serializeEvent, deserializeEvent } from "./codec/events.js";

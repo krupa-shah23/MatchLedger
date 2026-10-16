@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { createHash } from "node:crypto";
 import { toSafeNumber } from "./pool.js";
 export class PgSnapshotStore {
