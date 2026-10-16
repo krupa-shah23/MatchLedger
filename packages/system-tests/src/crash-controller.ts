@@ -1,59 +1,50 @@
+export type CrashKind = "risk.journal.append" | "risk.events.append" | "shard.enqueue" | "engine.events.append" | "ledger.append" | "risk.snapshot.save" | "core.apply";
+export type CrashTiming = "before" | "after";
+
 export class SimulatedCrash extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(readonly kind: CrashKind, readonly timing: CrashTiming) {
+    super(`Simulated crash at ${timing} ${kind}`);
     this.name = "SimulatedCrash";
   }
 }
 
-export type CrashKind =
-  | "engine.journal.append"
-  | "engine.events.append"
-  | "engine.snapshot.save"
-  | "risk.journal.append"
-  | "risk.events.append"
-  | "risk.snapshot.save"
-  | "ledger.append"
-  | "shard.enqueue"
-  | "stage.notify";
-
-export interface CrashPlan {
-  kind: CrashKind;
-  nth: number;
-  when: "before" | "after";
-}
-
 export class CrashController {
-  private plan: CrashPlan | null = null;
-  private callCounts = new Map<CrashKind, number>();
-  public crashed = false;
+  crashed = false;
+  private plan?: { kind: CrashKind; nth: number; when: CrashTiming };
+  private callCount = new Map<string, number>();
 
-  arm(plan: CrashPlan): void {
+  constructor() {}
+
+  arm(plan: { kind: CrashKind; nth: number; when: CrashTiming }): void {
     this.plan = plan;
-    this.callCounts.clear();
-    this.crashed = false;
   }
 
-  async trip(kind: CrashKind, when: "before" | "after", fn: () => Promise<void>): Promise<void> {
-    const count = (this.callCounts.get(kind) ?? 0) + 1;
-    this.callCounts.set(kind, count);
+  private check(kind: CrashKind, timing: CrashTiming): void {
+    if (this.crashed) throw new SimulatedCrash(kind, timing);
+    if (!this.plan || this.plan.kind !== kind || this.plan.when !== timing) return;
 
-    if (this.crashed) {
-      throw new SimulatedCrash(`Already crashed; no more calls allowed`);
-    }
+    const key = `${kind}:${timing}`;
+    const count = (this.callCount.get(key) ?? 0) + 1;
+    this.callCount.set(key, count);
 
-    if (this.plan && this.plan.kind === kind && this.plan.nth === count && this.plan.when === when) {
+    if (count === this.plan.nth) {
       this.crashed = true;
-      throw new SimulatedCrash(`Crash at ${kind} #${count} (${when})`);
-    }
-
-    if (!this.crashed) {
-      await fn();
-    } else {
-      throw new SimulatedCrash(`Already crashed; call to ${kind} rejected`);
+      throw new SimulatedCrash(kind, timing);
     }
   }
 
-  callCount(kind: CrashKind): number {
-    return this.callCounts.get(kind) ?? 0;
+  wrapAsync<T>(kind: CrashKind, fn: () => Promise<T>): Promise<T> {
+    this.check(kind, "before");
+    return fn().then((result) => {
+      this.check(kind, "after");
+      return result;
+    });
+  }
+
+  wrapSync<T>(kind: CrashKind, fn: () => T): T {
+    this.check(kind, "before");
+    const result = fn();
+    this.check(kind, "after");
+    return result;
   }
 }
