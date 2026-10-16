@@ -42,14 +42,26 @@ export class PgRiskJournal {
   }
 
   /** Appends a batch of stamped commands as ONE statement, validating per-partition
-   * contiguity against the tracked lastSeq BEFORE any write. */
+   * contiguity for new commands. Idempotent: duplicate seqs are silently ignored (ON CONFLICT DO NOTHING). */
   async append(batch: readonly StampedRiskCommand[]): Promise<void> {
     if (batch.length === 0) return;
 
     const streamId = this.streamId();
     const baseline = await this.lastCommandSeq();
     let expected = baseline;
-    for (const cmd of batch) {
+
+    // Find the first new command (seq > baseline)
+    let firstNewIdx = batch.length;
+    for (let i = 0; i < batch.length; i++) {
+      if (batch[i]!.seq > baseline) {
+        firstNewIdx = i;
+        break;
+      }
+    }
+
+    // Validate contiguity only for new commands
+    for (let i = firstNewIdx; i < batch.length; i++) {
+      const cmd = batch[i]!;
       expected += 1;
       if (cmd.seq !== expected) {
         throw new JournalSequenceError(`dup/gap seq in risk command batch for ${streamId}: expected ${expected}, got ${cmd.seq}`);
@@ -65,7 +77,7 @@ export class PgRiskJournal {
         `($${i * 8 + 1}, $${i * 8 + 2}, $${i * 8 + 3}, $${i * 8 + 4}, $${i * 8 + 5}, $${i * 8 + 6}, $${i * 8 + 7}, $${i * 8 + 8})`,
       );
     }
-    const query = `INSERT INTO journal (stream_id, seq, record_type, idx, schema_version, ts, writer_epoch, payload_json) VALUES ${rows.join(",")}`;
+    const query = `INSERT INTO journal (stream_id, seq, record_type, idx, schema_version, ts, writer_epoch, payload_json) VALUES ${rows.join(",")} ON CONFLICT DO NOTHING`;
 
     try {
       await this.sql.query(query, values);

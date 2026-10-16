@@ -3,6 +3,7 @@ import { createSqlExecutor, setUpIsolatedSchema } from "@matchledger/journal";
 import type { IsolatedSchema, SqlExecutor } from "@matchledger/journal";
 import { PgRiskJournal } from "./pg-risk-journal.js";
 import type { RiskConfig } from "@matchledger/common";
+import { serializeRiskState } from "@matchledger/common";
 import { RiskCore } from "../core/risk-core.js";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -42,7 +43,7 @@ describe.skipIf(!run)("Snapshot Scheduler (RSC1)", () => {
   it("RSC1: Snapshot scheduler stores snapshots", async () => {
     const core = new RiskCore(config);
     const state = core.exportState();
-    const stateJson = JSON.stringify(state);
+    const stateJson = JSON.stringify(serializeRiskState(state));
 
     const { createHash } = await import("node:crypto");
     const checksum = createHash("sha256").update(stateJson).digest("hex");
