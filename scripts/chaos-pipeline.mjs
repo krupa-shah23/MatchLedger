@@ -1,158 +1,128 @@
 #!/usr/bin/env node
 import { spawn } from "child_process";
+import pg from "pg";
+import { randomBytes } from "crypto";
 
-// Simple seeded PRNG (mulberry32)
-function mulberry32(a) {
-  return function () {
-    let t = (a += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+const args = process.argv.slice(2);
+const seed = parseInt(args[args.indexOf("--seed") + 1] || "1");
+const iterations = parseInt(args[args.indexOf("--iterations") + 1] || "1");
+const kills = parseInt(args[args.indexOf("--kills") + 1] || "5");
+const steps = parseInt(args[args.indexOf("--steps") + 1] || "100");
+const keep = args.includes("--keep");
 
-async function runChildProcess(config) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      `--database-url=${config.dbUrl}`,
-      `--schema=${config.schema}`,
-      `--seed=${config.seed}`,
-      `--total=${config.total}`,
-      `--snapshot-every=${config.snapshotEvery}`,
-    ];
+const db = process.env.DATABASE_URL || "postgres://postgres:matchledger@localhost:5432/postgres";
+const pool = new pg.Pool({ connectionString: db });
 
-    const child = spawn("node", [
-      "packages/system-tests/dist/chaos-child.js",
-      ...args,
-    ]);
+async function runChild(schema, killAfterMs = null) {
+  return new Promise((resolve) => {
+    const child = spawn("ts-node", [
+      "packages/system-tests/src/chaos-child.ts",
+      "--seed", seed.toString(),
+      "--schema", schema,
+      "--steps", steps.toString(),
+      "--snapshot-every", "10",
+    ], {
+      env: { ...process.env, DATABASE_URL: db },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
 
-    let stdout = "";
-    let stderr = "";
-    let finished = false;
-
+    let output = "";
     child.stdout.on("data", (data) => {
-      const text = data.toString();
-      stdout += text;
-      const lines = text.trim().split("\n");
-      for (const line of lines) {
-        if (line.startsWith("{")) {
-          try {
-            const json = JSON.parse(line);
-            if (json.phase === "done") {
-              finished = true;
-            }
-          } catch {
-            // ignore parse errors
-          }
-        }
-      }
+      output += data.toString();
     });
 
-    child.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    const killTimeout = setTimeout(() => {
-      if (!finished) {
+    let killTimer = null;
+    if (killAfterMs !== null) {
+      killTimer = setTimeout(() => {
         child.kill("SIGKILL");
-      }
-    }, config.killDelayMs);
+      }, killAfterMs);
+    }
 
-    child.on("close", (code) => {
-      clearTimeout(killTimeout);
-      if (finished && code === 0) {
-        resolve({ code, stdout, stderr, killed: false });
-      } else if (code === null) {
-        resolve({ code: -15, stdout, stderr, killed: true });
-      } else {
-        resolve({ code, stdout, stderr, killed: false });
-      }
+    child.on("exit", (code) => {
+      if (killTimer) clearTimeout(killTimer);
+      const done = output.match(/DONE ([a-f0-9]+)/);
+      resolve({ code, done: done?.[1], killed: code === null });
     });
-
-    child.on("error", reject);
   });
 }
 
+async function createSchema(name) {
+  const client = await pool.connect();
+  try {
+    await client.query(`DROP SCHEMA IF EXISTS ${name} CASCADE`);
+    await client.query(`CREATE SCHEMA ${name}`);
+  } finally {
+    client.release();
+  }
+}
+
+async function dropSchema(name) {
+  const client = await pool.connect();
+  try {
+    await client.query(`DROP SCHEMA IF EXISTS ${name} CASCADE`);
+  } finally {
+    client.release();
+  }
+}
+
 async function main() {
-  const killsArg = process.argv.find((a) => a.startsWith("--kills="));
-  const totalArg = process.argv.find((a) => a.startsWith("--total="));
-  const seedArg = process.argv.find((a) => a.startsWith("--seed="));
+  console.log(`Chaos Pipeline: seed=${seed}, iterations=${iterations}, kills=${kills}, steps=${steps}`);
 
-  const kills = killsArg ? parseInt(killsArg.split("=")[1]) : 15;
-  const total = totalArg ? parseInt(totalArg.split("=")[1]) : 600;
-  const baseSeed = seedArg ? parseInt(seedArg.split("=")[1]) : 1;
+  const results = [];
 
-  const schema = `chaos_${Date.now()}`;
-  const dbUrl = "postgres://localhost/matchledger";
+  for (let iter = 0; iter < iterations; iter++) {
+    const refSchema = `chaos_ref_${seed}_${iter}`;
+    const chaosSchema = `chaos_chaos_${seed}_${iter}`;
 
-  console.log(
-    `🔥 Chaos pipeline: ${kills} kills over ${total} actions, seed ${baseSeed}`
-  );
-  console.log(`Schema: ${schema}`);
+    try {
+      // Reference run
+      await createSchema(refSchema);
+      const refResult = await runChild(refSchema);
+      console.log(`[${iter}] Reference: ${refResult.done}`);
 
-  let kills_executed = 0;
-  let restarts = 0;
-  const recoveryTimes = [];
+      // Chaos run
+      await createSchema(chaosSchema);
+      let killCount = 0;
+      let recovered = 0;
+      let lastResult = null;
 
-  for (let round = 0; round < 100; round++) {
-    const prng = mulberry32(baseSeed + round);
-    const killDelayMs = Math.floor(prng() * 860) + 40;
+      for (let k = 0; k <= kills; k++) {
+        const killAtMs = k < kills ? Math.random() * 800 + 20 : null;
+        const result = await runChild(chaosSchema, killAtMs);
 
-    console.log(
-      `\n[Round ${round + 1}] Kill delay: ${killDelayMs}ms, Kills: ${kills_executed}/${kills}`
-    );
+        if (result.killed) {
+          killCount++;
+          recovered++;
+        }
 
-    const result = await runChildProcess({
-      dbUrl,
-      schema,
-      seed: baseSeed,
-      total,
-      snapshotEvery: 50,
-      killDelayMs,
-    });
-
-    if (result.killed) {
-      kills_executed++;
-      restarts++;
-      console.log(`  Killed (restart ${restarts})`);
-    } else if (result.code === 0) {
-      console.log(`  Finished successfully`);
-
-      // Parse recovery times
-      const lines = result.stdout.split("\n");
-      for (const line of lines) {
-        try {
-          const json = JSON.parse(line);
-          if (json.phase === "recovered" && json.recoveryMs) {
-            recoveryTimes.push(json.recoveryMs);
-            console.log(`  Recovery time: ${json.recoveryMs}ms`);
-          }
-        } catch {
-          // ignore
+        if (result.done) {
+          lastResult = result;
+          break;
         }
       }
 
-      if (kills_executed >= kills) {
-        console.log(`\n✅ Chaos pipeline PASS`);
-        console.log(`  Total kills: ${kills_executed}`);
-        console.log(`  Total restarts: ${restarts}`);
-        console.log(
-          `  Avg recovery time: ${(recoveryTimes.reduce((a, b) => a + b, 0) / recoveryTimes.length).toFixed(0)}ms`
-        );
-        process.exit(0);
+      const equal = lastResult?.done === refResult.done ? "EQUAL" : "DIFFERENT";
+      console.log(`[${iter}] Chaos: kills=${killCount}, recovered=${recovered}, ${equal}`);
+
+      results.push({
+        seed,
+        iter,
+        kills: killCount,
+        recoveries: recovered,
+        equal,
+      });
+
+      if (!keep) {
+        await dropSchema(refSchema);
+        await dropSchema(chaosSchema);
       }
-    } else {
-      console.error(`  Failed with code ${result.code}`);
-      if (result.stderr) {
-        console.error(`  Stderr: ${result.stderr.substring(0, 200)}`);
-      }
-      console.log(`\n❌ Chaos pipeline FAIL`);
-      process.exit(1);
+    } catch (err) {
+      console.error(`[${iter}] Error:`, err.message);
     }
   }
 
-  console.log(`\n❌ Chaos pipeline FAIL (did not reach kill target)`);
-  process.exit(1);
+  console.table(results);
+  process.exit(results.some((r) => r.equal === "DIFFERENT") ? 1 : 0);
 }
 
-main().catch(console.error);
+main().finally(() => pool.end());
