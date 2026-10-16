@@ -119,4 +119,16 @@ export class MarketView {
     }
     return best;
   }
+
+  public static fromBook(symbol: string, book: any, lastTrade?: { price: bigint; ts: number }): MarketView {
+    const view = new MarketView();
+    const resting = book.restingOrders();
+    for (const order of resting) {
+      view.apply(symbol, { type: "ORDER_RESTED", orderId: order.orderId, side: order.side, price: order.price, remaining: order.remaining } as any, 0);
+    }
+    if (lastTrade !== undefined) {
+      view.lastTrade.set(symbol, lastTrade);
+    }
+    return view;
+  }
 }

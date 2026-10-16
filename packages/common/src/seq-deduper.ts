@@ -8,4 +8,8 @@ export class SeqDeduper {
     this.seen.set(symbol, seq);
     return true;
   }
+
+  setWatermark(symbol: string, seq: number): void {
+    this.seen.set(symbol, seq);
+  }
 }

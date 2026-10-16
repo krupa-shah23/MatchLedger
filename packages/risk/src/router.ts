@@ -60,6 +60,20 @@ export class EngineEventRouter {
     return this.owners.get(orderId);
   }
 
+  public restoreOwners(owners: Iterable<{ orderId: string; accountId: string; symbol: string; side: RiskSide }>): void {
+    this.owners.clear();
+    for (const { orderId, accountId, symbol, side } of owners) {
+      this.owners.set(orderId, { accountId, symbol, side });
+    }
+  }
+
+  public setWatermark(symbol: string, seq: number): void {
+    this.localSeq.set(symbol, seq);
+    if (this.deduper) {
+      this.deduper.setWatermark(symbol, seq);
+    }
+  }
+
   public onShardOutputs(outputs: readonly ShardOutput[]): RouterResult {
     const notices: AccountNotice[] = [];
     const trades: TradePosting[] = [];
@@ -204,6 +218,88 @@ export class EngineEventRouter {
           default:
             break;
         }
+      }
+    }
+
+    return { notices, trades, ignoredOrders };
+  }
+
+  public routeCatchUp(items: readonly { symbol: string; seq: number; idx: number; event: any }[]): RouterResult {
+    const notices: AccountNotice[] = [];
+    const trades: TradePosting[] = [];
+    let ignoredOrders = 0;
+    const seen = new Set<string>();
+
+    const sorted = [...items].sort((a, b) => a.symbol.localeCompare(b.symbol) || a.seq - b.seq || a.idx - b.idx);
+
+    for (const item of sorted) {
+      const key = `${item.symbol}:${item.seq}:${item.idx}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const event = item.event;
+      switch (event.type) {
+        case "ORDER_RESTED": {
+          const owner = this.ownerOf(event.orderId);
+          if (owner === undefined) {
+            this.counters.unknownOrderEvents += 1;
+            ignoredOrders += 1;
+            continue;
+          }
+          notices.push({ accountId: owner.accountId, command: { type: "OrderAcked", orderId: event.orderId } });
+          break;
+        }
+        case "TRADE_EXECUTED": {
+          const takerOwner = this.ownerOf(event.takerOrderId);
+          const makerOwner = this.ownerOf(event.makerOrderId);
+          if (takerOwner === undefined && makerOwner === undefined) {
+            this.counters.unknownOrderEvents += 1;
+            ignoredOrders += 1;
+            continue;
+          }
+          if (takerOwner !== undefined) {
+            notices.push({
+              accountId: takerOwner.accountId,
+              command: { type: "FillApplied", orderId: event.takerOrderId, tradeId: event.tradeId, price: event.price, quantity: event.quantity },
+            });
+          }
+          if (makerOwner !== undefined) {
+            notices.push({
+              accountId: makerOwner.accountId,
+              command: { type: "FillApplied", orderId: event.makerOrderId, tradeId: event.tradeId, price: event.price, quantity: event.quantity },
+            });
+          }
+          if (takerOwner !== undefined && makerOwner !== undefined) {
+            const takerSide = event.takerSide;
+            const buyerAccountId = takerSide === "BUY" ? takerOwner.accountId : makerOwner.accountId;
+            const sellerAccountId = takerSide === "BUY" ? makerOwner.accountId : takerOwner.accountId;
+            trades.push({ tradeId: event.tradeId, symbol: item.symbol, price: event.price, quantity: event.quantity, buyerAccountId, sellerAccountId });
+          }
+          break;
+        }
+        case "ORDER_CANCELLED": {
+          const owner = this.ownerOf(event.orderId);
+          if (owner === undefined) {
+            this.counters.unknownOrderEvents += 1;
+            ignoredOrders += 1;
+            continue;
+          }
+          const reason = event.reason === "IOC_REMAINDER" ? "IOC_REMAINDER" : event.reason === "HALT_TIMEOUT" ? "HALT_TIMEOUT" : "CANCELLED";
+          notices.push({ accountId: owner.accountId, command: { type: "OrderClosed", orderId: event.orderId, remaining: event.remaining, reason } });
+          break;
+        }
+        case "ORDER_REJECTED": {
+          const owner = this.ownerOf(event.orderId);
+          if (owner === undefined) {
+            this.counters.unknownOrderEvents += 1;
+            ignoredOrders += 1;
+            continue;
+          }
+          notices.push({ accountId: owner.accountId, command: { type: "OrderRejectedByMatcher", orderId: event.orderId, reason: event.reason } });
+          break;
+        }
+        default:
+          break;
       }
     }
 

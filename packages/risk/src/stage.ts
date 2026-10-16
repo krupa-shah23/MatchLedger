@@ -4,6 +4,24 @@ import type { Clock, MarketInput, RiskCommand, RiskConfig, RiskJournalAppender, 
 import { RiskCore } from "./core/risk-core.js";
 import { RiskStamper } from "./stamper.js";
 
+export type SymbolStatusChanged = {
+  readonly symbol: string;
+  readonly wasHalted: boolean;
+  readonly nowHalted: boolean;
+};
+
+export function reconcileSymbolStatus(books: Map<string, any>, haltedSymbols: Set<string>): SymbolStatusChanged[] {
+  const changes: SymbolStatusChanged[] = [];
+  for (const [symbol, book] of books.entries()) {
+    const wasClosed = !book.isClosed || book.isClosed === true;
+    const isHalted = haltedSymbols.has(symbol);
+    if (wasClosed !== isHalted) {
+      changes.push({ symbol, wasHalted: wasClosed, nowHalted: isHalted });
+    }
+  }
+  return changes;
+}
+
 export type EnqueueResult = "ACCEPTED" | "FULL" | "CLOSED" | "UNKNOWN_PARTITION";
 
 export type SubmitOrderRequest = {
@@ -29,6 +47,7 @@ export type RiskStageOptions = {
   readonly yieldFn?: () => Promise<void>;
   readonly onApplied?: (partition: number, core: RiskCore) => void;
   readonly onFatal?: (partition: number, error: unknown) => void;
+  readonly recovered?: { cores: Map<number, { core: RiskCore; lastSeq: number; lastTs: number }> };
 };
 
 type PartitionItem = { readonly kind: "command" | "notice"; readonly command: RiskCommand };
@@ -56,16 +75,19 @@ export class RiskStage {
 
   public constructor(options: RiskStageOptions) {
     this.options = options;
-    this.stamper = new RiskStamper(options.clock);
-    this.partitions = Array.from({ length: options.partitions }, (_, index) => ({
-      queue: new AsyncQueue<PartitionItem>(),
-      core: new RiskCore(options.config),
-      journal: options.journalFor(index),
-      pendingCommands: 0,
-      stopped: false,
-      inFlight: false,
-      fatal: false,
-    }));
+    this.stamper = new RiskStamper(options.clock, options.recovered);
+    this.partitions = Array.from({ length: options.partitions }, (_, index) => {
+      const recovered = options.recovered?.cores.get(index);
+      return {
+        queue: new AsyncQueue<PartitionItem>(),
+        core: recovered?.core ?? new RiskCore(options.config),
+        journal: options.journalFor(index),
+        pendingCommands: 0,
+        stopped: false,
+        inFlight: false,
+        fatal: false,
+      };
+    });
     this.done = new Promise<void>((resolve) => {
       this.resolveDone = resolve;
     });
@@ -167,6 +189,12 @@ export class RiskStage {
 
   public idle(): boolean {
     return this.partitions.every((slot) => slot.queue.size === 0 && !slot.inFlight);
+  }
+
+  public async whenIdle(): Promise<void> {
+    while (!this.idle()) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
   }
 
   private enqueueCommand(command: RiskCommand): EnqueueResult {

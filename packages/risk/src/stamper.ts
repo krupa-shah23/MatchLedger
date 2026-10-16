@@ -4,7 +4,14 @@ export class RiskStamper {
   private readonly lastTs = new Map<number, number>();
   private readonly lastSeq = new Map<number, number>();
 
-  public constructor(private readonly clock: Clock) {}
+  public constructor(private readonly clock: Clock, recovered?: { cores: Map<number, { core: any; lastSeq: number; lastTs: number }> }) {
+    if (recovered) {
+      for (const [partition, state] of recovered.cores.entries()) {
+        this.lastSeq.set(partition, state.lastSeq);
+        this.lastTs.set(partition, state.lastTs);
+      }
+    }
+  }
 
   public stamp(partition: number, command: RiskCommand): StampedRiskCommand {
     const now = this.clock.now();
