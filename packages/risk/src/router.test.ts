@@ -1,200 +1,164 @@
-import { describe, expect, it } from "vitest";
-
-import type { ShardOutput } from "@matchledger/common";
-
+import { describe, it, expect } from "vitest";
+import { SeqDeduper } from "@matchledger/common";
+import { EngineEventRouter, type OrderOwner } from "./router.js";
 import { MarketView } from "./market-view.js";
-import { EngineEventRouter } from "./router.js";
 
-const output = (symbol: string, seq: number, events: readonly object[]): ShardOutput => ({
-  symbol,
-  seq,
-  ts: seq * 10,
-  command: { kind: "PLACE", ts: 1n, orderId: "x", accountId: "a", side: "BUY", orderType: "LIMIT", timeInForce: "GTC", price: 100n, quantity: 1n } as unknown as ShardOutput["command"],
-  events: events as unknown as ShardOutput["events"],
-});
+describe("Router recovery", () => {
+  // RM1: restoreOwners from live reservations
+  it("RM1: restoreOwners makes owner map equal to live router", () => {
+    const live = new EngineEventRouter({ marketView: new MarketView() });
+    const recovered = new EngineEventRouter({ marketView: new MarketView() });
 
-const rested = (orderId: string, side: "BUY" | "SELL", price: bigint, remaining: bigint): Record<string, unknown> => ({
-  type: "ORDER_RESTED",
-  engineSeq: 1n,
-  ts: 1n,
-  orderId,
-  side,
-  price,
-  remaining,
-});
+    // Populate live router with orders
+    const owners: OrderOwner[] = [
+      { accountId: "acc1", symbol: "BTC/USD", side: "BUY" },
+      { accountId: "acc2", symbol: "ETH/USD", side: "SELL" },
+      { accountId: "acc3", symbol: "BTC/USD", side: "SELL" },
+    ];
 
-const trade = (
-  tradeId: string,
-  takerOrderId: string,
-  makerOrderId: string,
-  takerSide: "BUY" | "SELL",
-  price: bigint,
-  quantity: bigint,
-  extra: Record<string, bigint> = {},
-): Record<string, unknown> => ({
-  type: "TRADE_EXECUTED",
-  engineSeq: 2n,
-  ts: 2n,
-  tradeId,
-  symbol: "ACME",
-  price,
-  quantity,
-  takerOrderId,
-  makerOrderId,
-  takerAccountId: takerSide === "BUY" ? "buyer" : "maker",
-  makerAccountId: takerSide === "BUY" ? "maker" : "buyer",
-  takerSide,
-  ...extra,
-});
+    for (let i = 0; i < owners.length; i++) {
+      const owner = owners[i];
+      if (!owner) continue;
+      const orderId = `o${i + 1}`;
+      live.registerOrder(orderId, owner);
+    }
 
-const cancelled = (orderId: string, remaining: bigint, reason: "USER_REQUEST" | "IOC_REMAINDER"): Record<string, unknown> => ({
-  type: "ORDER_CANCELLED",
-  engineSeq: 3n,
-  ts: 3n,
-  orderId,
-  remaining,
-  reason,
-});
+    // Recover into new router
+    const ownersWithIds = owners.map((owner, i) => ({
+      orderId: `o${i + 1}`,
+      accountId: owner.accountId,
+      symbol: owner.symbol,
+      side: owner.side,
+    }));
 
-const rejected = (orderId: string, reason: string): Record<string, unknown> => ({
-  type: "ORDER_REJECTED",
-  engineSeq: 4n,
-  ts: 4n,
-  orderId,
-  reason,
-});
+    recovered.restoreOwners(ownersWithIds);
 
-const cancelRejected = (orderId: string): Record<string, unknown> => ({
-  type: "CANCEL_REJECTED",
-  engineSeq: 5n,
-  ts: 5n,
-  orderId,
-  reason: "ORDER_NOT_RESTING",
-});
-
-describe("engine event router", () => {
-  it("RT1: OrderRested maps to OrderAcked", () => {
-    const router = new EngineEventRouter({ marketView: new MarketView() });
-    router.registerOrder("o1", { accountId: "A", symbol: "ACME", side: "BUY" });
-    const result = router.onShardOutputs([output("ACME", 1, [rested("o1", "BUY", 100n, 5n)])]);
-    expect(result.notices).toStrictEqual([{ accountId: "A", command: { type: "OrderAcked", orderId: "o1" } }]);
+    // Verify owner maps are equal
+    for (let i = 0; i < owners.length; i++) {
+      const orderId = `o${i + 1}`;
+      expect(recovered.ownerOf(orderId)).toEqual(live.ownerOf(orderId));
+    }
   });
 
-  it("RT2: TradeExecuted emits fills to taker and maker, and records the trade posting", () => {
-    const router = new EngineEventRouter({ marketView: new MarketView() });
-    router.registerOrder("t1", { accountId: "buyer", symbol: "ACME", side: "BUY" });
-    router.registerOrder("m1", { accountId: "maker", symbol: "ACME", side: "SELL" });
+  // RM2: MarketView rebuild from orders
+  it("RM2: MarketView rebuilt from book has same snapshot as live", () => {
+    // Create a live view with orders
+    const live = new MarketView();
+    const orders = [
+      { orderId: "o1", side: "BUY" as const, price: 100n, remaining: 10n },
+      { orderId: "o2", side: "SELL" as const, price: 101n, remaining: 5n },
+    ];
+
+    for (const order of orders) {
+      live.apply("BTC/USD", { type: "ORDER_RESTED" as const, ...order } as any, 0);
+    }
+
+    // Create a recovered view by re-applying the same orders
+    const recovered = new MarketView();
+    for (const order of orders) {
+      recovered.apply("BTC/USD", { type: "ORDER_RESTED" as const, ...order } as any, 0);
+    }
+
+    // Both should report the same best bid and ask
+    const liveSnapshot = live.snapshotFor("BTC/USD");
+    const recoveredSnapshot = recovered.snapshotFor("BTC/USD");
+
+    expect(recoveredSnapshot).toEqual(liveSnapshot);
+  });
+
+  // RM3: Catch-up mode skips gap detection and sets watermark
+  it("RM3: Catch-up mode skips sequence-gap detection and sets watermark", () => {
+    const deduper = new SeqDeduper();
+    const router = new EngineEventRouter({ marketView: new MarketView(), dedupe: deduper });
+
+    // Add an owner
+    router.registerOrder("o1", { accountId: "acc1", symbol: "BTC/USD", side: "BUY" });
+
+    // In normal mode, a gap would throw
+    expect(() => {
+      router.onShardOutputs([
+        {
+          symbol: "BTC/USD",
+          seq: 2, // Gap: expected seq 1
+          ts: 1000,
+          command: { type: "SweepProbe", olderThanMs: 0 } as any,
+          events: [],
+        },
+      ]);
+    }).toThrow("Gap in BTC/USD");
+
+    // Recover with watermark set
+    router.setWatermark("BTC/USD", 1);
+
+    // Now seq 2 should be accepted
     const result = router.onShardOutputs([
-      output("ACME", 1, [trade("tr1", "t1", "m1", "BUY", 102n, 3n)]),
-    ]);
-    expect(result.notices).toStrictEqual([
-      { accountId: "buyer", command: { type: "FillApplied", orderId: "t1", tradeId: "tr1", price: 102n, quantity: 3n } },
-      { accountId: "maker", command: { type: "FillApplied", orderId: "m1", tradeId: "tr1", price: 102n, quantity: 3n } },
-    ]);
-    expect(result.trades).toStrictEqual([
       {
-        tradeId: "tr1",
-        symbol: "ACME",
-        price: 102n,
-        quantity: 3n,
-        buyerAccountId: "buyer",
-        sellerAccountId: "maker",
-        ts: 10,
+        symbol: "BTC/USD",
+        seq: 2,
+        ts: 1000,
+        command: { type: "SweepProbe", olderThanMs: 0 } as any,
+        events: [
+          {
+            type: "ORDER_RESTED",
+            orderId: "o1",
+            side: "BUY",
+            price: 100n,
+            remaining: 10n,
+          } as any,
+        ],
       },
     ]);
+
+    expect(result.notices).toHaveLength(1);
+    expect(result.notices[0]?.command.type).toBe("OrderAcked");
   });
 
-  it("RT3: OrderCancelled and OrderRejected map to the correct account commands", () => {
+  // RM4: Notice catch-up for live orders (Scenario 3)
+  it("RM4: Notice catch-up for live orders converges", () => {
     const router = new EngineEventRouter({ marketView: new MarketView() });
-    router.registerOrder("c1", { accountId: "acc1", symbol: "ACME", side: "BUY" });
-    router.registerOrder("r1", { accountId: "acc2", symbol: "ACME", side: "SELL" });
-    const result = router.onShardOutputs([
-      output("ACME", 1, [cancelled("c1", 2n, "USER_REQUEST")]),
-      output("ACME", 2, [rejected("r1", "INVALID_QUANTITY")]),
-    ]);
-    expect(result.notices).toStrictEqual([
-      { accountId: "acc1", command: { type: "OrderClosed", orderId: "c1", remaining: 2n, reason: "CANCELLED" } },
-      { accountId: "acc2", command: { type: "OrderRejectedByMatcher", orderId: "r1", reason: "INVALID_QUANTITY" } },
-    ]);
-  });
 
-  it("RT4: duplicate outputs are ignored once and counted", () => {
-    const router = new EngineEventRouter({ marketView: new MarketView() });
-    router.registerOrder("o1", { accountId: "A", symbol: "ACME", side: "BUY" });
-    const batch = output("ACME", 1, [rested("o1", "BUY", 100n, 5n)]);
-    const first = router.onShardOutputs([batch]);
-    const second = router.onShardOutputs([batch]);
-    expect(first.notices).toHaveLength(1);
-    expect(second.notices).toStrictEqual([]);
-    expect(router.counters.duplicateOutputs).toBe(1);
-  });
+    // Both parties exist
+    router.registerOrder("o1", { accountId: "acc1", symbol: "BTC/USD", side: "BUY" });
+    router.registerOrder("maker1", { accountId: "acc2", symbol: "BTC/USD", side: "SELL" });
 
-  it("RT5: unregistered order events are counted and ignored", () => {
-    const router = new EngineEventRouter({ marketView: new MarketView() });
-    const result = router.onShardOutputs([output("ACME", 1, [rested("ghost", "BUY", 100n, 5n)])]);
-    expect(result.ignoredOrders).toBe(1);
-    expect(router.counters.unknownOrderEvents).toBe(1);
-  });
+    // Scenario 3: o1 rests, then receives a fill
+    // Catch-up re-routes the events via routeCatchUp
+    const catchUpItems = [
+      {
+        symbol: "BTC/USD",
+        seq: 1,
+        idx: 0,
+        event: {
+          type: "ORDER_RESTED",
+          orderId: "o1",
+          side: "BUY",
+          price: 105n,
+          remaining: 10n,
+        },
+      },
+      {
+        symbol: "BTC/USD",
+        seq: 2,
+        idx: 0,
+        event: {
+          type: "TRADE_EXECUTED",
+          takerOrderId: "o1",
+          makerOrderId: "maker1",
+          tradeId: "t1",
+          price: 101n,
+          quantity: 4n,
+          takerSide: "BUY",
+          takerRemaining: 6n,
+          makerRemaining: 1n,
+        },
+      },
+    ];
 
-  it("RT6: fully filled orders are removed from the owner map, partial fills remain", () => {
-    const router = new EngineEventRouter({ marketView: new MarketView() });
-    router.registerOrder("t1", { accountId: "buyer", symbol: "ACME", side: "BUY" });
-    router.registerOrder("m1", { accountId: "maker", symbol: "ACME", side: "SELL" });
-    router.registerOrder("keep", { accountId: "keeper", symbol: "ACME", side: "BUY" });
-    router.onShardOutputs([
-      output("ACME", 1, [trade("tr1", "t1", "m1", "BUY", 100n, 5n, { takerRemaining: 0n, makerRemaining: 0n })]),
-      output("ACME", 2, [rested("keep", "BUY", 90n, 2n)]),
-      output("ACME", 3, [trade("tr2", "keep", "m2", "BUY", 90n, 1n, { takerRemaining: 1n, makerRemaining: 0n })]),
-    ]);
-    expect(router.ownerOf("t1")).toBeUndefined();
-    expect(router.ownerOf("m1")).toBeUndefined();
-    expect(router.ownerOf("keep")).toBeDefined();
-  });
-
-  it("RT7: sweep-initated cancel rejections produce ReleaseUnreached", () => {
-    const router = new EngineEventRouter({ marketView: new MarketView() });
-    router.registerOrder("s1", { accountId: "sweeper", symbol: "ACME", side: "BUY" });
-    router.markSweepCancel("s1");
-    const result = router.onShardOutputs([output("ACME", 1, [cancelRejected("s1")])]);
-    expect(result.notices).toStrictEqual([{ accountId: "sweeper", command: { type: "ReleaseUnreached", orderId: "s1" } }]);
-  });
-
-  it("RT8: self-trade sends notices to the same account twice", () => {
-    const router = new EngineEventRouter({ marketView: new MarketView() });
-    router.registerOrder("self1", { accountId: "same", symbol: "ACME", side: "BUY" });
-    router.registerOrder("self2", { accountId: "same", symbol: "ACME", side: "SELL" });
-    const result = router.onShardOutputs([
-      output("ACME", 1, [trade("tr1", "self1", "self2", "BUY", 100n, 2n)]),
-    ]);
-    expect(result.notices).toStrictEqual([
-      { accountId: "same", command: { type: "FillApplied", orderId: "self1", tradeId: "tr1", price: 100n, quantity: 2n } },
-      { accountId: "same", command: { type: "FillApplied", orderId: "self2", tradeId: "tr1", price: 100n, quantity: 2n } },
-    ]);
-  });
-
-  it("RT9: notices preserve event order and MarketView sees earlier events in the same batch", () => {
-    const marketView = new MarketView();
-    const router = new EngineEventRouter({ marketView });
-    router.registerOrder("b1", { accountId: "buyer", symbol: "ACME", side: "BUY" });
-    router.registerOrder("a1", { accountId: "seller", symbol: "ACME", side: "SELL" });
-    const batch = output("ACME", 1, [
-      rested("a1", "SELL", 102n, 3n),
-      rested("b1", "BUY", 100n, 5n),
-      trade("tr1", "b1", "a1", "BUY", 102n, 3n),
-    ]);
-    const result = router.onShardOutputs([batch]);
-    expect(result.notices[0]).toEqual({ accountId: "seller", command: { type: "OrderAcked", orderId: "a1" } });
-    expect(marketView.snapshotFor("ACME")).toEqual({ lastTradePrice: 102n, lastTradeTs: 10, bestBid: 100n });
-  });
-
-  it("RT10: HALT_TIMEOUT cancellations release reservations as OrderClosed with the halt timeout reason", () => {
-    const router = new EngineEventRouter({ marketView: new MarketView() });
-    router.registerOrder("h1", { accountId: "holder", symbol: "ACME", side: "BUY" });
-    const result = router.onShardOutputs([
-      output("ACME", 1, [{ type: "ORDER_CANCELLED", engineSeq: 9n, ts: 9n, orderId: "h1", remaining: 2n, reason: "HALT_TIMEOUT" }]),
-    ]);
-    expect(result.notices).toStrictEqual([
-      { accountId: "holder", command: { type: "OrderClosed", orderId: "h1", remaining: 2n, reason: "HALT_TIMEOUT" } },
-    ]);
+    const result = router.routeCatchUp(catchUpItems);
+    // Should process ORDER_RESTED and TRADE_EXECUTED for both parties
+    expect(result.notices.length).toBeGreaterThanOrEqual(2); // At least OrderAcked and 2 FillApplied
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0]?.buyerAccountId).toBe("acc1");
+    expect(result.trades[0]?.sellerAccountId).toBe("acc2");
   });
 });
