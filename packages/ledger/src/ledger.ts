@@ -1,4 +1,5 @@
 import { MAX_AMOUNT } from "@matchledger/common";
+import { txIdForDeposit, txIdForTrade, txIdForAdjustment, txIdForReversal } from "./tx-id.js";
 
 export type LedgerEntry = {
   readonly txId: string;
@@ -36,10 +37,86 @@ export class UnbalancedTransactionError extends Error {
   }
 }
 
+export class RestoreError extends Error {
+  public constructor(message = "Failed to restore ledger from entries") {
+    super(message);
+    this.name = "RestoreError";
+  }
+}
+
 export class Ledger {
   private readonly ledgerEntries: LedgerEntry[] = [];
   private readonly txIds = new Set<string>();
   private nextSeq = 1;
+
+  public static restore(entries: readonly LedgerEntry[]): Ledger {
+    const ledger = new Ledger();
+    if (entries.length === 0) return ledger;
+
+    const byTx = new Map<string, LedgerEntry[]>();
+    for (const entry of entries) {
+      if (!byTx.has(entry.txId)) byTx.set(entry.txId, []);
+      byTx.get(entry.txId)!.push(entry);
+    }
+
+    const sortedTxs = Array.from(byTx.entries()).sort((a, b) => {
+      const minSeqA = Math.min(...a[1].map((e) => e.seq));
+      const minSeqB = Math.min(...b[1].map((e) => e.seq));
+      return minSeqA - minSeqB;
+    });
+
+    for (const [txId, txEntries] of sortedTxs) {
+      const legs = txEntries.map((e) => ({
+        accountId: e.accountId,
+        asset: e.asset,
+        amount: e.amount,
+      }));
+
+      const byAsset = new Map<string, bigint>();
+      for (const leg of legs) {
+        const total = byAsset.get(leg.asset) ?? 0n;
+        byAsset.set(leg.asset, total + leg.amount);
+      }
+      for (const [asset, total] of byAsset.entries()) {
+        if (total !== 0n) {
+          throw new RestoreError(`Unbalanced asset ${asset} in tx ${txId}: ${total.toString()}`);
+        }
+      }
+
+      const legIndices = new Set(txEntries.map((e) => {
+        const match = e.txId.match(/^([^:]+):(.*)$/);
+        if (!match) return 0;
+        const prefix = match[1];
+        const legIdx = prefix === "trade" ? txEntries.indexOf(e) : 0;
+        return legIdx;
+      }));
+      const maxIdx = Math.max(...Array.from(legIndices));
+      for (let i = 0; i <= maxIdx; i++) {
+        if (!legIndices.has(i)) {
+          throw new RestoreError(`Missing leg_idx ${i} in tx ${txId}`);
+        }
+      }
+
+      ledger.ledgerEntries.push(
+        ...legs.map((leg) => ({
+          txId,
+          seq: ledger.nextSeq++,
+          accountId: leg.accountId,
+          asset: leg.asset,
+          amount: leg.amount,
+          direction: (leg.amount < 0n ? "DEBIT" : "CREDIT") as "DEBIT" | "CREDIT",
+          refEventId: txEntries[0]!.refEventId,
+        })),
+      );
+      ledger.txIds.add(txId);
+    }
+
+    const issues = ledger.checkInvariants();
+    if (issues.length > 0) {
+      throw new RestoreError(`Invariant violations: ${issues.join(", ")}`);
+    }
+    return ledger;
+  }
 
   public post(tx: LedgerTx): { posted: boolean } {
     if (this.txIds.has(tx.txId)) {
@@ -82,7 +159,7 @@ export class Ledger {
     requestId: string;
     refEventId: string;
   }): { posted: boolean } {
-    const txId = `dep:${args.requestId}`;
+    const txId = txIdForDeposit(args.requestId);
     const amount = args.amount;
     if (amount === 0n || amount > MAX_AMOUNT || amount < -MAX_AMOUNT) {
       throw new RangeError("Deposit amount must be non-zero and within MAX_AMOUNT bounds");
@@ -106,7 +183,7 @@ export class Ledger {
     }
 
     return this.post({
-      txId: `trade:${t.tradeId}`,
+      txId: txIdForTrade(t.tradeId),
       refEventId,
       legs: [
         { accountId: t.buyerAccountId, asset: "CASH", amount: -(price * quantity) },
@@ -122,7 +199,7 @@ export class Ledger {
       throw new RangeError("Adjustment amount must be non-zero");
     }
     return this.post({
-      txId: `adj:${args.adjustmentId}`,
+      txId: txIdForAdjustment(args.adjustmentId),
       refEventId: args.refEventId,
       legs: [
         { accountId: args.accountId, asset: args.asset, amount: args.amount },
@@ -132,7 +209,7 @@ export class Ledger {
   }
 
   public reverse(txId: string): { posted: boolean } {
-    const reversedId = `rev:${txId}`;
+    const reversedId = txIdForReversal(txId);
     if (this.txIds.has(reversedId)) {
       return { posted: false };
     }
