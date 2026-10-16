@@ -303,3 +303,196 @@ This takes longer than a normal test run, but it removes the risk of mutating th
 
 ### How tested
 The temp-copy sweep covered 24 targeted mutations; 23 were killed and 0 survived. The one unrun case was a missing target file in the current checkout, not a surviving defect.
+
+## Decision 24 — Event-sourced recovery with snapshots
+
+### Context
+Risk state can be large and replaying all commands on every restart is expensive. Snapshots reduce recovery time but add complexity.
+
+### Options considered
+- Full replay every restart
+- Snapshots mandatory on every change
+- Count-based snapshots with non-fatal failures
+
+### Choice
+Count-based snapshots every ~1000 commands; snapshot failures are logged but non-fatal. Recovery always verifies state invariants.
+
+### Trade-offs
+Snapshots speed recovery but add I/O; failures are tolerable since full replay is always available as fallback.
+
+### How tested
+RCP5 verifies snapshot loading and command replay after snapshot; RR7 checks invariants hold after recovery.
+
+## Decision 25 — Double-entry ledger with atomic persistence
+
+### Context
+All transfers must net to zero; partial ledger writes would corrupt invariants. Persistence must be atomic.
+
+### Options considered
+- Single table with balance updates
+- Double-entry with non-atomic writes
+- Distributed ledger with eventual consistency
+
+### Choice
+Double-entry ledger with legs persisted atomically per transaction. Each transaction is all-or-nothing.
+
+### Trade-offs
+More rows per transaction but guarantees zero-sum invariant always holds, even on crash.
+
+### How tested
+LP4 verifies zero-sum after multi-leg entries; P25 checks invariant across recovery.
+
+## Decision 26 — Partition-aware recovery with shared journal
+
+### Context
+Risk state is partitioned by symbol; recovery must rebuild all partitions from a single shared journal.
+
+### Options considered
+- Per-partition journals
+- Single journal with partition filtering
+- Event log per partition
+
+### Choice
+Single journal with stream_id encoded as "risk-{partition}"; recovery filters by partition.
+
+### Trade-offs
+One journal is simpler operationally but requires careful filtering; per-partition journals would duplicate writes.
+
+### How tested
+RR8 verifies partitions recover independently; RR2 checks partition references.
+
+## Decision 27 — Crash windows as recovery test harness
+
+### Context
+Durability claims need proof via crash injection. Full crash recovery is expensive in unit tests.
+
+### Options considered
+- No crash testing
+- Expensive on-disk integration tests
+- Lightweight crash points with recovery verification
+
+### Choice
+Define 7 crash windows (RCP1-RCP7) representing key durability points; CrashController injects failures.
+
+### Trade-offs
+Lightweight and fast; doesn't test actual process death but tests recovery logic from various incomplete states.
+
+### How tested
+RCP1-RCP7 tests verify recovery from each crash window.
+
+## Decision 28 — Strict codec versioning and canonical serialization
+
+### Context
+Serialized events must be reproducible and version-aware for safe evolution.
+
+### Options considered
+- Loose JSON with optional fields
+- Manual versioning per event type
+- Centralized versioned codec registry
+
+### Choice
+Centralized versioned codec registry with exhaustive type discriminators; unknown types throw.
+
+### Trade-offs
+More boilerplate but catches incompatible messages early and supports safe schema evolution.
+
+### How tested
+RCD7 verifies unknown types are rejected; RCD1-RCD6 verify round-trip consistency.
+
+## Decision 29 — Risk state validation before any mutations
+
+### Context
+Restoring state from a snapshot is risky; partial or corrupted snapshots must be caught early.
+
+### Choice
+Validate all preconditions (version, instruments, decided orders, amounts, accounts) before mutating core state. Run invariant checks after restore.
+
+### Trade-offs
+More validation code but prevents invalid state from ever entering the core.
+
+### How tested
+RR11 verifies config mismatch throws; RR7 checks invariants hold after recovery.
+
+## Decision 30 — SqlExecutor interface for database abstraction
+
+### Context
+Risk/ledger/recon modules should not depend directly on pg pool; testability and portability matter.
+
+### Choice
+Define SqlExecutor interface: `query(sql, values?) → Promise<QueryResult>`. All persistence adapters use it.
+
+### Trade-offs
+Thin abstraction; adds one layer but enables testing with mock executors.
+
+### How tested
+All journal/ledger/recon tests use MockSqlExecutor.
+
+## Decision 31 — Recovery pipeline orchestration with fatal error handling
+
+### Context
+7-step recovery must complete all steps or fail fast. Partial recovery leaves system in unknown state.
+
+### Choice
+Linear pipeline: engine → risk → owners/watermark → notice → redelivery → ledger → services. Any failure throws.
+
+### Trade-offs
+Sequential is slower than parallel but simpler and safer; dependencies between steps (engine state feeds risk recovery) justify the order.
+
+### How tested
+PR1-PR6 tests verify pipeline structure.
+
+## Decision 32 — Outbox pattern for risk event delivery
+
+### Context
+Risk events must be delivered after state is durable; ordering matters and at-least-once semantics required.
+
+### Choice
+DurableRiskOutbox appends events sequentially to journal with transaction ID. Delivery is decoupled.
+
+### Trade-offs
+Extra outbox writes but ensures ordering and survives crashes.
+
+### How tested
+RX1-RX7 verify outbox ordering and isolation.
+
+## Decision 33 — Partition isolation in recovery and snapshots
+
+### Context
+Risk partitions should recover independently without interfering with each other.
+
+### Choice
+Each partition has its own snapshot stream ("risk-snapshot-{partition}") and recovery restores partition 0, 1, 2, ... sequentially.
+
+### Trade-offs
+More streams but guarantees no cross-partition interference.
+
+### How tested
+RR8 verifies independent partition recovery.
+
+## Decision 34 — CrashController for chaos testing
+
+### Context
+Durability needs proof; in-process crash injection is faster than full process death.
+
+### Choice
+CrashController.setCrashWindow() throws at key points. Tests simulate partial failures and verify recovery.
+
+### Trade-offs
+Doesn't test actual SIGKILL but covers recovery logic from incomplete states.
+
+### How tested
+RCP1-RCP7 tests use CrashController.
+
+## Decision 35 — Test-first recovery validation
+
+### Context
+Recovery is complex; code review alone won't catch all failure modes.
+
+### Choice
+68 recovery tests (RCD1-P26) covering codecs, persistence, recovery, crash windows, and integration. All must pass before Week 8 complete.
+
+### Trade-offs
+Large test suite is expensive to maintain but essential for durability guarantees.
+
+### How tested
+318 passing tests include all 68 Week 8 recovery tests.

@@ -30,4 +30,8 @@ export { SeqDeduper } from "./seq-deduper.js";
 export { serializeCommand, deserializeCommand } from "./codec/commands.js";
 export { serializeEvent, deserializeEvent } from "./codec/events.js";
 export { serializeBookSnapshot, deserializeBookSnapshot } from "./codec/book-snapshot.js";
+export { serializeRiskCommand, deserializeRiskCommand } from "./codec/risk-commands.js";
+export { serializeRiskEvent, deserializeRiskEvent } from "./codec/risk-events.js";
+export { serializeRiskState, deserializeRiskState } from "./codec/risk-state.js";
+export { CodecError } from "./codec/codec-error.js";
 export { CURRENT_VERSION, UnknownSchemaVersionError, registerUpcaster, getUpcaster } from "./codec/versioning.js";

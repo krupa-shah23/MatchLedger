@@ -17,10 +17,69 @@ export class RiskCore {
   public constructor(private readonly config: RiskConfig = { instruments: new Map() }) {}
 
   public static restore(config: RiskConfig, state: RiskState, partition?: number): RiskCore {
-    void config;
-    void state;
     void partition;
-    throw new InvalidRiskStateError("VERSION", "RiskCore.restore: hand-written (docs/WEEK-8.md 4.3)");
+    if (state.version !== 1) throw new InvalidRiskStateError("VERSION", `invalid version ${state.version}`);
+    const configSymbols = new Set(config.instruments.keys());
+    const stateSymbols = new Set(state.instruments.map(i => i.symbol));
+    if (configSymbols.size !== stateSymbols.size || ![...configSymbols].every(s => stateSymbols.has(s))) {
+      throw new InvalidRiskStateError("CONFIG_MISMATCH", "symbols");
+    }
+    for (const res of state.reservations) {
+      if (!state.decidedOrders.includes(res.orderId)) throw new InvalidRiskStateError("RESERVATION_NOT_DECIDED", res.orderId);
+    }
+    const allOrderIds = new Set<string>();
+    for (const res of state.reservations) {
+      if (allOrderIds.has(res.orderId)) throw new InvalidRiskStateError("DUPLICATE_RESERVATION", res.orderId);
+      allOrderIds.add(res.orderId);
+    }
+    const accountIds = new Set(state.accounts.map(a => a.accountId));
+    for (const res of state.reservations) {
+      if (!accountIds.has(res.accountId)) throw new InvalidRiskStateError("UNKNOWN_ACCOUNT", res.accountId);
+      if (res.qtyRemaining <= 0n) throw new InvalidRiskStateError("NEGATIVE", res.orderId);
+      if (res.side === "BUY" && res.amountRemaining !== res.priceCap * res.qtyRemaining) throw new InvalidRiskStateError("AMOUNT_MISMATCH", res.orderId);
+      if (res.side === "SELL" && res.amountRemaining !== res.qtyRemaining) throw new InvalidRiskStateError("AMOUNT_MISMATCH", res.orderId);
+    }
+    for (const acc of state.accounts) {
+      if (acc.cash < 0n || acc.heldCash < 0n || acc.heldCash > acc.cash) throw new InvalidRiskStateError("NEGATIVE", acc.accountId);
+      for (const pos of acc.positions) {
+        if (pos.quantity < 0n || pos.heldShares < 0n || pos.heldShares > pos.quantity) throw new InvalidRiskStateError("OVER_HELD", `${acc.accountId}/${pos.symbol}`);
+      }
+    }
+    const buySum = new Map<string, bigint>();
+    const sellSum = new Map<string, bigint>();
+    for (const res of state.reservations) {
+      if (res.side === "BUY") {
+        buySum.set(res.accountId, (buySum.get(res.accountId) || 0n) + res.amountRemaining);
+      } else {
+        const key = `${res.accountId}/${res.symbol}`;
+        sellSum.set(key, (sellSum.get(key) || 0n) + res.qtyRemaining);
+      }
+    }
+    const heldSharesByKey = new Map<string, bigint>();
+    for (const acc of state.accounts) {
+      if ((buySum.get(acc.accountId) || 0n) !== acc.heldCash) throw new InvalidRiskStateError("HELD_MISMATCH", acc.accountId);
+      for (const pos of acc.positions) {
+        heldSharesByKey.set(`${acc.accountId}/${pos.symbol}`, pos.heldShares);
+      }
+    }
+    const allShareKeys = new Set([...sellSum.keys(), ...heldSharesByKey.keys()]);
+    for (const key of allShareKeys) {
+      if ((sellSum.get(key) || 0n) !== (heldSharesByKey.get(key) || 0n)) throw new InvalidRiskStateError("HELD_MISMATCH", key);
+    }
+    const core = new RiskCore(config);
+    for (const o of state.decidedOrders) core.decisions.add(o);
+    for (const r of state.seenRequestIds) core.seenRequestIds.add(r);
+    for (const a of state.seenAdjustmentIds) core.adjustmentIds.add(a);
+    for (const s of state.haltedSymbols) core.haltedSymbols.add(s);
+    for (const acc of state.accounts) {
+      core.accounts.set(acc.accountId, { cash: acc.cash, heldCash: acc.heldCash, positions: new Map(acc.positions.map(p => [p.symbol, { quantity: p.quantity, heldShares: p.heldShares }])) });
+    }
+    for (const res of state.reservations) {
+      core.reservations.set(res.orderId, { ...res, appliedTradeIds: new Set(res.appliedTradeIds) });
+    }
+    const issues = core.checkInvariants();
+    if (issues.length > 0) throw new InvalidRiskStateError("INVARIANT", issues.join(";"));
+    return core;
   }
 
   public exportState(): RiskState {

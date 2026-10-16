@@ -13,3 +13,4 @@ export { LeakSweeper } from "./sweeper.js";
 export { RiskStamper } from "./stamper.js";
 export { InMemoryRiskJournal } from "./in-memory-risk-journal.js";
 export * from "./core/index.js";
+export { recoverRiskPartition } from "./recovery/recover-risk-partition.js";

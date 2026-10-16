@@ -5,6 +5,6 @@
     "tsBuildInfoFile": "../dist-test/.tsbuildinfo"
   },
   "include": ["./**/*.ts"],
-  "references": [{ "path": ".." }],
+  "references": [{ "path": ".." }, { "path": "../../journal" }],
   "extends": "../../../tsconfig.base.json"
 }
