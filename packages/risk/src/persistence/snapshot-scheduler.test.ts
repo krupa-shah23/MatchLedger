@@ -50,8 +50,8 @@ describe.skipIf(!run)("Snapshot Scheduler (RSC1)", () => {
 
     await sql.transaction(async (tx) => {
       await tx.query(
-        "INSERT INTO snapshots (stream_id, seq, state_json, checksum, ts) VALUES ($1, $2, $3, $4, $5)",
-        ["risk-0", 5, stateJson, checksum, 100],
+        "INSERT INTO snapshots (stream_id, last_seq, state_json, checksum, last_ts, schema_version) VALUES ($1, $2, $3, $4, $5, $6)",
+        ["risk-0", 5, stateJson, checksum, 100, 1],
       );
     });
 
