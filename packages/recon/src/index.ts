@@ -5,5 +5,7 @@ export { classify } from "./core/matcher.js";
 export { BreakWorkflow } from "./core/workflow.js";
 export type { WorkflowStatus, WorkflowTransition, AuditEntry } from "./core/workflow.js";
 export { InMemoryReconciliationStore } from "./core/in-memory-store.js";
+export { PgReconStore, BreakNotFoundError, ConcurrentModificationError } from "./persistence/pg-recon-store.js";
+export type { StoredRun, StoredBreak, AuditEntry as ReconAuditEntry } from "./persistence/pg-recon-store.js";
 export { hashStatement, streamRows } from "./statement-stream.js";
 export { previewAdjustment, resolveBreak, runReconciliation } from "./service.js";
