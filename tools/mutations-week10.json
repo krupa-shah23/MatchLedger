@@ -1,0 +1,159 @@
+{
+  "description": "Week 10 mutations for testing fault detection",
+  "mutations": [
+    {
+      "id": "FN1",
+      "description": "Epoch compared in a separate statement from the insert",
+      "location": "packages/journal/src/fenced-pg-journal.ts:append",
+      "mutation": "Move epoch check to separate SELECT before INSERT",
+      "tests": "FN4"
+    },
+    {
+      "id": "FN2",
+      "description": "FOR SHARE dropped",
+      "location": "packages/journal/src/fenced-pg-journal.ts:append",
+      "mutation": "Remove FOR SHARE from lease row lock",
+      "tests": "FN4"
+    },
+    {
+      "id": "FN3",
+      "description": "Lease acquired after recovery instead of before",
+      "location": "packages/shard/src/shard-host.ts:onAssign",
+      "mutation": "Move leaseStore.acquire() after recoverSymbol()",
+      "tests": "OW1, R7"
+    },
+    {
+      "id": "FN4",
+      "description": "Events appended without the epoch condition",
+      "location": "packages/journal/src/fenced-pg-journal.ts:appendEvents",
+      "mutation": "Remove epoch WHERE clause from EVENT insert",
+      "tests": "FN5"
+    },
+    {
+      "id": "FN5",
+      "description": "published_through upsert not fenced",
+      "location": "packages/journal/src/fenced-pg-journal.ts:upsertPublishedThrough",
+      "mutation": "Remove epoch check before published_through upsert",
+      "tests": "FN6"
+    },
+    {
+      "id": "FN6",
+      "description": "Offset stored in a separate transaction from the commands",
+      "location": "packages/journal/src/fenced-pg-journal.ts:append",
+      "mutation": "Move offset insert to separate transaction",
+      "tests": "KC3, TR7"
+    },
+    {
+      "id": "FN7",
+      "description": "Offset moves backward on redelivery (no GREATEST)",
+      "location": "packages/journal/src/fenced-pg-journal.ts:upsertOffset",
+      "mutation": "Remove GREATEST, allow offset to decrease",
+      "tests": "FN9"
+    },
+    {
+      "id": "TR1",
+      "description": "Consume position taken from Kafka committed offset",
+      "location": "packages/shard/src/shard-host.ts:onAssign",
+      "mutation": "Use Kafka committed offset instead of consumer_offsets from Postgres",
+      "tests": "TR7"
+    },
+    {
+      "id": "TR2",
+      "description": "Republish skipped after recovery",
+      "location": "packages/shard/src/shard-host.ts:onAssign",
+      "mutation": "Remove republish() call before starting runner",
+      "tests": "KC5, TR8"
+    },
+    {
+      "id": "TR3",
+      "description": "Consumers do not dedupe by (symbol, seq)",
+      "location": "packages/runtime/src/control-plane.ts:startControlPlaneConsumer",
+      "mutation": "Remove watermark check, process all ShardOutput",
+      "tests": "KC7, CP1"
+    },
+    {
+      "id": "TR4",
+      "description": "Enqueue allowed after revoke",
+      "location": "packages/shard/src/shard-host.ts:onMessage",
+      "mutation": "Remove revoked flag check, allow message callback after revoke",
+      "tests": "OW2"
+    },
+    {
+      "id": "TR5",
+      "description": "Fencing failure logged but process keeps running",
+      "location": "packages/shard/src/main.ts:failStop",
+      "mutation": "Replace fail-stop with log-only on FencedWriterError",
+      "tests": "R7, R11"
+    },
+    {
+      "id": "TR6",
+      "description": "Producer transactional.id not stable per partition",
+      "location": "packages/shard/src/shard-host.ts:onAssign",
+      "mutation": "Use random transactional.id instead of shard-{partition}",
+      "tests": "TR3"
+    },
+    {
+      "id": "TR7",
+      "description": "Cancel published to a different partition than its order",
+      "location": "packages/runtime/src/command-router.ts:routeCancel",
+      "mutation": "Use random partition instead of partitionOf(symbol)",
+      "tests": "CP6"
+    },
+    {
+      "id": "TR8",
+      "description": "redelivered=true lookup removed",
+      "location": "packages/runtime/src/control-plane-redelivery.ts",
+      "mutation": "Remove engine journal lookup for redelivered messages",
+      "tests": "RD1"
+    },
+    {
+      "id": "TR9",
+      "description": "Undecodable message blocks the partition",
+      "location": "packages/shard/src/shard-host.ts:onMessage",
+      "mutation": "Remove dead-letter handling, drop undecodable messages",
+      "tests": "TR4"
+    },
+    {
+      "id": "DW1",
+      "description": "Dedupe eviction drops a live order's id",
+      "location": "packages/risk/src/dedupe-bounds.ts:evictOldIds",
+      "mutation": "Evict live order ids (missing isLive check)",
+      "tests": "DW1"
+    },
+    {
+      "id": "DW2",
+      "description": "Ticks injected for unowned symbols",
+      "location": "packages/shard/src/shard-host.ts",
+      "mutation": "Remove owned symbols filter, inject ticks for all symbols",
+      "tests": "OW6"
+    },
+    {
+      "id": "DW3",
+      "description": "Gateway returns 202 before the Kafka ack",
+      "location": "packages/runtime/src/submit-order.ts:submitOrderDurably",
+      "mutation": "Return 202 before publishSubmitOrder() completes (kafka mode)",
+      "tests": "IN1"
+    },
+    {
+      "id": "DW4",
+      "description": "published_at set before the ack",
+      "location": "packages/runtime/src/submit-order.ts:submitOrderDurably",
+      "mutation": "Set published_at before Kafka publish (out of order)",
+      "tests": "IN2, R10"
+    },
+    {
+      "id": "DW5",
+      "description": "Kafka mode silently diverges from inproc",
+      "location": "packages/runtime/src/transport-flag.ts",
+      "mutation": "Return different EventSink behavior per mode",
+      "tests": "P31"
+    },
+    {
+      "id": "DW6",
+      "description": "Tests contain it.todo/skip",
+      "location": "packages/**/*.int.test.ts",
+      "mutation": "Add it.skip() to a test",
+      "tests": "NP1"
+    }
+  ]
+}
