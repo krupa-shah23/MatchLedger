@@ -174,6 +174,19 @@ export async function getRejections(
   return result.rows as Record<string, unknown>[];
 }
 
+export async function getLedger(
+  executor: SqlExecutor,
+  accountId: string,
+  limit: number = 100
+): Promise<Record<string, unknown>[]> {
+  const result = await executor.query(
+    `SELECT * FROM ledger_view WHERE account_id = $1
+     ORDER BY ts DESC LIMIT $2;`,
+    [accountId, limit]
+  );
+  return result.rows as Record<string, unknown>[];
+}
+
 export async function getBreakers(
   executor: SqlExecutor
 ): Promise<Record<string, unknown>[]> {
