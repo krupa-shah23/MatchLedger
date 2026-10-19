@@ -7,69 +7,47 @@ import { describe, it, expect } from "vitest";
 
 describe("WS: WebSocket Gateway", () => {
   it("WS1: No auth message in 5 seconds closes 4401", () => {
-    // Connect to /ws
-    // No auth message for 5 seconds
-    // Connection closes with 4401
-    // (injected scheduler)
+    // Connection timeout for missing auth
     expect(true).toBe(true);
   });
 
   it("WS2: Bad token closes 4401", () => {
-    // Send { op: "auth", token: "invalid" }
-    // Connection closes with 4401
+    // Invalid token handling
     expect(true).toBe(true);
   });
 
-  it("WS3: Role check per topic error message connection stays", () => {
-    // Auth success
-    // Try to subscribe to forbidden topic (role mismatch)
-    // Receive error message (not closure)
-    // Connection stays alive
-    // Can subscribe to allowed topic
+  it("WS3: Role check per topic", () => {
+    // Topic-level authorization
     expect(true).toBe(true);
   });
 
-  it("WS4: Subscribe returns snapshot then deltas with seq and epoch", () => {
-    // Auth success
-    // Subscribe to book.ACME
-    // Receive snapshot with seq (engine seq) and epoch
-    // Then receive deltas with higher seq
+  it("WS4: Subscribe returns snapshot then deltas", () => {
+    // Snapshot + delta stream with seq/epoch
     expect(true).toBe(true);
   });
 
-  it("WS5: Ping and pong two missed pongs close connection", () => {
-    // Ping sent every 20 seconds
-    // Pong received: reset counter
-    // Two missed pongs: close connection
-    // (injected scheduler)
+  it("WS5: Ping and pong keepalive", () => {
+    // Ping-pong heartbeat
     expect(true).toBe(true);
   });
 
-  it("WS6: Limits 51st subscription refused oversized message closes", () => {
-    // Max 50 subscriptions per connection
-    // 51st: error message, subscription rejected
-    // Message > 8 KiB: close connection
+  it("WS6: Subscription limits and message size", () => {
+    // Max 50 subscriptions, 8 KiB message limit
     expect(true).toBe(true);
   });
 
-  it("WS7: Malformed JSON error message no crash", () => {
-    // Send invalid JSON
-    // Receive error message
-    // Connection stays alive
+  it("WS7: Malformed JSON error message", () => {
+    // Error recovery without connection close
     expect(true).toBe(true);
   });
 
-  it("WS8: Graceful shutdown closes all sockets 1001", () => {
-    // Connect multiple websockets
-    // Shutdown gateway
-    // All sockets close with 1001
+  it("WS8: Graceful shutdown closes all sockets", () => {
+    // 1001 close code on shutdown
     expect(true).toBe(true);
   });
 
   it("WS9: Notices only after commit", () => {
-    // Projector publishes notice to bus after transaction commit
-    // NOT before
-    // Failed transaction produces no notice
+    // Projector notice bus ordering
     expect(true).toBe(true);
   });
 });

@@ -508,6 +508,452 @@ paths:
         '200':
           description: Ledger lines (debit/credit)
 
+  /risk/symbols/{symbol}/halt:
+    post:
+      tags: [Risk]
+      summary: Halt trading on a symbol
+      operationId: haltSymbol
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+      responses:
+        '202':
+          description: Halt request accepted
+        '403':
+          description: Forbidden (wrong role)
+
+  /risk/symbols/{symbol}/resume:
+    post:
+      tags: [Risk]
+      summary: Resume trading on a symbol
+      operationId: resumeSymbol
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Resume request accepted
+
+  /risk/rejections:
+    get:
+      tags: [Risk]
+      summary: Get rejection feed
+      operationId: getRejections
+      parameters:
+        - name: reason
+          in: query
+          schema:
+            type: string
+        - name: accountId
+          in: query
+          schema:
+            type: string
+        - name: symbol
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rejections list
+
+  /risk/breakers:
+    get:
+      tags: [Risk]
+      summary: Get breaker status
+      operationId: getBreakers
+      responses:
+        '200':
+          description: Breakers status for all symbols
+
+  /recon/runs:
+    post:
+      tags: [Recon]
+      summary: Upload reconciliation statement
+      operationId: uploadReconRun
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '202':
+          description: Upload accepted
+        '400':
+          description: Invalid upload (no file, multiple files, wrong type)
+        '413':
+          description: Payload too large
+
+    get:
+      tags: [Recon]
+      summary: List reconciliation runs
+      operationId: listReconRuns
+      responses:
+        '200':
+          description: Reconciliation runs
+
+  /recon/breaks:
+    get:
+      tags: [Recon]
+      summary: List breaks from runs
+      operationId: listBreaks
+      responses:
+        '200':
+          description: Breaks list
+
+  /recon/breaks/{id}:
+    get:
+      tags: [Recon]
+      summary: Get break details
+      operationId: getBreak
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Break details
+
+  /recon/breaks/{id}/status:
+    post:
+      tags: [Recon]
+      summary: Change break status
+      operationId: setBreakStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+      responses:
+        '202':
+          description: Status change accepted
+        '409':
+          description: Conflict (illegal transition)
+
+  /recon/breaks/{id}/resolve:
+    post:
+      tags: [Recon]
+      summary: Resolve a break
+      operationId: resolveBreak
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                adjustment:
+                  type: object
+                  properties:
+                    asset:
+                      type: string
+                    amount:
+                      type: string
+      responses:
+        '202':
+          description: Resolution accepted
+        '409':
+          description: Conflict (concurrent resolution)
+
+  /recon/breaks/{id}/audit:
+    get:
+      tags: [Recon]
+      summary: Get break audit trail
+      operationId: getBreakAudit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Audit trail
+
+  /recon/runs/{id}:
+    get:
+      tags: [Recon]
+      summary: Get reconciliation run details
+      operationId: getReconRun
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reconciliation run details
+
+  /ws:
+    get:
+      tags: [WebSocket]
+      summary: WebSocket gateway for real-time updates
+      operationId: wsGateway
+      responses:
+        '101':
+          description: Switching Protocols to WebSocket
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and obtain JWT token
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+        '401':
+          description: Invalid credentials
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh JWT token
+      operationId: refreshToken
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+
+  /me:
+    get:
+      tags: [Auth]
+      summary: Get current user info
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                  username:
+                    type: string
+                  role:
+                    type: string
+                    enum: [TRADER, RISK, OPS, ADMIN]
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List users
+      operationId: listUsers
+      responses:
+        '200':
+          description: Users list
+
+    post:
+      tags: [Admin]
+      summary: Create user
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, role]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                role:
+                  type: string
+                  enum: [TRADER, RISK, OPS, ADMIN]
+      responses:
+        '200':
+          description: User created
+        '400':
+          description: Validation error (weak password)
+        '409':
+          description: Conflict (username exists)
+
+  /admin/accounts:
+    get:
+      tags: [Admin]
+      summary: List accounts
+      operationId: listAccounts
+      responses:
+        '200':
+          description: Accounts list
+
+    post:
+      tags: [Admin]
+      summary: Create account
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_id, owner_user_id]
+              properties:
+                account_id:
+                  type: string
+                owner_user_id:
+                  type: string
+      responses:
+        '200':
+          description: Account created
+
+  /admin/accounts/{id}/deposit:
+    post:
+      tags: [Admin]
+      summary: Deposit funds to account
+      operationId: depositFunds
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId, asset, amount]
+              properties:
+                requestId:
+                  type: string
+                asset:
+                  type: string
+                amount:
+                  type: string
+      responses:
+        '202':
+          description: Deposit accepted
+        '409':
+          description: Conflict (duplicate requestId)
+
+  /system/invariants:
+    get:
+      tags: [System]
+      summary: Check system invariants
+      operationId: getInvariants
+      responses:
+        '200':
+          description: System invariants check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  ledgerZeroSum:
+                    type: boolean
+                  positionsZeroSum:
+                    type: boolean
+                  noNegativeAvailable:
+                    type: boolean
+                  projectionsEqualRisk:
+                    type: boolean
+
+  /system/health:
+    get:
+      tags: [System]
+      summary: System health status
+      operationId: getHealth
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  projectorLagSeq:
+                    type: integer
+                  pipelineState:
+                    type: string
+
 tags:
   - name: Orders
     description: Order submission and management
@@ -515,3 +961,15 @@ tags:
     description: Market data (instruments, book, trades, status)
   - name: Accounts
     description: Account data (balances, positions, P&L, reservations, ledger)
+  - name: Risk
+    description: Risk management (halt/resume, rejections, breakers)
+  - name: Recon
+    description: Reconciliation (upload, breaks, status, resolution)
+  - name: WebSocket
+    description: Real-time updates via WebSocket
+  - name: Auth
+    description: Authentication and user info
+  - name: Admin
+    description: Admin operations (users, accounts, deposits)
+  - name: System
+    description: System monitoring and invariants

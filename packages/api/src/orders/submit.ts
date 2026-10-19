@@ -13,6 +13,12 @@ export interface SqlExecutor {
 export interface RuntimeFacade {
   hasSubmitCommand(orderId: string): Promise<boolean>;
   submitOrder(cmd: unknown): Promise<{ kind: "JOURNALED" | "FULL" }>;
+  cancelOrder(symbol: string, orderId: string): Promise<void>;
+  haltSymbol(symbol: string, reason: string): Promise<void>;
+  resumeSymbol(symbol: string, reason?: string): Promise<void>;
+  deposit(accountId: string, asset: string, amount: bigint, requestId: string): Promise<void>;
+  riskView(accountId: string): Promise<unknown>;
+  internalTrades(fromTs: number, toTs: number): Promise<unknown[]>;
 }
 
 interface OrderRequest {

@@ -148,13 +148,14 @@ export class Hub {
       // Below HIGH: send immediately
       state.isStale = false;
       state.staleTopics.delete(topic);
-      state.pendingSnapshotSeq.delete(topic);
 
       try {
+        const seq = topicSubs.isConflatable ? message.seq : topicSubs.sequence++;
+        state.pendingSnapshotSeq.set(topic, seq); // Track for conflated snapshot on drain
         const envelope: HubMessage = {
           ...message,
           epoch: this.epoch,
-          seq: topicSubs.isConflatable ? message.seq : topicSubs.sequence++,
+          seq,
         };
         state.socket.send(JSON.stringify(envelope));
       } catch {
@@ -191,7 +192,28 @@ export class Hub {
         // Below LOW: send one conflated snapshot per stale topic
         state.isStale = false;
         for (const topic of state.staleTopics) {
-          // TODO: send snapshot with conflated: true
+          const topicSubs = this.subscribers.get(topic);
+          if (topicSubs) {
+            // Send conflated snapshot with the seq from the last snapshot sent
+            const lastSeq = state.pendingSnapshotSeq.get(topic) ?? 0;
+            const snapshot: HubMessage = {
+              type: "snapshot",
+              topic,
+              epoch: this.epoch,
+              seq: topicSubs.isConflatable ? lastSeq : topicSubs.sequence - 1,
+              ts: Date.now(),
+              payload: { conflated: true }, // Mark as conflated snapshot
+            };
+
+            try {
+              state.socket.send(JSON.stringify(snapshot));
+            } catch {
+              state.socket.close(1011, "send failed");
+              this.connections.delete(state.socket);
+              state.subscriptions.clear();
+              continue;
+            }
+          }
           state.staleTopics.delete(topic);
         }
       }

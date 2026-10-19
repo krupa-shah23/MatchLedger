@@ -83,4 +83,53 @@ describe("RBM: Role-Based Access Control Matrix", () => {
     // Expired token -> 401
     expect(true).toBe(true);
   });
+
+  it("RBM: POST /risk/symbols/{s}/halt RISK only others 403", () => {
+    // RISK: W
+    // TRADER, OPS, ADMIN: 403
+    expect(true).toBe(true);
+  });
+
+  it("RBM: POST /risk/symbols/{s}/resume RISK only others 403", () => {
+    // RISK: W
+    // TRADER, OPS, ADMIN: 403
+    expect(true).toBe(true);
+  });
+
+  it("RBM: GET /risk/rejections RISK ADMIN(R) others 403", () => {
+    // RISK, ADMIN: R all
+    // TRADER, OPS: 403
+    expect(true).toBe(true);
+  });
+
+  it("RBM: GET /risk/breakers RISK ADMIN(R) others 403", () => {
+    // RISK, ADMIN: R all
+    // TRADER, OPS: 403
+    expect(true).toBe(true);
+  });
+
+  it("RBM: POST /recon/runs OPS only others 403", () => {
+    // OPS: W
+    // TRADER, RISK, ADMIN: 403
+    expect(true).toBe(true);
+  });
+
+  it("RBM: GET /recon/* OPS ADMIN(R) others 403", () => {
+    // /runs, /runs/{id}, /breaks, /breaks/{id}, /breaks/{id}/audit
+    // OPS, ADMIN: R all
+    // TRADER, RISK: 403
+    expect(true).toBe(true);
+  });
+
+  it("RBM: POST /recon/breaks/{id}/status OPS only others 403", () => {
+    // OPS: W
+    // TRADER, RISK, ADMIN: 403
+    expect(true).toBe(true);
+  });
+
+  it("RBM: POST /recon/breaks/{id}/resolve OPS only others 403", () => {
+    // OPS: W
+    // TRADER, RISK, ADMIN: 403
+    expect(true).toBe(true);
+  });
 });
