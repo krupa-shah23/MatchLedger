@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:flake": "node scripts/flake-gate.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
+    "check:no-placeholders": "node scripts/check-no-placeholders.mjs",
     "bench": "npm --workspace @matchledger/benchmarks run bench",
     "chaos:pipeline": "node scripts/chaos-pipeline.mjs",
     "test:mutations": "node scripts/mutate.mjs"
