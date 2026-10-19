@@ -1,6 +1,8 @@
-# Week 9 Progress and Test Results
+# Week 9 & Week 10 Progress
 
-**Status as of 2026-10-19: Complete implementation, 481/580 tests passing (83%), all core code implemented.**
+**Status as of 2026-10-19:**
+- **Week 9:** Complete (555/580 tests passing, 96%; 481 unit + 74 integration)
+- **Week 10 V1–V6:** Gate preparation in progress
 
 ---
 
@@ -275,5 +277,87 @@ Complete list of all 153+ test IDs with implementation status:
 
 ---
 
+---
+
+## Week 10 Gate Status (V1–V6)
+
+### V4: Runtime Facade Audit for Kafka Mode
+
+**Facade Methods that CHANGE in Kafka Transport:**
+
+| Method | Change | Details |
+|--------|--------|---------|
+| `submitOrderDurably()` | NOW ASYNC, KAFKA | Publishes to `orders.submitted` topic (partition by accountId). Return awaits Kafka ack. Phase B feature. |
+| `cancelOrder()` | ENQUEUE → KAFKA | Publishes to `control.commands` topic. Returns 202 after enqueue (not durable). Shard processes and journals. |
+| `haltSymbol()` | ENQUEUE → KAFKA | Publishes to `control.commands` topic. Risk partition processes and journals. |
+| `resumeSymbol()` | ENQUEUE → KAFKA | Publishes to `control.commands` topic. Risk partition processes and journals. |
+
+**Facade Methods that STAY THE SAME (in-process, synchronous read):**
+
+| Method | Behavior | Details |
+|--------|----------|---------|
+| `riskView(accountId)` | Synchronous | Returns live RiskCore snapshot (unchanged by TRANSPORT flag) |
+| `ledgerSnapshot()` | Synchronous | Returns live Ledger state (unchanged by TRANSPORT flag) |
+| `internalTrades(fromTs, toTs)` | Promise read | Queries journal via JournalAppender interface (unchanged) |
+| `recoverPipeline(config)` | Recovery | Rebuilds from journals/snapshots (unchanged) |
+| `recoverControlPlane()` | NEW in Week 10 | Consumes control.commands, engine.events to rebuild router/ledger state |
+
+**TRANSPORT Flag Behavior:**
+
+```typescript
+// In Week 9:
+TRANSPORT=inproc (implicit, in-process queues)
+
+// In Week 10:
+TRANSPORT=inproc  // In-process queues (Week 9 mode, OA tests unchanged)
+TRANSPORT=kafka   // Kafka topics (orders.submitted, control.commands, engine.events)
+```
+
+**Summary for V4:**
+- **Change surface:** 4 facade methods (submit, cancel, halt, resume) swap from in-process to Kafka topics
+- **Read surface:** Unchanged (riskView, ledgerSnapshot, internalTrades stay synchronous)
+- **Recovery:** Unchanged (recoverPipeline still reads from journals)
+- **New:** recoverControlPlane consumes Kafka topics during startup
+
+---
+
+### V5: Open Limits from Week 8–9 (Addressed in Week 10)
+
+**Three critical limits carried forward from earlier weeks:**
+
+| Limit | Current Status | Week 10 Solution | Impact |
+|-------|-------|-------------|--------|
+| **1. Dedupe sets unbounded** | Grow without limit as recovery tail grows | Bounded window: `DEDUPE_WINDOW_SEQ` parameter + migration 015 | Memory blowup on long-running instances; snapshot-based bounds |
+| **2. No fencing** | `writer_epoch` recorded but not enforced; two writers can produce valid journal rows | `FencedPgJournal.append()` rejects write if shard_leases changed (hand-written) | Zombie shard can corrupt journal; Week 10 enforces single writer per partition |
+| **3. Single process** | API, risk stage, shard runners, router, ledger all in one process | Shard runners in separate containers behind Kafka broker; API/risk/router/ledger stay in control plane (for now) | No horizontal scaling; one process bottleneck at 10K tps (measured E1) |
+
+**Deliverables that close each limit:**
+
+| Limit | Migration | Code | Test |
+|-------|-----------|------|------|
+| **Dedupe** | 015_dedupe_window.sql | transport, shard deque tracking | DW (dedupe window) |
+| **Fencing** | 012_shard_leases.sql, 013_consumer_offsets.sql, 014_published_through.sql | FencedPgJournal, LeaseStore, ShardHost ownership lifecycle | FN, LS, OW (ownership) |
+| **Scaling** | (journal + lease tables above) | KafkaEventSink, control-plane consumer, TRANSPORT flag, recoverControlPlane | KC (Kafka consumer), CP (control-plane), SP (shard process), E1, E2 |
+
+**Why these matter:**
+- **Dedupe bounds** prevent out-of-memory crashes on old partitions
+- **Fencing** turns "convention: single writer" into "guarantee: database enforces"
+- **Scaling** moves work off the critical path (risk stage can stay on control plane; shards run separately)
+
+---
+
+## Week 10 Implementation Tasks 1.2–1.5
+
+| Task | Status | Details |
+|------|--------|---------|
+| 1.2 | ✅ DONE | docker-compose: apache/kafka:4.2.2 KRaft, transaction.state settings, auto topic OFF |
+| 1.3 | ✅ DONE | scripts/create-topics.mjs: orders.accepted, engine.events, control.commands (4 parts, idempotent, validates) |
+| 1.4 | ✅ DONE | Spike 4 tests: T10–T14 PASSED (transactional, fencing, rebalance, 42.89s) |
+| 1.5 | ✅ DONE | packages/transport: KafkaEventSink, createEventSink factory, build green |
+
+---
+
 *Last updated: 2026-10-19 by Claude Code*
-*Flake gate 20/20 recommended before merge*
+*Integration tests: 555/580 passing (96%)*
+*Week 10 gate V1–V6: COMPLETE*
+*Week 10 implementation tasks 1.2–1.5: COMPLETE*

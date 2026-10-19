@@ -1,0 +1,3 @@
+-- Week 10: Dedupe window bounds
+-- Decide on Day 5 per WEEK-10.md 4.3; for now this migration is deferred
+-- If needed, will track the window floor per partition in RiskState snapshots

@@ -15,12 +15,9 @@ describe.skipIf(!run)("MG: Migrations", () => {
 
   beforeEach(async () => {
     pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
-    await pool.query("DROP TABLE IF EXISTS user_accounts CASCADE");
-    await pool.query("DROP TABLE IF EXISTS users CASCADE");
-    await pool.query("DROP TABLE IF EXISTS schema_migrations CASCADE");
-    await pool.query("DROP TABLE IF EXISTS journal CASCADE");
-    await pool.query("DROP TABLE IF EXISTS snapshots CASCADE");
-    await pool.query("DROP TABLE IF EXISTS order_requests CASCADE");
+    // Drop all tables and projections to start fresh
+    await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
+    await pool.query("CREATE SCHEMA public");
   });
 
   it("MG1: Migrations apply in order and are idempotent", async () => {

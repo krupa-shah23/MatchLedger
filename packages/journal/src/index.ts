@@ -9,6 +9,9 @@ export { PgSnapshotStore } from "./snapshot-store.js";
 export { OrderRequestStore } from "./order-request-store.js";
 export { createSqlExecutor } from "./sql-executor.js";
 export type { SqlExecutor } from "./sql-executor.js";
+export { LeaseStore } from "./lease-store.js";
+export { FencedPgJournal, FencedWriterError } from "./fenced-pg-journal.js";
+export type { OffsetTicket } from "./fenced-pg-journal.js";
 export { setUpIsolatedSchema, withSchema, uniqueSchemaName } from "./test-schema.js";
 export type { IsolatedSchema } from "./test-schema.js";
 

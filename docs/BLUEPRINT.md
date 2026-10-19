@@ -427,8 +427,11 @@ node:* imports (it must stay browser-safe because web imports it)
 journal
 engine-core, common, pg
 web, Kafka
+transport (Week 10)
+common, journal, the Kafka client
+api, web, risk, engine-core
 shard
-engine-core, common (journal and the Kafka client are later-stage dependencies)
+engine-core, common, journal, transport, the Kafka client
 api, web
 risk
 common only for Week 4; journal and the Kafka client are later-stage dependencies; in the Week 6 work it remains pure and the core logic is in risk/src/core
@@ -444,7 +447,10 @@ common, pg, the Redis client, the Kafka client
 engine-core internals
 api
 common, journal, projections, risk and recon client interfaces, Fastify, @fastify/websocket, jose, prom-client
-shard internals
+shard internals, Kafka client (reached only through runtime ports)
+runtime (Week 10)
+all backend packages including transport, the Kafka client
+web
 simulator
 common, the Kafka client
 api internals
