@@ -1,62 +1,59 @@
 /**
- * JWT token handling with jose (HS256).
+ * JWT token handling with jose
  */
 
-import * as jose from "jose";
+import { jwtVerify, SignJWT } from "jose";
+import type { ApiRole } from "@matchledger/common";
 
-export interface JwtClaims {
+export interface JWTClaims {
   sub: string; // user_id
-  role: "TRADER" | "RISK" | "OPS" | "ADMIN";
+  role: ApiRole;
   iat: number; // issued at
   exp: number; // expiration
-  jti: string; // token id
+  jti: string; // JWT ID (unique per token)
   auth_time: number; // original login time
 }
 
-/**
- * Sign a JWT token.
- */
-export async function signToken(
-  claims: Omit<JwtClaims, "iat" | "exp" | "jti">,
-  secret: Uint8Array,
-  ttlSeconds: number
-): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const jti = crypto.randomUUID?.() || Math.random().toString(36).substring(2, 15);
-
-  const payload = {
-    sub: claims.sub,
-    role: claims.role,
-    auth_time: claims.auth_time,
-    iat: now,
-    exp: now + ttlSeconds,
-    jti,
-  };
-
-  const jwt = new jose.SignJWT(payload).setProtectedHeader({ alg: "HS256" });
-  return jwt.sign(secret);
+export interface TokenConfig {
+  secret: Uint8Array;
+  ttlSeconds: number;
 }
 
 /**
- * Verify and decode a JWT token.
+ * Create a new JWT token
  */
-export async function verifyToken(
-  token: string,
-  secret: Uint8Array
-): Promise<JwtClaims | null> {
+export async function signToken(
+  config: TokenConfig,
+  userId: string,
+  role: ApiRole,
+  authTime: number = Math.floor(Date.now() / 1000)
+): Promise<string> {
+  const jti = Math.random().toString(36).substring(2, 15);
+  const now = Math.floor(Date.now() / 1000);
+
+  return new SignJWT({
+    sub: userId,
+    role,
+    auth_time: authTime,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(now)
+    .setExpirationTime(now + config.ttlSeconds)
+    .setJti(jti)
+    .sign(config.secret);
+}
+
+/**
+ * Verify and decode a JWT token
+ */
+export async function verifyToken(config: TokenConfig, token: string): Promise<JWTClaims> {
   try {
-    const verified = await jose.jwtVerify(token, secret, {
+    const { payload } = await jwtVerify(token, config.secret, {
       algorithms: ["HS256"],
     });
-    return {
-      sub: String(verified.payload.sub),
-      role: verified.payload.role as JwtClaims["role"],
-      iat: Number(verified.payload.iat),
-      exp: Number(verified.payload.exp),
-      jti: String(verified.payload.jti),
-      auth_time: Number(verified.payload.auth_time),
-    };
-  } catch {
-    return null;
+
+    return payload as unknown as JWTClaims;
+  } catch (error) {
+    throw new Error(`Invalid token: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

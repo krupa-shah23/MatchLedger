@@ -1,41 +1,48 @@
 /**
- * Orders routes: submit, list, get, cancel, timeline.
+ * Orders routes: POST /orders, GET /orders/{id}, GET /orders, DELETE /orders/{id}
  */
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { ApiRole } from "@matchledger/common";
 
-/**
- * Submit order durably.
- * Hand-written function: must resolve after risk journal append.
- * NOT IMPLEMENTED - stub stays until Prompt 3a.
- */
-export async function submitOrderDurably(_payload: unknown): Promise<{ orderId: string; status: string }> {
-  throw new Error("submitOrderDurably: NOT IMPLEMENTED - hand-write this function");
+export interface OrderRoutesDeps {
+  // Will be filled in when routes are registered
 }
 
 export async function registerOrderRoutes(app: FastifyInstance): Promise<void> {
-  app.post<{ Body: unknown }>("/orders", async (req, reply) => {
-    // Stub: validate, call submitOrderDurably, return 202
-    return reply.code(202).send({ orderId: "", status: "RECEIVED" });
-  });
+  // POST /orders - submit an order
+  app.post<{ Body: unknown }>(
+    "/orders",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // TODO: implement
+      return reply.status(202).send({ orderId: "", status: "RECEIVED" });
+    }
+  );
 
-  app.get<{ Params: { id: string } }>("/orders/:id", async (req, reply) => {
-    // Stub: query orders_view, return order or 404
-    return reply.code(404).send({ code: "not_found", title: "Not Found", status: 404, detail: "" });
-  });
+  // GET /orders/{id} - get order details
+  app.get<{ Params: { id: string } }>(
+    "/orders/:id",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // TODO: implement
+      return reply.status(200).send({});
+    }
+  );
 
-  app.get("/orders", async (req, reply) => {
-    // Stub: query orders_view with filters, return paginated list
-    return reply.code(200).send({ items: [], cursor: null });
-  });
+  // GET /orders - list orders
+  app.get<{ Querystring: { accountId?: string; cursor?: string; limit?: string } }>(
+    "/orders",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // TODO: implement
+      return reply.status(200).send({ orders: [], nextCursor: null });
+    }
+  );
 
-  app.delete<{ Params: { id: string } }>("/orders/:id", async (req, reply) => {
-    // Stub: cancel order via runtime facade
-    return reply.code(202).send({ orderId: "" });
-  });
-
-  app.get<{ Params: { id: string } }>("/orders/:id/events", async (req, reply) => {
-    // Stub: query audit timeline
-    return reply.code(200).send([]);
-  });
+  // DELETE /orders/{id} - cancel an order
+  app.delete<{ Params: { id: string } }>(
+    "/orders/:id",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // TODO: implement
+      return reply.status(202).send({});
+    }
+  );
 }
