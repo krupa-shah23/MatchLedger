@@ -124,7 +124,7 @@ export class Projector {
 
         case "UPDATE_BALANCES": {
           const updates = Object.entries(m.data)
-            .map(([k, v], i) => `${k} = ${k} + $${i + 2}`)
+            .map(([k], i) => `${k} = ${k} + $${i + 2}`)
             .join(", ");
           const updateValues = Object.values(m.data);
           await executor.query(
@@ -140,7 +140,7 @@ export class Projector {
 
         case "UPDATE_POSITION": {
           const updates = Object.entries(m.data)
-            .map(([k, v], i) => `${k} = ${k} + $${i + 3}`)
+            .map(([k], i) => `${k} = ${k} + $${i + 3}`)
             .join(", ");
           const updateValues = Object.values(m.data);
           await executor.query(
@@ -232,6 +232,7 @@ export class Projector {
     let maxSeq = 0;
 
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await this.deps.executor.transaction(async (executor: any) => {
         // 1. Lock checkpoint (inside transaction)
         const checkpoint = await fetchCheckpoint(executor, projection, streamId);
@@ -249,7 +250,8 @@ export class Projector {
         if (appliedCount === 0) return;
 
         // 3. Apply mutations from each journal record
-        for (const row of rows.rows as any[]) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const row of (rows.rows as any[])) {
           maxSeq = Math.max(maxSeq, row.seq);
           const mutations =
             row.record_type === "COMMAND" || row.record_type === "EVENT"
@@ -302,7 +304,8 @@ export class Projector {
       []
     );
 
-    const locked = (lockResult.rows[0] as any).locked;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const locked = ((lockResult.rows[0] as any) as { locked: boolean }).locked;
     if (!locked) {
       throw new Error("Could not acquire projector singleton lock");
     }
@@ -356,6 +359,7 @@ export class Projector {
    * Rebuild: truncate all tables and replay all journals from seq 1 in one transaction.
    */
   async rebuild(): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await this.deps.executor.transaction(async (executor: any) => {
       // Truncate all projection tables
       const tables = [
@@ -385,7 +389,8 @@ export class Projector {
       const streamCheckpoints: Map<string, number> = new Map();
 
       // Apply mutations for each record
-      for (const row of journalRows.rows as any[]) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const row of (journalRows.rows as any[])) {
         const streamId = row.symbol || "risk"; // Default to "risk" for risk partition records
         const mutations =
           row.record_type === "COMMAND" || row.record_type === "EVENT"

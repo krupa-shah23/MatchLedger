@@ -208,7 +208,8 @@ export function mapRiskRecord(
         // Handled or no table impact
         break;
       default:
-        (evt.type as never);
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        evt.type as never;
         break;
     }
   }
@@ -223,6 +224,7 @@ export function mapRiskRecord(
 export function mapEngineRecord(
   record: { record_type: string; payload_json: unknown; symbol: string; seq: number; idx?: number }
 ): Mutation[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const payload = record.payload_json as any;
   const mutations: Mutation[] = [];
 
@@ -237,7 +239,8 @@ export function mapEngineRecord(
       case "Tick":
         break;
       default:
-        (cmd.type as never);
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        cmd.type as never;
         break;
     }
   } else if (record.record_type === "EVENT") {
@@ -353,7 +356,8 @@ export function mapEngineRecord(
       case "CancelRejected":
         break;
       default:
-        (evt.type as never);
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        evt.type as never;
         break;
     }
   }
