@@ -30,6 +30,7 @@ export class Projector {
   /**
    * Apply mutations to the database.
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async applyMutations(executor: any, mutations: Mutation[]): Promise<void> {
     for (const m of mutations) {
       switch (m.type) {
@@ -64,7 +65,7 @@ export class Projector {
 
         case "UPDATE_ORDER":
           const updates = Object.entries(m.data)
-            .map(([k, v], i) => `${k} = $${i + 2}`)
+            .map(([k], i) => `${k} = $${i + 2}`)
             .join(", ");
           const updateValues = Object.values(m.data);
           await executor.query(
@@ -176,7 +177,7 @@ export class Projector {
 
         case "UPDATE_RESERVATION":
           const resUpdates = Object.entries(m.data)
-            .map(([k, v], i) => `${k} = $${i + 2}`)
+            .map(([k], i) => `${k} = $${i + 2}`)
             .join(", ");
           const resValues = Object.values(m.data);
           await executor.query(
@@ -205,7 +206,7 @@ export class Projector {
 
         case "UPDATE_BREAKER":
           const breakerUpdates = Object.entries(m.data)
-            .map(([k, v], i) => `${k} = $${i + 2}`)
+            .map(([k], i) => `${k} = $${i + 2}`)
             .join(", ");
           const breakerValues = Object.values(m.data);
           await executor.query(
