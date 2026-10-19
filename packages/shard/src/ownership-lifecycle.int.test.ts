@@ -16,9 +16,9 @@ describe("OW: Ownership Lifecycle", () => {
       // Pop for 3 commands (matches tickets)
       const batch = tickets.popBatch(3);
       expect(batch).toHaveLength(3);
-      expect(batch[0].offset).toBe(100n);
-      expect(batch[1].offset).toBe(101n);
-      expect(batch[2].offset).toBe(102n);
+      expect(batch[0]!.offset).toBe(100n);
+      expect(batch[1]!.offset).toBe(101n);
+      expect(batch[2]!.offset).toBe(102n);
 
       expect(tickets.size()).toBe(0);
     });

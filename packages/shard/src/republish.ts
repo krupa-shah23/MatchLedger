@@ -55,10 +55,12 @@ export async function republish(
     const events: ShardOutput[] = [];
     for (const row of eventRows.rows) {
       const payload = (row as any).payload_json;
+      const ts = (row as any).ts;
+      const tsMs = (ts instanceof Date ? ts.getTime() : new Date(ts).getTime()) as number;
       events.push({
         symbol,
-        seq: BigInt((row as any).seq),
-        ts: new Date((row as any).ts).getTime(),
+        seq: Number((row as any).seq),
+        ts: tsMs,
         command: payload.command ?? {},
         events: payload.events ?? [],
       });

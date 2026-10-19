@@ -21,8 +21,8 @@ export interface ConsumerMessage {
  * Wraps @confluentinc/kafka-javascript consumer with assign, seek, pause, resume, callbacks.
  */
 export class PartitionConsumer {
-  private consumer: ReturnType<ReturnType<typeof KafkaJS.Kafka>["consumer"]> | null = null;
-  private kafka: ReturnType<typeof KafkaJS.Kafka> | null = null;
+  private consumer: any | null = null;
+  private kafka: any | null = null;
   private running = false;
 
   constructor(private config: PartitionConsumerConfig) {}
@@ -92,7 +92,8 @@ export class PartitionConsumer {
 
     try {
       await this.consumer.run({
-        eachMessage: async ({ topic, partition, message }) => {
+        eachMessage: async (params: any) => {
+          const { topic, partition, message } = params;
           const msg: ConsumerMessage = {
             topic,
             partition,

@@ -1,0 +1,10 @@
+FROM node:24-alpine
+WORKDIR /app
+COPY package*.json ./
+COPY packages/common ./packages/common
+COPY packages/journal ./packages/journal
+COPY packages/transport ./packages/transport
+COPY packages/engine-core ./packages/engine-core
+COPY packages/shard ./packages/shard
+RUN npm ci && npm run build
+ENTRYPOINT ["node", "packages/shard/dist/main.js"]

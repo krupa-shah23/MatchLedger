@@ -9,7 +9,9 @@
     "@confluentinc/kafka-javascript": "1.10.0",
     "@matchledger/common": "file:../common",
     "@matchledger/engine-core": "file:../engine-core",
-    "@matchledger/journal": "file:../journal"
+    "@matchledger/journal": "file:../journal",
+    "@matchledger/transport": "file:../transport",
+    "zod": "^3.23.8"
   },
   "scripts": {
     "spike:kafka": "node --experimental-strip-types src/spike4.ts"

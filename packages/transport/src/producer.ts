@@ -27,8 +27,8 @@ export interface Message {
  * commit, abort, and fenced-error detection.
  */
 export class TransactionalProducer {
-  private producer: ReturnType<ReturnType<typeof KafkaJS.Kafka>["producer"]> | null = null;
-  private kafka: ReturnType<typeof KafkaJS.Kafka> | null = null;
+  private producer: any | null = null;
+  private kafka: any | null = null;
 
   constructor(private config: TransactionalProducerConfig) {}
 
