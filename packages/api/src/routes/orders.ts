@@ -45,4 +45,16 @@ export async function registerOrderRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(202).send({});
     }
   );
+
+  // GET /orders/{id}/events - audit timeline (merged risk and engine records)
+  app.get<{ Params: { id: string } }>(
+    "/orders/:id/events",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // TODO: implement - merge risk_commands, risk_events, engine_events
+      // Display order: ts, stage_rank (RISK_COMMAND=1, RISK_ACCEPT=2, ENGINE=3, RISK_NOTICE=4), seq, idx
+      // For rejections: include snapshot and "Rejected: needed X, available Y"
+      // 404 when never journaled
+      return reply.status(200).send([]);
+    }
+  );
 }

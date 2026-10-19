@@ -1,27 +1,57 @@
 /**
- * Account routes: balances, positions, pnl, reservations, ledger.
+ * Accounts routes: balances, positions, P&L, reservations, ledger
  */
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+
+export interface AccountsRoutesDeps {
+  // Will be filled in when routes are registered
+}
 
 export async function registerAccountRoutes(app: FastifyInstance): Promise<void> {
-  app.get<{ Params: { id: string } }>("/accounts/:id/balances", async (req, reply) => {
-    return reply.code(200).send({ accountId: "", total: "0", held: "0", available: "0" });
-  });
+  // GET /accounts/{id}/balances - total, held, available
+  app.get<{ Params: { id: string } }>(
+    "/accounts/:id/balances",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // TODO: implement - read from projections
+      // Returns: { cash, held_cash, available }
+      return reply.status(200).send({});
+    }
+  );
 
-  app.get<{ Params: { id: string } }>("/accounts/:id/positions", async (req, reply) => {
-    return reply.code(200).send([]);
-  });
+  // GET /accounts/{id}/positions - quantity, held_shares, cost_basis, realized_pnl
+  app.get<{ Params: { id: string } }>(
+    "/accounts/:id/positions",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // TODO: implement
+      return reply.status(200).send([]);
+    }
+  );
 
-  app.get<{ Params: { id: string } }>("/accounts/:id/pnl", async (req, reply) => {
-    return reply.code(200).send({ positions: [] });
-  });
+  // GET /accounts/{id}/pnl - P&L details
+  app.get<{ Params: { id: string } }>(
+    "/accounts/:id/pnl",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // TODO: implement
+      return reply.status(200).send([]);
+    }
+  );
 
-  app.get<{ Params: { id: string } }>("/accounts/:id/reservations", async (req, reply) => {
-    return reply.code(200).send([]);
-  });
+  // GET /accounts/{id}/reservations - placed, converted, released
+  app.get<{ Params: { id: string } }>(
+    "/accounts/:id/reservations",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // TODO: implement
+      return reply.status(200).send([]);
+    }
+  );
 
-  app.get<{ Params: { id: string } }>("/accounts/:id/ledger", async (req, reply) => {
-    return reply.code(200).send([]);
-  });
+  // GET /accounts/{id}/ledger - debit/credit lines with date filter
+  app.get<{ Params: { id: string }; Querystring: { from?: string; to?: string } }>(
+    "/accounts/:id/ledger",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // TODO: implement - read from durable ledger_entries
+      return reply.status(200).send([]);
+    }
+  );
 }

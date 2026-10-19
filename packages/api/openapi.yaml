@@ -1,0 +1,517 @@
+openapi: 3.0.3
+info:
+  title: MatchLedger API
+  version: 0.1.0
+  description: Secure HTTP API for MatchLedger trading platform with CQRS read-side projections
+
+servers:
+  - url: http://localhost:3000
+    description: Development server
+  - url: https://api.matchledger.example.com
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - code
+        - detail
+        - instance
+        - requestId
+      properties:
+        type:
+          type: string
+          example: "about:blank#validation_failed"
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+          enum:
+            - validation_failed
+            - unauthenticated
+            - forbidden
+            - not_found
+            - conflict
+            - payload_too_large
+            - rate_limited
+            - service_unavailable
+            - internal_error
+        detail:
+          type: string
+        instance:
+          type: string
+        requestId:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              message:
+                type: string
+
+    Order:
+      type: object
+      properties:
+        orderId:
+          type: string
+        clientOrderId:
+          type: string
+        accountId:
+          type: string
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [BUY, SELL]
+        type:
+          type: string
+          enum: [LIMIT, MARKET]
+        timeInForce:
+          type: string
+          enum: [GTC, IOC]
+        quantity:
+          type: string
+          description: Decimal string
+        price:
+          type: string
+          nullable: true
+          description: Decimal string, null for MARKET orders
+        effectivePrice:
+          type: string
+          nullable: true
+          description: Decimal string, filled price for executed orders
+        filledQty:
+          type: string
+          description: Decimal string, quantity filled
+        status:
+          type: string
+          enum: [RECEIVED, ACCEPTED, RESTING, PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, CANCELLED, REJECTED]
+        cancelRequested:
+          type: boolean
+        terminal:
+          type: string
+          nullable: true
+          enum: [CANCELLED, REJECTED]
+        terminalReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Balances:
+      type: object
+      properties:
+        accountId:
+          type: string
+        cash:
+          type: string
+          description: Decimal string, total cash
+        heldCash:
+          type: string
+          description: Decimal string, held by reservations
+        available:
+          type: string
+          description: Decimal string, available for new reservations
+
+paths:
+  /orders:
+    post:
+      tags: [Orders]
+      summary: Submit an order
+      operationId: submitOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientOrderId, symbol, side, type, timeInForce, quantity]
+              properties:
+                clientOrderId:
+                  type: string
+                  maxLength: 64
+                symbol:
+                  type: string
+                side:
+                  type: string
+                  enum: [BUY, SELL]
+                type:
+                  type: string
+                  enum: [LIMIT, MARKET]
+                timeInForce:
+                  type: string
+                  enum: [GTC, IOC]
+                quantity:
+                  oneOf:
+                    - type: string
+                    - type: number
+                price:
+                  oneOf:
+                    - type: string
+                    - type: number
+                  nullable: true
+      responses:
+        '202':
+          description: Order accepted (durably journaled)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orderId:
+                    type: string
+                  status:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthenticated
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden (wrong role)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limited
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service unavailable (queue full)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [Orders]
+      summary: List orders with pagination
+      operationId: listOrders
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+          description: Required for non-TRADER roles
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Opaque pagination cursor
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Orders list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+                  nextCursor:
+                    type: string
+                    nullable: true
+
+  /orders/{id}:
+    get:
+      tags: [Orders]
+      summary: Get order details
+      operationId: getOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          description: Order not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [Orders]
+      summary: Cancel an order
+      operationId: cancelOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Cancel request accepted
+        '404':
+          description: Order not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Conflict (terminal order, different payload)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orders/{id}/events:
+    get:
+      tags: [Orders]
+      summary: Get order audit timeline
+      operationId: getOrderEvents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order timeline events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    ts:
+                      type: integer
+                      format: int64
+                    stageRank:
+                      type: integer
+                      description: RISK_COMMAND=1, RISK_ACCEPT=2, ENGINE=3, RISK_NOTICE=4
+                    seq:
+                      type: integer
+                    idx:
+                      type: integer
+                    source:
+                      type: string
+                    payload:
+                      type: string
+                      description: JSON-serialized event payload
+        '404':
+          description: Order not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /instruments:
+    get:
+      tags: [Market]
+      summary: List all instruments
+      operationId: listInstruments
+      responses:
+        '200':
+          description: Instruments list
+
+  /instruments/{symbol}:
+    get:
+      tags: [Market]
+      summary: Get instrument details
+      operationId: getInstrument
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Instrument details
+
+  /symbols/{symbol}/book:
+    get:
+      tags: [Market]
+      summary: Get order book
+      operationId: getBook
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: depth
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Order book with bid/ask levels and seq
+
+  /trades:
+    get:
+      tags: [Market]
+      summary: Get recent trades
+      operationId: getTrades
+      parameters:
+        - name: symbol
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Recent trades
+
+  /status:
+    get:
+      tags: [Market]
+      summary: Get breaker status
+      operationId: getStatus
+      responses:
+        '200':
+          description: Breaker status for all symbols
+
+  /accounts/{id}/balances:
+    get:
+      tags: [Accounts]
+      summary: Get account balances
+      operationId: getBalances
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Account balances
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Balances'
+
+  /accounts/{id}/positions:
+    get:
+      tags: [Accounts]
+      summary: Get account positions
+      operationId: getPositions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Account positions
+
+  /accounts/{id}/pnl:
+    get:
+      tags: [Accounts]
+      summary: Get account P&L
+      operationId: getPnl
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Account P&L
+
+  /accounts/{id}/reservations:
+    get:
+      tags: [Accounts]
+      summary: Get account reservations
+      operationId: getReservations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Account reservations
+
+  /accounts/{id}/ledger:
+    get:
+      tags: [Accounts]
+      summary: Get account ledger
+      operationId: getLedger
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Ledger lines (debit/credit)
+
+tags:
+  - name: Orders
+    description: Order submission and management
+  - name: Market
+    description: Market data (instruments, book, trades, status)
+  - name: Accounts
+    description: Account data (balances, positions, P&L, reservations, ledger)
