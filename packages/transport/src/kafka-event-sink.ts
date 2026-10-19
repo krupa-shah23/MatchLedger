@@ -1,33 +1,52 @@
-import { KafkaJS } from "@confluentinc/kafka-javascript";
+import { TransactionalProducer } from "./producer.js";
+import { encodeEnvelope } from "./envelope.js";
 import type { EventSink, ShardOutput } from "@matchledger/common";
 
-// Week 10: Kafka transport for shard output. Publishes batches to engine.events topic.
 export class KafkaEventSink implements EventSink {
-  private producer: ReturnType<ReturnType<typeof KafkaJS.Kafka>["producer"]>;
+  private producer: TransactionalProducer;
+  private initialized = false;
 
   constructor(brokers: string[], topicName = "engine.events") {
-    const { Kafka } = KafkaJS;
-    const kafka = new Kafka({ kafkaJS: { brokers } });
-    this.producer = kafka.producer({
-      "transactional.id": `shard-${process.env.SHARD_ID ?? "unknown"}`,
-      "enable.idempotence": true,
-      kafkaJS: { acks: -1 }, // wait for all replicas
+    const shardId = process.env.SHARD_ID ?? "unknown";
+    this.producer = new TransactionalProducer({
+      brokers,
+      transactionalId: `shard-${shardId}`,
+      acks: -1,
     });
     this.topicName = topicName;
   }
 
   private topicName: string;
 
+  async init(): Promise<void> {
+    if (this.initialized) return;
+    await this.producer.init();
+    this.initialized = true;
+  }
+
   async publish(batch: readonly ShardOutput[]): Promise<void> {
     if (batch.length === 0) return;
 
-    await this.producer.send({
-      topic: this.topicName,
-      messages: batch.map((event) => ({
-        key: event.symbol,
-        value: JSON.stringify(event),
-        partition: Math.abs(event.symbol.charCodeAt(0) % 4), // 4 partitions in Week 10 topics
-      })),
-    });
+    if (!this.initialized) {
+      throw new Error("KafkaEventSink not initialized; call init() first");
+    }
+
+    const messages = batch.map((event) => ({
+      key: event.symbol,
+      value: encodeEnvelope({
+        schemaVersion: 1,
+        msgId: `${event.symbol}:${event.seq}`,
+        type: "ShardOutput",
+        payload: event,
+      }),
+      partition: Math.abs(event.symbol.charCodeAt(0) % 4), // 4 partitions per docker-compose.yml
+    }));
+
+    await this.producer.sendBatch(this.topicName, messages);
+  }
+
+  async disconnect(): Promise<void> {
+    await this.producer.disconnect();
+    this.initialized = false;
   }
 }
