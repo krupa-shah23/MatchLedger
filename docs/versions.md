@@ -1,5 +1,35 @@
 # Version verification
 
+## Week 9 Pinned Dependencies (Day 0-1)
+
+Verified peer dependencies:
+- fastify 5.10.0 (no peers) → packages/api
+- @fastify/websocket 11.3.2 (peer: fastify@5.x) → packages/api ✓
+- @fastify/multipart 10.1.4 (peer: fastify@5.x) → packages/api ✓
+- jose 6.2.12 (no peers) → packages/api
+- zod 4.6.7 (no peers) → packages/common
+- prom-client 15.1.3 (no peers) → packages/api
+- ws 8.22.0 (optional peers: bufferutil, utf-8-validate) → packages/api
+- @types/ws 8.18.2 (no peers, dev) → packages/api
+
+**Compatibility check:** All @fastify/* plugins require Fastify 5.x; pinned 5.10.0 satisfies both.
+
+## Pure-Zone ESLint Rules (4.12)
+
+Applied to `packages/projections/src/order-facts.ts` and `mappers.ts` via eslint.config.js:
+
+**Proof of enforcement** (test violations):
+```
+/home/krupa-shah/Desktop/MatchLedger/packages/projections/src/order-facts.ts
+  1:1   error  'node:crypto' import is restricted from being used by a pattern. node:* imports are forbidden in the pure zone  no-restricted-imports
+  3:10  error  Unexpected use of 'Date'. Time is an input                                                                      no-restricted-globals
+```
+
+**Ban list** (same as recon/src/core):
+- node:* imports forbidden
+- Date, Math.random, setTimeout, crypto, fetch, process, performance forbidden
+- async/await and Promise forbidden
+- Only relative imports and type-only @matchledger/common allowed
 
 npm view before pinning: TypeScript 7.0.2 (no peers), Vitest 5.0.3 (Vite 6–8 / Node 24), fast-check 4.10.2 (no peers). Required-range pins: TypeScript 6.0.3, Vitest 4.1.11, fast-check 4.10.2.
 

@@ -1,6 +1,12 @@
 export { decodeMoney, encodeMoney, MAX_MONEY, MIN_MONEY } from "./money.js";
 export { parseQuantity } from "./quantity.js";
 export type { ParsedQuantity, QuantityError } from "./quantity.js";
+export { ENDPOINT_ROLES } from "./api/roles.js";
+export type { ApiRole } from "./api/roles.js";
+export { buildProblem } from "./api/problem.js";
+export type { Problem, ProblemCode } from "./api/problem.js";
+export { formatMinor, parseDecimalToMinor } from "./api/money-format.js";
+export * as ZodSchemas from "./api/schemas.js";
 export type { AfterBatchContext, BookPort, JournalReader, RecoveredState, SnapshotCandidate, SnapshotRecord, SnapshotStore } from "./recovery-types.js";
 export type { Clock, EventSink, JournalAppender, ShardOutput, StampedCommand } from "./shard-ports.js";
 export { MAX_AMOUNT } from "./risk-types.js";

@@ -21,4 +21,5 @@ export default [
     "no-restricted-imports": ["error", { patterns: [{ regex: "^(node:|[^./])", message: "engine-core imports only relative own files" }] }],
   } },
   { files: ["packages/risk/src/core/**/*.ts", "packages/ledger/src/ledger.ts", "packages/ledger/src/tx-id.ts", "packages/recon/src/core/**/*.ts"], ignores: ["**/*.test.ts", "**/*.spec.ts", "packages/risk/src/persistence/**", "packages/risk/src/recovery/**", "packages/ledger/src/persistence/**"], rules: pureRestrictedRules },
+  { files: ["packages/projections/src/order-facts.ts", "packages/projections/src/mappers.ts"], rules: pureRestrictedRules },
 ];
