@@ -38,7 +38,7 @@ describe("RLM: Rate Limiting", () => {
   });
 
   it("RLM1: Retry-After is rounded up", () => {
-    let now = 1000;
+    const now = 1000;
     const limiter = new RateLimiter({
       tokensPerSecond: 2,
       burstSize: 2,
@@ -55,7 +55,7 @@ describe("RLM: Rate Limiting", () => {
   });
 
   it("RLM2: POST /orders per account rate limiting", () => {
-    let now = 1000;
+    const now = 1000;
     const limiter = new RateLimiter({
       tokensPerSecond: 10,
       burstSize: 20,
@@ -79,7 +79,7 @@ describe("RLM: Rate Limiting", () => {
   });
 
   it("RLM3: Login limiter per IP and per username", () => {
-    let now = 1000;
+    const now = 1000;
     const ipLimiter = new RateLimiter({
       tokensPerSecond: 5,
       burstSize: 5,

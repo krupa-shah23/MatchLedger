@@ -50,7 +50,7 @@ export class MockSqlExecutor implements SqlExecutor {
     // SELECT WHERE account_id = $1 ORDER BY created_at DESC (pagination)
     if (sql.includes("SELECT") && sql.includes("orders_view") && sql.includes("account_id")) {
       const accountId = params[0] as string;
-      let orders = (this.tables.orders_view as any[]).filter((o) => o.account_id === accountId);
+      const orders = (this.tables.orders_view as any[]).filter((o) => o.account_id === accountId);
 
       // Sort by created_at DESC
       orders.sort((a, b) => {

@@ -26,6 +26,7 @@ export type Mutation =
 export function mapRiskRecord(
   record: { record_type: string; payload_json: unknown; seq: number }
 ): Mutation[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const payload = record.payload_json as any;
   const mutations: Mutation[] = [];
 
@@ -33,6 +34,8 @@ export function mapRiskRecord(
     const cmd = payload as { type: string };
     switch (cmd.type) {
       case "SubmitOrder": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const c = cmd as any;
         mutations.push({
           type: "INSERT_ORDER",
@@ -60,6 +63,8 @@ export function mapRiskRecord(
         break;
       }
       case "CancelOrder": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const c = cmd as any;
         mutations.push({
           type: "UPDATE_ORDER",
@@ -82,13 +87,15 @@ export function mapRiskRecord(
         // Risk commands handled via events
         break;
       default:
-        (cmd.type as never);
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        cmd.type as never;
         break;
     }
   } else if (record.record_type === "EVENT") {
     const evt = payload as { type: string };
     switch (evt.type) {
       case "ReservationPlaced": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
         mutations.push({
           type: "INSERT_RESERVATION",
@@ -114,6 +121,7 @@ export function mapRiskRecord(
         break;
       }
       case "OrderAccepted": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
         mutations.push({
           type: "UPDATE_ORDER",
@@ -126,6 +134,7 @@ export function mapRiskRecord(
         break;
       }
       case "OrderRejected": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
         mutations.push({
           type: "UPDATE_ORDER",
@@ -151,6 +160,7 @@ export function mapRiskRecord(
         break;
       }
       case "ReservationConverted": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
         mutations.push({
           type: "UPDATE_RESERVATION",
@@ -164,6 +174,7 @@ export function mapRiskRecord(
         break;
       }
       case "ReservationReleased": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
         mutations.push({
           type: "UPDATE_RESERVATION",
@@ -177,6 +188,7 @@ export function mapRiskRecord(
         break;
       }
       case "FundsDeposited": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
         mutations.push({
           type: "UPDATE_BALANCES",
@@ -232,6 +244,7 @@ export function mapEngineRecord(
     const evt = payload as { type: string };
     switch (evt.type) {
       case "OrderRested": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
         mutations.push({
           type: "INSERT_RESTING",
@@ -246,6 +259,7 @@ export function mapEngineRecord(
         break;
       }
       case "TradeExecuted": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
         mutations.push({
           type: "INSERT_FILL",
@@ -292,6 +306,7 @@ export function mapEngineRecord(
         break;
       }
       case "OrderCancelled": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
         mutations.push({
           type: "UPDATE_ORDER",
@@ -309,6 +324,7 @@ export function mapEngineRecord(
         break;
       }
       case "OrderRejected": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
         mutations.push({
           type: "UPDATE_ORDER",

@@ -16,12 +16,6 @@ export interface RequestContext {
   authTime?: number;
 }
 
-declare global {
-  namespace FastifyInstance {
-    interface FastifyContext extends RequestContext {}
-  }
-}
-
 export async function registerRequestContextPlugin(
   app: FastifyInstance,
   config: Config,
