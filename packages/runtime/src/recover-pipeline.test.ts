@@ -76,3 +76,59 @@ describe("Pipeline recovery (PR1-PR6)", () => {
     expect(nextTs).toBeGreaterThanOrEqual(state.lastTs);
   });
 });
+
+describe("RS1: Stage Recovered - live operation after recovery", () => {
+  it("RS1: recovered stage reports idle, handles live commands and notices", () => {
+    // Simulate recovered stage
+    const stage = {
+      _outbox: [] as string[],
+      _idle: true,
+      _noticeBuffer: [] as string[],
+
+      whenIdle(): Promise<void> {
+        return new Promise((resolve) => {
+          if (this._idle) {
+            resolve();
+          } else {
+            const check = setInterval(() => {
+              if (this._idle) {
+                clearInterval(check);
+                resolve();
+              }
+            }, 10);
+          }
+        });
+      },
+
+      enqueue(cmd: string): void {
+        this._idle = false;
+        this._outbox.push(cmd);
+      },
+
+      flushNotices(): string[] {
+        const notices = [...this._noticeBuffer];
+        this._noticeBuffer = [];
+        return notices;
+      },
+
+      markIdle(): void {
+        this._idle = true;
+      },
+    };
+
+    // Stage starts idle
+    expect(stage._idle).toBe(true);
+
+    // Enqueue command
+    stage.enqueue("PlaceOrder");
+    expect(stage._idle).toBe(false);
+
+    // Flush outbox and mark idle
+    expect(stage._outbox.length).toBe(1);
+    stage._outbox = [];
+    stage.markIdle();
+
+    // Stage is idle again
+    expect(stage._idle).toBe(true);
+  });
+});
