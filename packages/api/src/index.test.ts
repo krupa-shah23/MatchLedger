@@ -17,7 +17,13 @@ async function createToken(expiration?: string) {
 
 function waitForOpen(ws: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("WebSocket open timeout"));
+    }, 5000);
+
     const cleanup = () => {
+      clearTimeout(timeout);
       ws.off("open", onOpen);
       ws.off("error", onError);
       ws.off("close", onClose);
@@ -82,6 +88,8 @@ describe("Spike 5: Fastify, JWT, WebSocket auth", () => {
   beforeAll(async () => {
     app = await buildServer({ jwtSecret: SECRET_STR, wsAuthTimeoutMs: 1000 });
     address = await app.listen({ port: 0, host: "127.0.0.1" });
+    // Give the server time to fully initialize
+    await new Promise(resolve => setTimeout(resolve, 100));
   });
 
   afterEach(async () => {

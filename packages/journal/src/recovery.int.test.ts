@@ -17,6 +17,8 @@ describe.skipIf(!run)("RC: Recovery", () => {
 
   beforeEach(async () => {
     pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
+    await pool.query("DROP TABLE IF EXISTS user_accounts CASCADE");
+    await pool.query("DROP TABLE IF EXISTS users CASCADE");
     await pool.query("DROP TABLE IF EXISTS schema_migrations CASCADE");
     await pool.query("DROP TABLE IF EXISTS journal CASCADE");
     await pool.query("DROP TABLE IF EXISTS snapshots CASCADE");
