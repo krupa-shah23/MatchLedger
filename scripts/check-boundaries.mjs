@@ -16,7 +16,7 @@ const allowed = new Map([
   ["simulator", ["@matchledger/common", "@confluentinc/kafka-javascript"]],
   ["benchmarks", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/shard", "@matchledger/risk", "tinybench"]],
   ["system-tests", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/shard", "@matchledger/risk", "@matchledger/ledger", "@matchledger/journal", "@matchledger/recon"]],
-  ["web", ["@matchledger/common"]],
+  ["web", ["@matchledger/common", "react", "react-dom", "react-router-dom", "@tanstack/react-query"]],
 ]);
 
 const errors = [];

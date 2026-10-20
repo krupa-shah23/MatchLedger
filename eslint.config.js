@@ -22,4 +22,8 @@ export default [
   } },
   { files: ["packages/risk/src/core/**/*.ts", "packages/ledger/src/ledger.ts", "packages/ledger/src/tx-id.ts", "packages/recon/src/core/**/*.ts"], ignores: ["**/*.test.ts", "**/*.spec.ts", "packages/risk/src/persistence/**", "packages/risk/src/recovery/**", "packages/ledger/src/persistence/**"], rules: pureRestrictedRules },
   { files: ["packages/projections/src/order-facts.ts", "packages/projections/src/mappers.ts"], rules: pureRestrictedRules },
+  { files: ["web/src/**/*.ts", "web/src/**/*.tsx"], ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"], rules: {
+    "no-restricted-imports": ["error", { patterns: [{ group: ["node:*"], message: "Browser code cannot import node:* modules" }] }],
+    "no-restricted-globals": ["error", { name: "parseFloat", message: "Use money codec parse() instead for decimal strings" }, { name: "Number", message: "Use money codec parse() instead for decimal strings; Number() loses precision on bigint" }],
+  } },
 ];

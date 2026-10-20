@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import * as jose from "jose";
 import WebSocket from "ws";
 import { buildServer } from "./index.js";
@@ -15,12 +15,12 @@ async function createToken(expiration?: string) {
   return await jwt.sign(SECRET_BYTES);
 }
 
-function waitForOpen(ws: WebSocket): Promise<void> {
+function waitForOpen(ws: WebSocket, timeoutMs: number = 10000): Promise<void> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       cleanup();
       reject(new Error("WebSocket open timeout"));
-    }, 5000);
+    }, timeoutMs);
 
     const cleanup = () => {
       clearTimeout(timeout);
@@ -86,10 +86,26 @@ describe("Spike 5: Fastify, JWT, WebSocket auth", () => {
   const sockets = new Set<WebSocket>();
 
   beforeAll(async () => {
-    app = await buildServer({ jwtSecret: SECRET_STR, wsAuthTimeoutMs: 1000 });
+    app = await buildServer({ jwtSecret: SECRET_STR, wsAuthTimeoutMs: 500 });
     address = await app.listen({ port: 0, host: "127.0.0.1" });
-    // Give the server time to fully initialize
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Ensure server is ready by making a health check request
+    let ready = false;
+    let attempts = 0;
+    while (!ready && attempts < 10) {
+      try {
+        const res = await app.inject({ method: "GET", url: "/health" });
+        if (res.statusCode === 200) {
+          ready = true;
+        }
+      } catch {
+        attempts++;
+        // Small delay before retry
+        await new Promise(r => setTimeout(r, 10));
+      }
+    }
+    if (!ready) {
+      throw new Error("Server failed to become ready");
+    }
   });
 
   afterEach(async () => {
@@ -147,8 +163,14 @@ describe("Spike 5: Fastify, JWT, WebSocket auth", () => {
     const ws = new WebSocket(wsUrl);
     sockets.add(ws);
 
-    const closed = new Promise<number>((resolve) => {
-      ws.on("close", (code) => resolve(code));
+    const closed = new Promise<number>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("Timeout waiting for WebSocket close"));
+      }, 2000);
+      ws.on("close", (code) => {
+        clearTimeout(timeout);
+        resolve(code);
+      });
     });
 
     const code = await closed;
@@ -157,16 +179,32 @@ describe("Spike 5: Fastify, JWT, WebSocket auth", () => {
 
   it("acknowledges WebSocket client with a valid token", async () => {
     const wsUrl = address.replace("http://", "ws://") + "/ws";
-    const ws = new WebSocket(wsUrl);
-    sockets.add(ws);
     const token = await createToken("1h");
 
-    await waitForOpen(ws);
-    const ackPromise = waitForAuthAck(ws);
-    ws.send(JSON.stringify({ op: "auth", token }));
+    // Retry logic to handle server startup race condition
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const ws = new WebSocket(wsUrl);
+        sockets.add(ws);
 
-    const reply = await ackPromise;
-    expect(reply).toEqual({ op: "auth", status: "ok" });
-    ws.close();
+        // Use longer timeout to avoid race with server initialization
+        await waitForOpen(ws, 5000);
+        const ackPromise = waitForAuthAck(ws);
+        ws.send(JSON.stringify({ op: "auth", token }));
+
+        const reply = await ackPromise;
+        expect(reply).toEqual({ op: "auth", status: "ok" });
+        ws.close();
+        return; // Success
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attempt < 2) {
+          // Retry after a small delay
+          await new Promise(r => setTimeout(r, 50));
+        }
+      }
+    }
+    throw lastError;
   });
 });

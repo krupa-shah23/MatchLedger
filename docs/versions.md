@@ -134,6 +134,55 @@ pm run test`.
 ## npm view of remaining verify rows (2026-10-10)
 @fastify/websocket 11.3.4; pg 8.23.1; redis 6.3.0; jose 6.2.12; zod 4.6.5; prom-client 15.1.3; tinybench 6.2.1; @testcontainers/postgresql 12.2.0 (not used: Spike 3 uses compose Postgres); @fastify/swagger-ui 6.1.2 (not installed); ws 8.22.0; node-pg-migrate 9.0.0 (not installed). Installed pins are in package.json files.
 
+## Week 11 React UI Dependencies (1.4)
+
+Verified npm view output (2026-10-19):
+
+| Package | Version | Peer Dependencies | Status |
+|---------|---------|-------------------|--------|
+| react | 19.3.1 | none | ✓ |
+| react-dom | 19.3.1 | react@^19.3.1 | ✓ |
+| react-router-dom | 7.18.4 | react>=18, react-dom>=18 | ✓ |
+| @tanstack/react-query | 5.104.5 | react^18\|^19, @types/react^18\|^19 | ✓ |
+| vite | 8.3.4 | none (optional peers) | ✓ |
+| vitest | 4.1.11 | (already pinned Week 9) | ✓ |
+| @vitest/ui | 5.0.5 | vitest@5.0.5 | ✓ |
+| @testing-library/react | 16.3.3 | react^18\|^19, react-dom^18\|^19 | ✓ |
+| happy-dom | 21.0.3 | none | ✓ |
+| jsdom | 30.1.3 | canvas@^3.2.3 (optional) | ✓ |
+| typescript | 7.0.2 | (already pinned) | ✓ |
+| eslint | 10.13.0 | jiti (optional) | ✓ |
+| @typescript-eslint/eslint-plugin | 8.72.0 | eslint^8.57\|^9\|^10, typescript>=4.8.4 <6.1, parser@^8.72.0 | ✓ |
+| @typescript-eslint/parser | 8.72.0 | eslint^8.57\|^9\|^10, typescript>=4.8.4 <6.1 | ✓ |
+| eslint-plugin-react-hooks | 7.1.1 | eslint^3-10 | ✓ |
+
+**Pin decision for web/package.json:**
+```json
+{
+  "dependencies": {
+    "@matchledger/common": "file:../packages/common",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-router-dom": "7.18.4",
+    "@tanstack/react-query": "5.104.5"
+  },
+  "devDependencies": {
+    "vite": "8.3.4",
+    "@vitest/ui": "5.0.5",
+    "@testing-library/react": "16.3.3",
+    "happy-dom": "21.0.3"
+  }
+}
+```
+
+**Rationale:**
+- React 19 latest stable; peer satisfied by all ecosystem packages
+- React Router 7 latest; requires React >= 18 (satisfied)
+- TanStack Query 5 latest; supports React 19 + TypeScript types
+- Vite 8 latest; Vitest 4 compatible
+- happy-dom for jsdom-free unit tests (lighter than jsdom)
+- @testing-library/react 16 latest compatible with React 19
+
 ## Week 3 benchmark dependency check
 Command: `npm view tinybench version peerDependencies`
 

@@ -4,6 +4,28 @@
   "name": "@matchledger/web",
   "version": "0.1.0",
   "dependencies": {
-    "@matchledger/common": "file:../packages/common"
+    "@matchledger/common": "file:../packages/common",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-router-dom": "7.18.4",
+    "@tanstack/react-query": "5.104.5"
+  },
+  "devDependencies": {
+    "vite": "8.3.4",
+    "@vitest/ui": "5.0.5",
+    "@testing-library/react": "16.3.3",
+    "happy-dom": "21.0.3",
+    "typescript": "7.0.2",
+    "eslint": "10.13.0",
+    "@typescript-eslint/eslint-plugin": "8.72.0",
+    "@typescript-eslint/parser": "8.72.0",
+    "eslint-plugin-react-hooks": "7.1.1"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:ui": "vitest --ui"
   }
 }
