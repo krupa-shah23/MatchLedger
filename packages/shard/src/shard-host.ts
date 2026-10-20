@@ -7,6 +7,7 @@
 
 import { PartitionConsumer, createDeadLetterMessage, KafkaEventSink } from "@matchledger/transport";
 import { LeaseStore, FencedPgJournal, createSqlExecutor } from "@matchledger/journal";
+import { getOrCreateCounter, getOrCreateGauge } from "@matchledger/telemetry";
 import { OffsetTickets } from "./offset-tickets.js";
 import { republish } from "./republish.js";
 import type { Pool } from "pg";
@@ -37,12 +38,28 @@ export class ShardHost {
       offsetTickets: OffsetTickets;
       sink: KafkaEventSink;
       revoked: boolean;
+      ownedSymbols: Set<string>;
     }
   >();
 
   private paused = new Set<number>();
+  private prevOwnershipMap = new Map<number, Set<string>>();
 
   constructor(private config: ShardHostConfig) {}
+
+  /**
+   * Get metrics (lazy initialization to avoid prom-client conflicts in tests)
+   */
+  private getMetrics() {
+    return {
+      commands: getOrCreateCounter("ml_shard_commands_total"),
+      queueFull: getOrCreateCounter("ml_shard_queue_full"),
+      queueDepth: getOrCreateGauge("ml_shard_queue_depth"),
+      leaseEpoch: getOrCreateGauge("ml_shard_lease_epoch"),
+      ownershipChanges: getOrCreateCounter("ml_shard_ownership_changes"),
+      lastSeq: getOrCreateGauge("ml_shard_last_seq"),
+    };
+  }
 
   /**
    * onAssign: partition assigned, run the ownership lifecycle.
@@ -88,6 +105,16 @@ export class ShardHost {
       await this.config.consumer.seek("orders.accepted", partition, nextOffset);
       await this.config.consumer.resume([{ topic: "orders.accepted", partition }]);
 
+      // Track owned symbols and observe metrics
+      const ownedSymbols = new Set<string>(symbols);
+      const prevOwned = this.prevOwnershipMap.get(partition);
+      const metrics = this.getMetrics();
+      if (prevOwned && (prevOwned.size !== ownedSymbols.size || !Array.from(prevOwned).every(s => ownedSymbols.has(s)))) {
+        metrics.ownershipChanges.inc({ shard_id: this.config.shardId });
+      }
+      this.prevOwnershipMap.set(partition, ownedSymbols);
+      metrics.leaseEpoch.set({ shard_id: this.config.shardId }, Number(epoch));
+
       // Store assignment state
       this.partitions.set(partition, {
         symbols,
@@ -97,6 +124,7 @@ export class ShardHost {
         offsetTickets: new OffsetTickets(),
         sink,
         revoked: false,
+        ownedSymbols,
       });
     } catch (error) {
       // Fencing or fatal error: exit
@@ -204,14 +232,20 @@ export class ShardHost {
 
     // tryEnqueue: if accepted, push offset ticket
     const enqueueResult = state.runner.tryEnqueue(decoded);
+    const metrics = this.getMetrics();
 
     if (enqueueResult === "ACCEPTED") {
+      metrics.commands.inc({
+        shard_id: this.config.shardId,
+        symbol: decoded.symbol || "unknown",
+      });
       state.offsetTickets.push({
         topic: msg.topic,
         partition: msg.partition,
         offset: msg.offset,
       });
     } else if (enqueueResult === "FULL") {
+      metrics.queueFull.inc({ shard_id: this.config.shardId });
       // Pause partition on backpressure
       await this.config.consumer.pause([{ topic: msg.topic, partition }]);
       this.paused.add(partition);
@@ -226,7 +260,9 @@ export class ShardHost {
    * Resume paused partitions when queue drains.
    * Called after each runner batch.
    */
-  async resumeIfDrained(partition: number): Promise<void> {
+  async resumeIfDrained(partition: number, queueDepth: number): Promise<void> {
+    const metrics = this.getMetrics();
+    metrics.queueDepth.set({ shard_id: this.config.shardId }, queueDepth);
     if (this.paused.has(partition)) {
       const state = this.partitions.get(partition);
       if (state && !state.revoked) {
@@ -241,6 +277,19 @@ export class ShardHost {
    */
   getOffsetTickets(partition: number): OffsetTickets | undefined {
     return this.partitions.get(partition)?.offsetTickets;
+  }
+
+  /**
+   * AfterBatch callback: observe per-symbol last sequence numbers.
+   */
+  recordBatchMetrics(partition: number, lastSeqBySymbol: ReadonlyMap<string, number>): void {
+    const metrics = this.getMetrics();
+    for (const [symbol, seq] of lastSeqBySymbol.entries()) {
+      metrics.lastSeq.set(
+        { shard_id: this.config.shardId, symbol },
+        seq
+      );
+    }
   }
 
   /**
