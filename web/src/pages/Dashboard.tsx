@@ -25,7 +25,11 @@ export function Dashboard({ userRole }: DashboardProps) {
     navigate(path, { replace: true });
   }, [userRole, navigate]);
 
-  return <div>Redirecting...</div>;
+  return (
+    <div style={{ padding: 20 }}>
+      <p>Redirecting to your dashboard...</p>
+    </div>
+  );
 }
 
 // Stub pages for each role
@@ -34,7 +38,282 @@ export function TradingPage() {
 }
 
 export function RiskPage() {
-  return <div style={{ padding: 20 }}>Risk Page</div>;
+  const [breakers, setBreakers] = React.useState<any[]>([]);
+  const [rejections, setRejections] = React.useState<any[]>([]);
+  const [resting, setResting] = React.useState<any>({});
+  const [haltReason, setHaltReason] = React.useState("");
+  const [resumeReason, setResumeReason] = React.useState("");
+  const [selectedSymbol, setSelectedSymbol] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const maxHaltDuration = 300000; // 5 minutes in ms
+
+  React.useEffect(() => {
+    if (!token) return;
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const headers = { Authorization: `Bearer ${token}` };
+
+        const [breakersRes, rejectionsRes] = await Promise.all([
+          fetch("/api/v1/risk/breakers", { headers }),
+          fetch("/api/v1/risk/rejections", { headers }),
+        ]);
+
+        if (breakersRes.ok) {
+          const data = await breakersRes.json();
+          setBreakers(data.breakers || []);
+        }
+        if (rejectionsRes.ok) {
+          const data = await rejectionsRes.json();
+          setRejections(data.rejections || []);
+
+          // Calculate resting orders and held funds per symbol
+          const restingMap: any = {};
+          data.rejections?.forEach((rej: any) => {
+            if (!restingMap[rej.symbol]) {
+              restingMap[rej.symbol] = { count: 0, held: 0n };
+            }
+            restingMap[rej.symbol].count++;
+            if (rej.snapshot?.heldCash) {
+              restingMap[rej.symbol].held += BigInt(rej.snapshot.heldCash);
+            }
+          });
+          setResting(restingMap);
+        }
+      } catch (err) {
+        console.error("Error fetching risk data", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        fetchData();
+      }
+    }, 5000);
+
+    document.addEventListener("visibilitychange", fetchData);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", fetchData);
+    };
+  }, [token]);
+
+  const handleHalt = async (symbol: string) => {
+    if (!token || !haltReason.trim()) {
+      alert("Reason is required");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/v1/risk/symbols/${symbol}/halt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reason: haltReason }),
+      });
+      if (res.ok) {
+        setHaltReason("");
+        setSelectedSymbol("");
+        alert(`${symbol} halted`);
+      }
+    } catch (err) {
+      console.error("Error halting symbol", err);
+    }
+  };
+
+  const handleResume = async (symbol: string) => {
+    if (!token || !resumeReason.trim()) {
+      alert("Reason is required");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/v1/risk/symbols/${symbol}/resume`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reason: resumeReason }),
+      });
+      if (res.ok) {
+        setResumeReason("");
+        alert(`${symbol} resumed (HALF_OPEN state for safety)`);
+      }
+    } catch (err) {
+      console.error("Error resuming symbol", err);
+    }
+  };
+
+  if (loading) {
+    return <div style={{ padding: 20 }}>Loading risk data...</div>;
+  }
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h1>Risk Console (P5)</h1>
+
+      {/* Breaker Table */}
+      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
+        <h2>Breakers</h2>
+        {breakers.length > 0 ? (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ borderBottom: "2px solid #666" }}>
+                <th style={{ textAlign: "left", padding: 8 }}>Symbol</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Status</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Incident Time</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Time Remaining</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Resting Orders</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Held Funds</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {breakers.map((breaker: any) => {
+                const incidentTime = new Date(breaker.incidentStartTs).getTime();
+                const timeElapsed = Date.now() - incidentTime;
+                const timeRemaining = Math.max(0, maxHaltDuration - timeElapsed);
+                const percentDone = ((timeElapsed / maxHaltDuration) * 100).toFixed(0);
+                const rLog = resting[breaker.symbol] || { count: 0, held: 0 };
+
+                return (
+                  <tr key={breaker.symbol} style={{ borderBottom: "1px solid #ddd" }}>
+                    <td style={{ padding: 8, fontWeight: "bold" }}>{breaker.symbol}</td>
+                    <td style={{ padding: 8, color: breaker.status === "ACTIVE" ? "red" : "orange" }}>
+                      {breaker.status}
+                    </td>
+                    <td style={{ padding: 8 }}>{new Date(breaker.incidentStartTs).toLocaleString()}</td>
+                    <td style={{ padding: 8 }}>
+                      {timeRemaining > 0 ? (
+                        <div>
+                          <progress value={percentDone} max="100" style={{ width: 100 }} />
+                          <span style={{ fontSize: "0.8em" }}>{(timeRemaining / 1000).toFixed(0)}s</span>
+                        </div>
+                      ) : (
+                        "Expired"
+                      )}
+                    </td>
+                    <td style={{ padding: 8 }}>{rLog.count}</td>
+                    <td style={{ padding: 8 }}>${(Number(rLog.held) / 100).toFixed(2)}</td>
+                    <td style={{ padding: 8 }}>
+                      <button
+                        onClick={() => setSelectedSymbol(breaker.symbol)}
+                        style={{ padding: "5px 10px" }}
+                      >
+                        Resume
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <p>No active breakers</p>
+        )}
+      </div>
+
+      {/* Halt/Resume Controls */}
+      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
+        <h2>Halt/Resume</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <div>
+            <h3>Halt Symbol</h3>
+            <div style={{ marginBottom: 10 }}>
+              <label>Symbol:</label>
+              <input
+                type="text"
+                placeholder="AAPL"
+                style={{ width: "100%", padding: 8, marginTop: 5 }}
+              />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label>Reason (required):</label>
+              <textarea
+                value={haltReason}
+                onChange={(e) => setHaltReason(e.target.value)}
+                placeholder="Why are you halting this symbol?"
+                style={{ width: "100%", padding: 8, marginTop: 5, height: 60 }}
+              />
+            </div>
+            <button
+              onClick={() => handleHalt("ACME")}
+              disabled={!haltReason.trim()}
+              style={{ padding: "8px 16px" }}
+            >
+              Halt
+            </button>
+          </div>
+
+          <div>
+            <h3>Resume Symbol</h3>
+            {selectedSymbol && (
+              <>
+                <p>Resuming: <strong>{selectedSymbol}</strong></p>
+                <div style={{ marginBottom: 10 }}>
+                  <label>Reason (required):</label>
+                  <textarea
+                    value={resumeReason}
+                    onChange={(e) => setResumeReason(e.target.value)}
+                    placeholder="Why are you resuming this symbol?"
+                    style={{ width: "100%", padding: 8, marginTop: 5, height: 60 }}
+                  />
+                </div>
+                <button
+                  onClick={() => handleResume(selectedSymbol)}
+                  disabled={!resumeReason.trim()}
+                  style={{ padding: "8px 16px", marginRight: 10 }}
+                >
+                  Resume (→ HALF_OPEN)
+                </button>
+                <button onClick={() => setSelectedSymbol("")} style={{ padding: "8px 16px" }}>
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Rejections Feed */}
+      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
+        <h2>Rejections Feed ({rejections.length})</h2>
+        {rejections.length > 0 ? (
+          <div style={{ maxHeight: 400, overflowY: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9em" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #666" }}>
+                  <th style={{ textAlign: "left", padding: 8 }}>Time</th>
+                  <th style={{ textAlign: "left", padding: 8 }}>Symbol</th>
+                  <th style={{ textAlign: "left", padding: 8 }}>Account</th>
+                  <th style={{ textAlign: "left", padding: 8 }}>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rejections.map((rej: any, i: number) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #ddd" }}>
+                    <td style={{ padding: 8 }}>{new Date(rej.ts).toLocaleTimeString()}</td>
+                    <td style={{ padding: 8 }}>{rej.symbol}</td>
+                    <td style={{ padding: 8 }}>{rej.accountId}</td>
+                    <td style={{ padding: 8, color: "red" }}>{rej.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p>No rejections</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function SystemPage() {
@@ -344,6 +623,278 @@ export function SystemPage() {
             </div>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+export function ReconPage() {
+  const [runs, setRuns] = React.useState<any[]>([]);
+  const [breaks, setBreaks] = React.useState<any[]>([]);
+  const [selectedBreak, setSelectedBreak] = React.useState<any>(null);
+  const [resolveReason, setResolveReason] = React.useState("");
+  const [uploadError, setUploadError] = React.useState("");
+  const [uploadSuccess, setUploadSuccess] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
+  React.useEffect(() => {
+    if (!token) return;
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const headers = { Authorization: `Bearer ${token}` };
+
+        const [runsRes, breaksRes] = await Promise.all([
+          fetch("/api/v1/recon/runs", { headers }),
+          fetch("/api/v1/recon/breaks", { headers }),
+        ]);
+
+        if (runsRes.ok) {
+          const data = await runsRes.json();
+          setRuns(data.runs || []);
+        }
+        if (breaksRes.ok) {
+          const data = await breaksRes.json();
+          setBreaks(data.breaks || []);
+        }
+      } catch (err) {
+        console.error("Error fetching recon data", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        fetchData();
+      }
+    }, 5000);
+
+    document.addEventListener("visibilitychange", fetchData);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", fetchData);
+    };
+  }, [token]);
+
+  const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!token) return;
+
+    const file = (e.currentTarget.elements.namedItem("file") as HTMLInputElement)?.files?.[0];
+    if (!file) {
+      setUploadError("Please select a file");
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/v1/recon/runs", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (res.ok) {
+        setUploadSuccess(`File ${file.name} processed`);
+        setUploadError("");
+        setTimeout(() => setUploadSuccess(""), 3000);
+      } else if (res.status === 409) {
+        setUploadError("Statement already processed");
+      } else if (res.status === 413) {
+        setUploadError("File too large (max 50MB)");
+      } else if (res.status === 400) {
+        const errData = await res.json();
+        setUploadError(errData.detail || "Invalid file format");
+      }
+    } catch (err) {
+      setUploadError("Upload failed");
+      console.error(err);
+    }
+  };
+
+  const handleResolve = async (breakId: string) => {
+    if (!token || !resolveReason.trim()) {
+      alert("Reason is required");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/v1/recon/breaks/${breakId}/resolve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reason: resolveReason }),
+      });
+      if (res.ok) {
+        setResolveReason("");
+        setSelectedBreak(null);
+        alert("Break resolved");
+      }
+    } catch (err) {
+      console.error("Error resolving break", err);
+    }
+  };
+
+  if (loading) {
+    return <div style={{ padding: 20 }}>Loading reconciliation data...</div>;
+  }
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h1>Reconciliation (P6)</h1>
+
+      {/* Statement Upload */}
+      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
+        <h2>Statement Upload</h2>
+        <form onSubmit={handleUpload}>
+          <div style={{ marginBottom: 10 }}>
+            <label>Statement File (CSV/JSON):</label>
+            <input
+              type="file"
+              name="file"
+              accept=".csv,.json"
+              style={{ display: "block", marginTop: 5 }}
+            />
+          </div>
+          <button type="submit" style={{ padding: "8px 16px" }}>
+            Upload
+          </button>
+        </form>
+        {uploadSuccess && <p style={{ color: "green", marginTop: 10 }}>✓ {uploadSuccess}</p>}
+        {uploadError && <p style={{ color: "red", marginTop: 10 }}>✗ {uploadError}</p>}
+      </div>
+
+      {/* Runs List */}
+      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
+        <h2>Reconciliation Runs ({runs.length})</h2>
+        {runs.length > 0 ? (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9em" }}>
+            <thead>
+              <tr style={{ borderBottom: "2px solid #666" }}>
+                <th style={{ textAlign: "left", padding: 8 }}>Run ID</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Started</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Duration</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Breaks Found</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((run: any) => (
+                <tr key={run.runId} style={{ borderBottom: "1px solid #ddd" }}>
+                  <td style={{ padding: 8 }}>{run.runId}</td>
+                  <td style={{ padding: 8 }}>{new Date(run.startedAt).toLocaleString()}</td>
+                  <td style={{ padding: 8 }}>{run.durationMs}ms</td>
+                  <td style={{ padding: 8 }}>{run.breaksFound}</td>
+                  <td style={{ padding: 8, color: run.breaksFound > 0 ? "orange" : "green" }}>
+                    {run.breaksFound > 0 ? "HAS BREAKS" : "OK"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p>No runs yet</p>
+        )}
+      </div>
+
+      {/* Breaks Table */}
+      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
+        <h2>Breaks ({breaks.length})</h2>
+        {breaks.length > 0 ? (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9em" }}>
+            <thead>
+              <tr style={{ borderBottom: "2px solid #666" }}>
+                <th style={{ textAlign: "left", padding: 8 }}>Break ID</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Account</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Asset</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Expected</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Actual</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Status</th>
+                <th style={{ textAlign: "left", padding: 8 }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {breaks.map((brk: any) => (
+                <tr key={brk.breakId} style={{ borderBottom: "1px solid #ddd" }}>
+                  <td style={{ padding: 8 }}>{brk.breakId}</td>
+                  <td style={{ padding: 8 }}>{brk.accountId}</td>
+                  <td style={{ padding: 8 }}>{brk.asset}</td>
+                  <td style={{ padding: 8 }}>${(Number(brk.expected) / 100).toFixed(2)}</td>
+                  <td style={{ padding: 8 }}>${(Number(brk.actual) / 100).toFixed(2)}</td>
+                  <td style={{ padding: 8, color: "red" }}>{brk.status}</td>
+                  <td style={{ padding: 8 }}>
+                    <button
+                      onClick={() => setSelectedBreak(brk)}
+                      style={{ padding: "5px 10px" }}
+                    >
+                      Resolve
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p>No breaks</p>
+        )}
+      </div>
+
+      {/* Break Detail & Resolve */}
+      {selectedBreak && (
+        <div style={{ marginBottom: 20, padding: 15, border: "2px solid #ff6b6b", borderRadius: 4, background: "#ffe0e0" }}>
+          <h2>Resolve Break: {selectedBreak.breakId}</h2>
+          <div style={{ marginBottom: 15 }}>
+            <p><strong>Account:</strong> {selectedBreak.accountId}</p>
+            <p><strong>Asset:</strong> {selectedBreak.asset}</p>
+            <p><strong>Expected:</strong> ${(Number(selectedBreak.expected) / 100).toFixed(2)}</p>
+            <p><strong>Actual:</strong> ${(Number(selectedBreak.actual) / 100).toFixed(2)}</p>
+            <p><strong>Difference:</strong> ${(Number(selectedBreak.expected - selectedBreak.actual) / 100).toFixed(2)}</p>
+          </div>
+
+          {/* Audit Trail */}
+          {selectedBreak.auditTrail && selectedBreak.auditTrail.length > 0 && (
+            <div style={{ marginBottom: 15, padding: 10, background: "white", borderRadius: 3 }}>
+              <h3>Audit Trail</h3>
+              <ul style={{ fontSize: "0.85em" }}>
+                {selectedBreak.auditTrail.map((entry: any, i: number) => (
+                  <li key={i}>{new Date(entry.ts).toLocaleString()}: {entry.action} by {entry.user}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div style={{ marginBottom: 10 }}>
+            <label>Resolution Reason (required):</label>
+            <textarea
+              value={resolveReason}
+              onChange={(e) => setResolveReason(e.target.value)}
+              placeholder="Why is this break being resolved? (e.g., 'Statement had data entry error')"
+              style={{ width: "100%", padding: 8, marginTop: 5, height: 80 }}
+            />
+          </div>
+
+          <button
+            onClick={() => handleResolve(selectedBreak.breakId)}
+            disabled={!resolveReason.trim()}
+            style={{ padding: "8px 16px", marginRight: 10, backgroundColor: "#28a745", color: "white", border: "none", borderRadius: 4 }}
+          >
+            Resolve
+          </button>
+          <button
+            onClick={() => setSelectedBreak(null)}
+            style={{ padding: "8px 16px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: 4 }}
+          >
+            Cancel
+          </button>
+        </div>
       )}
     </div>
   );

@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SystemPage } from "./pages/Dashboard";
+import { SystemPage, RiskPage, ReconPage } from "./pages/Dashboard";
 import "./index.css";
 const queryClient = new QueryClient();
 // Auth context
@@ -63,41 +63,62 @@ function TradingPage() {
     const [quantity, setQuantity] = React.useState("100");
     const [price, setPrice] = React.useState("100.00");
     const [orders, setOrders] = React.useState([]);
+    const [ordersLoading, setOrdersLoading] = React.useState(true);
+    const [ordersError, setOrdersError] = React.useState("");
     const auth = React.useContext(AuthContext);
+
     React.useEffect(() => {
         const fetchOrders = async () => {
-            const res = await fetch("/api/v1/orders", {
-                headers: { Authorization: `Bearer ${auth.token}` },
-            });
-            if (res.ok) {
-                setOrders(await res.json());
+            try {
+                setOrdersLoading(true);
+                setOrdersError("");
+                const res = await fetch("/api/v1/orders", {
+                    headers: { Authorization: `Bearer ${auth.token}` },
+                });
+                if (res.ok) {
+                    setOrders(await res.json());
+                } else {
+                    setOrdersError("Failed to load orders");
+                }
+            } catch (err) {
+                setOrdersError("Error connecting to server");
+            } finally {
+                setOrdersLoading(false);
             }
         };
-        fetchOrders();
+        if (auth.token) fetchOrders();
     }, [auth.token]);
+
     const handlePlace = async (e) => {
         e.preventDefault();
-        const res = await fetch("/api/v1/orders", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${auth.token}`,
-            },
-            body: JSON.stringify({
-                clientOrderId: `c-${Date.now()}`,
-                symbol,
-                side,
-                type: "LIMIT",
-                timeInForce: "GTC",
-                quantity: parseInt(quantity),
-                price,
-            }),
-        });
-        if (res.ok) {
-            const { orderId } = await res.json();
-            alert(`Order placed: ${orderId}`);
+        try {
+            const res = await fetch("/api/v1/orders", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${auth.token}`,
+                },
+                body: JSON.stringify({
+                    clientOrderId: `c-${Date.now()}`,
+                    symbol,
+                    side,
+                    type: "LIMIT",
+                    timeInForce: "GTC",
+                    quantity: parseInt(quantity),
+                    price,
+                }),
+            });
+            if (res.ok) {
+                const { orderId } = await res.json();
+                alert(`Order placed: ${orderId}`);
+            } else {
+                alert("Failed to place order");
+            }
+        } catch (err) {
+            alert("Error placing order");
         }
     };
+
     return (<div className="trading-page">
       <div className="trading-layout">
         <div className="order-entry">
@@ -143,28 +164,36 @@ function TradingPage() {
 
         <div className="open-orders">
           <h2>Open Orders</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Order ID</th>
-                <th>Symbol</th>
-                <th>Side</th>
-                <th>Qty</th>
-                <th>Price</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((o) => (<tr key={o.orderId}>
-                  <td>{o.orderId}</td>
-                  <td>{o.symbol}</td>
-                  <td>{o.side}</td>
-                  <td>{o.quantity}</td>
-                  <td>{o.price}</td>
-                  <td>{o.status}</td>
-                </tr>))}
-            </tbody>
-          </table>
+          {ordersLoading ? (
+            <p style={{ color: "#666" }}>Loading orders...</p>
+          ) : ordersError ? (
+            <p style={{ color: "red" }}>{ordersError}</p>
+          ) : orders.length === 0 ? (
+            <p style={{ color: "#999" }}>No open orders</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Symbol</th>
+                  <th>Side</th>
+                  <th>Qty</th>
+                  <th>Price</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => (<tr key={o.orderId}>
+                    <td>{o.orderId}</td>
+                    <td>{o.symbol}</td>
+                    <td>{o.side}</td>
+                    <td>{o.quantity}</td>
+                    <td>{o.price}</td>
+                    <td>{o.status}</td>
+                  </tr>))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>);
@@ -173,29 +202,57 @@ function TradingPage() {
 function PortfolioPage() {
     const auth = React.useContext(AuthContext);
     const [balances, setBalances] = React.useState(null);
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState("");
+
     React.useEffect(() => {
         const fetchBalances = async () => {
-            const res = await fetch(`/api/v1/accounts/${auth.user.accountIds[0]}/balances`, {
-                headers: { Authorization: `Bearer ${auth.token}` },
-            });
-            if (res.ok) {
-                setBalances(await res.json());
+            try {
+                setLoading(true);
+                setError("");
+                if (!auth.user?.accountIds?.[0]) {
+                    setError("No account available");
+                    return;
+                }
+                const res = await fetch(`/api/v1/accounts/${auth.user.accountIds[0]}/balances`, {
+                    headers: { Authorization: `Bearer ${auth.token}` },
+                });
+                if (res.ok) {
+                    setBalances(await res.json());
+                } else if (res.status === 404) {
+                    setError("Account not found");
+                } else {
+                    setError("Failed to load balances");
+                }
+            } catch (err) {
+                setError("Error connecting to server");
+            } finally {
+                setLoading(false);
             }
         };
         if (auth.user?.accountIds?.[0]) {
             fetchBalances();
         }
     }, [auth.token, auth.user]);
+
     return (<div className="portfolio-page">
       <h1>Portfolio</h1>
-      {balances && (<div className="balance-card">
-          <div>Total: ${balances.total}</div>
-          <div>Held: ${balances.held}</div>
-          <div>Available: ${balances.available}</div>
-        </div>)}
+      {loading ? (
+        <p style={{ color: "#666" }}>Loading portfolio...</p>
+      ) : error ? (
+        <p style={{ color: "red" }}>{error}</p>
+      ) : balances ? (
+        <div className="balance-card">
+          <div>Total: ${balances.total || "0.00"}</div>
+          <div>Held: ${balances.held || "0.00"}</div>
+          <div>Available: ${balances.available || "0.00"}</div>
+        </div>
+      ) : (
+        <p style={{ color: "#999" }}>No balance data</p>
+      )}
       <div className="positions">
         <h2>Positions</h2>
-        <p>No positions</p>
+        <p style={{ color: "#999" }}>No positions</p>
       </div>
     </div>);
 }
@@ -205,36 +262,69 @@ function OrderDetailsPage() {
     const auth = React.useContext(AuthContext);
     const [order, setOrder] = React.useState(null);
     const [events, setEvents] = React.useState([]);
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState("");
+
     React.useEffect(() => {
         const fetchOrder = async () => {
-            const res = await fetch(`/api/v1/orders/${orderId}`, {
-                headers: { Authorization: `Bearer ${auth.token}` },
-            });
-            if (res.ok) {
-                setOrder(await res.json());
-            }
-            const eventsRes = await fetch(`/api/v1/orders/${orderId}/events`, {
-                headers: { Authorization: `Bearer ${auth.token}` },
-            });
-            if (eventsRes.ok) {
-                setEvents(await eventsRes.json());
+            try {
+                setLoading(true);
+                setError("");
+                const res = await fetch(`/api/v1/orders/${orderId}`, {
+                    headers: { Authorization: `Bearer ${auth.token}` },
+                });
+                if (res.ok) {
+                    setOrder(await res.json());
+                } else if (res.status === 404) {
+                    setError("Order not found");
+                } else if (res.status === 403) {
+                    setError("Access denied");
+                } else {
+                    setError("Failed to load order");
+                }
+
+                const eventsRes = await fetch(`/api/v1/orders/${orderId}/events`, {
+                    headers: { Authorization: `Bearer ${auth.token}` },
+                });
+                if (eventsRes.ok) {
+                    setEvents(await eventsRes.json());
+                }
+            } catch (err) {
+                setError("Error connecting to server");
+            } finally {
+                setLoading(false);
             }
         };
-        fetchOrder();
+        if (orderId && auth.token) {
+            fetchOrder();
+        }
     }, [orderId, auth.token]);
+
     return (<div className="order-details-page">
       <h1>Order Details</h1>
-      {order && (<div className="order-info">
+      {loading ? (
+        <p style={{ color: "#666" }}>Loading order...</p>
+      ) : error ? (
+        <p style={{ color: "red" }}>{error}</p>
+      ) : order ? (
+        <div className="order-info">
           <p>Order ID: {order.orderId}</p>
           <p>Symbol: {order.symbol}</p>
           <p>Side: {order.side}</p>
           <p>Status: {order.status}</p>
-        </div>)}
+        </div>
+      ) : (
+        <p style={{ color: "#999" }}>No order data</p>
+      )}
       <div className="events">
         <h2>Event Timeline</h2>
-        {events.map((e, i) => (<div key={i} className="event">
-            <strong>{e.type}</strong> @ {e.ts}
-          </div>))}
+        {events.length === 0 ? (
+          <p style={{ color: "#999" }}>No events</p>
+        ) : (
+          events.map((e, i) => (<div key={i} className="event">
+              <strong>{e.type}</strong> @ {e.ts}
+            </div>))
+        )}
       </div>
     </div>);
 }
@@ -299,6 +389,8 @@ export function App() {
               <Route path="/" element={<TradingPage />}/>
               <Route path="/portfolio" element={<PortfolioPage />}/>
               <Route path="/orders/:orderId" element={<OrderDetailsPage />}/>
+              <Route path="/risk" element={<RiskPage />}/>
+              <Route path="/recon" element={<ReconPage />}/>
               <Route path="/system" element={<SystemPage />}/>
               <Route path="*" element={<Navigate to="/"/>}/>
             </Routes>
