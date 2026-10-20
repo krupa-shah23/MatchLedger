@@ -1,19 +1,60 @@
 # Week 11 Test Progress
 
-## Week 11 Test-ID Reference (537 tests passing, 0 failures)
+## Week 11 Test-ID Reference (588 tests passing, 0 failures)
 
+### Shared Contracts & Boundaries
 | Test ID | File | Status | Coverage |
 |---------|------|--------|----------|
-| HT2-HT3 | packages/api/src/routes/system.test.ts | ✅ Passing | GET /system/shards, stale detection |
-| RG2 | packages/api/src/routes/system.test.ts | ✅ Passing | GET /system/recovery (100 ops) |
-| MS1-MS4 | packages/api/src/routes/system.test.ts | ✅ Passing | Prometheus queries, availability, allowlist, role matrix |
-| SY1-SY2 | packages/api/src/routes/system.test.ts | ✅ Passing | Verify replay, checksum matching, corruption detection |
-| SM1-SM6 | packages/simulator/src/simulator.test.ts | ✅ Passing | PRNG determinism, flow model, order validity, rate control, backoff, breaker-demo |
-| CH1-CH2 | packages/api/src/routes/admin.test.ts | ✅ Passing | Chaos kill/freeze commands |
-| OC1-OC2 | packages/api/src/openapi.test.ts | ✅ Passing | OpenAPI contract, schema validation |
+| ZS6-ZS8 | packages/common/src/schemas.test.ts | ✅ Passing | PAGE_ROLES, zod schemas, ENDPOINT_ROLES |
+| BD1 | scripts/check-boundaries.test.ts | ✅ Passing | Boundary violation detection |
+
+### Web Library Tests
+| Test ID | File | Status | Coverage |
+|---------|------|--------|----------|
+| UZ1-UZ4 | web/src/lib/money.test.ts | ✅ Passing | Parse/format, decimals, estimate, depth |
+| UZ5 | web/src/lib/money-eslint.test.ts | ✅ Passing | ESLint rule validation |
+| UG1-UG4 | web/src/auth/auth.test.ts | ✅ Passing | Route guards, auth, API client, error handling |
+| UA1-UA4 | web/src/auth/auth.test.ts | ✅ Passing | Bearer header, 401 retry, problem+json, 429/503 |
+| US1-US9 | web/src/state/stream.test.ts | ✅ Passing | WebSocket stream, epoch, conflation, gaps, backoff |
+| UL1-UL6 | web/src/lib/lifecycle.test.ts | ✅ Passing | Status lifecycle, 202 only, hints, rejections |
+| UF1-UF5 | web/src/components/forms.test.ts | ✅ Passing | Form validation, double-submit, retry, errors |
+
+### Page Tests
+| Test ID | File | Status | Coverage |
+|---------|------|--------|----------|
+| UP1 | web/src/pages/Login.test.tsx | ✅ Passing | Demo role buttons |
+| UP2-UP6 | web/src/pages/Trading.test.tsx | ✅ Passing | Ladder, tape, entry, updates, breaker banner |
+| UP7-UP8 | web/src/pages/Portfolio.test.tsx | ✅ Passing | Cash card, positions, null mark |
+| UP9-UP10 | web/src/pages/OrderDetail.test.tsx | ✅ Passing | Timeline, rejection detail |
 | UP11-UP12 | web/src/pages/Risk.test.tsx | ✅ Passing | Risk console, breaker table, halt/resume |
 | UP13-UP14 | web/src/pages/Recon.test.tsx | ✅ Passing | Reconciliation, upload, breaks, detail |
 | UP15-UP16 | web/src/pages/System.test.tsx | ✅ Passing | System page, visibility polling |
+
+### Telemetry, Heartbeats, Recovery
+| Test ID | File | Status | Coverage |
+|---------|------|--------|----------|
+| TL1-TL6 | packages/telemetry/telemetry.test.ts | ✅ Passing | Metrics registry, labels, server, sampling, wiring |
+| HT1-HT3 | packages/api/src/system-tests.test.ts | ✅ Passing | Heartbeat writer, /system/shards, stale detection |
+| RG1-RG3 | packages/api/src/system-tests.test.ts | ✅ Passing | Recovery log, /system/recovery, gauges |
+
+### Grafana Dashboard
+| Test ID | File | Status | Coverage |
+|---------|------|--------|----------|
+| GD1-GD3 | scripts/check-dashboard-metrics.ts | ✅ Passing | Metrics verification, Prometheus, provisioning |
+
+### System Endpoints, Simulator, Chaos
+| Test ID | File | Status | Coverage |
+|---------|------|--------|----------|
+| MS1-MS4 | packages/api/src/system-tests.test.ts | ✅ Passing | /system/metrics/summary with Prometheus |
+| SY1-SY2 | packages/api/src/system-tests.test.ts | ✅ Passing | /system/verify-replay, invariants |
+| SM1-SM8 | packages/simulator/simulator-integration.test.ts | ✅ Passing | PRNG, FlowModel, validity, rate, backoff, scenario, endpoints, accounts |
+| CH1-CH5 | packages/simulator/simulator-integration.test.ts | ✅ Passing | Kill shard, freeze shard, profile gating, recovery, demo reset |
+| NP1 | packages/engine-core/src/index.test.ts | ✅ Passing | InstrumentSpec export |
+
+### E2E (Playwright)
+| Test ID | File | Status | Coverage |
+|---------|------|--------|----------|
+| DEMO1-DEMO5 | e2e/demo.spec.ts | ✅ Created | Login, order flow, halt, kill, reconciliation |
 
 ## Week 10 Test-ID Reference (153+ tests)
 

@@ -514,7 +514,7 @@ export function SystemPage() {
           <p style={{ color: "orange" }}>Prometheus unavailable - metrics not available</p>
         )}
         <p style={{ fontSize: "0.9em", color: "#666" }}>
-          <a href="http://localhost:3001" target="_blank" rel="noopener noreferrer">
+          <a href={`${import.meta.env.VITE_GRAFANA_URL || "http://localhost:3001"}`} target="_blank" rel="noopener noreferrer">
             → View in Grafana
           </a>
         </p>

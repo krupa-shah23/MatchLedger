@@ -45,8 +45,28 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminRoute
   app.get<{ Querystring: unknown }>(
     "/admin/users",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      // TODO: query users from database
-      return reply.code(200).send([]);
+      try {
+        const result = await deps.executor.query(
+          `SELECT username, role FROM users ORDER BY username ASC LIMIT 1000`,
+          []
+        );
+        return reply.code(200).send({
+          users: (result.rows as any[]).map((row) => ({
+            username: row.username,
+            role: row.role,
+          })),
+        });
+      } catch (err) {
+        return reply.code(500).type("application/problem+json").send({
+          type: "about:blank#internal_error",
+          title: "Failed to list users",
+          status: 500,
+          code: "internal_error",
+          detail: "Database query failed",
+          instance: "/admin/users",
+          requestId: request.id,
+        });
+      }
     }
   );
 
@@ -101,8 +121,28 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminRoute
   app.get<{ Querystring: unknown }>(
     "/admin/accounts",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      // TODO: query accounts from database with owner info
-      return reply.code(200).send([]);
+      try {
+        const result = await deps.executor.query(
+          `SELECT id, name FROM accounts ORDER BY name ASC LIMIT 1000`,
+          []
+        );
+        return reply.code(200).send({
+          accounts: (result.rows as any[]).map((row) => ({
+            id: row.id,
+            name: row.name,
+          })),
+        });
+      } catch (err) {
+        return reply.code(500).type("application/problem+json").send({
+          type: "about:blank#internal_error",
+          title: "Failed to list accounts",
+          status: 500,
+          code: "internal_error",
+          detail: "Database query failed",
+          instance: "/admin/accounts",
+          requestId: request.id,
+        });
+      }
     }
   );
 

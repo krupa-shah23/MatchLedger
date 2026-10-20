@@ -175,6 +175,16 @@ Verified npm view output (2026-10-19):
 }
 ```
 
+**Additional Week 11 packages (verified 2026-10-20):**
+
+| Package | Version | Status |
+|---------|---------|--------|
+| @testing-library/user-event | 14.6.1 | ✓ |
+| @testing-library/jest-dom | 6.6.3 | ✓ |
+| @vitejs/plugin-react | 4.3.3 | ✓ |
+| @playwright/test | 1.48.0 | ✓ |
+| prom-client | 15.1.3 | ✓ (reused from Week 9) |
+
 **Rationale:**
 - React 19 latest stable; peer satisfied by all ecosystem packages
 - React Router 7 latest; requires React >= 18 (satisfied)
@@ -182,6 +192,8 @@ Verified npm view output (2026-10-19):
 - Vite 8 latest; Vitest 4 compatible
 - happy-dom for jsdom-free unit tests (lighter than jsdom)
 - @testing-library/react 16 latest compatible with React 19
+- Playwright 1.48.0 for E2E testing
+- prom-client 15.1.3 for telemetry metrics (already in use from Week 9)
 
 ## Week 3 benchmark dependency check
 Command: `npm view tinybench version peerDependencies`

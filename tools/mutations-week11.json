@@ -1,205 +1,177 @@
-{
-  "description": "Week 11 mutation test suite - 25 mutations across system, simulator, and reconciliation",
-  "mutations": [
-    {
-      "id": "M1",
-      "file": "packages/api/src/routes/system.ts",
-      "location": "GET /system/shards - stale flag logic",
-      "mutation": "Change stale: heartbeatAge > 30000 to stale: heartbeatAge > 60000",
-      "testId": "HT3",
-      "description": "Stale threshold mutation - should catch test for 30s heartbeat timeout"
-    },
-    {
-      "id": "M2",
-      "file": "packages/api/src/system/prom-queries.ts",
-      "location": "PromQL rate query",
-      "mutation": "Change rate(ml_shard_commands_total[1m]) to rate(ml_shard_commands_total[5m])",
-      "testId": "MS1",
-      "description": "Window duration mutation - should catch metrics test"
-    },
-    {
-      "id": "M3",
-      "file": "packages/api/src/system/prom-queries.ts",
-      "location": "fetchMetricsSummary graceful degradation",
-      "mutation": "Change catch to throw error instead of returning defaults",
-      "testId": "MS2",
-      "description": "Error handling mutation - should catch availability=false test"
-    },
-    {
-      "id": "M4",
-      "file": "packages/api/src/routes/system.ts",
-      "location": "POST /system/verify-replay - checksum comparison",
-      "mutation": "Change expectedChecksum === storedChecksum to expectedChecksum !== storedChecksum",
-      "testId": "SY2",
-      "description": "Checksum comparison flip - should catch corruption detection test"
-    },
-    {
-      "id": "M5",
-      "file": "packages/common/src/codec/risk-commands.ts",
-      "location": "serializeRiskCommand - KillShard",
-      "mutation": "Remove KillShard case from switch",
-      "testId": "CH1",
-      "description": "Command codec mutation - should catch kill shard serialization"
-    },
-    {
-      "id": "M6",
-      "file": "packages/common/src/codec/risk-commands.ts",
-      "location": "deserializeRiskCommand - FreezeShard",
-      "mutation": "Return wrong durationMs value",
-      "testId": "CH2",
-      "description": "Deserialization mutation - should catch freeze duration"
-    },
-    {
-      "id": "M7",
-      "file": "packages/simulator/src/prng.ts",
-      "location": "mulberry32 - random state update",
-      "mutation": "Change state.a += 0x6d2b79f5 to state.a += 0x6d2b79f4",
-      "testId": "SM1",
-      "description": "PRNG constant mutation - should fail determinism test"
-    },
-    {
-      "id": "M8",
-      "file": "packages/simulator/src/flow-model.ts",
-      "location": "createFlowModel - mid price initialization",
-      "mutation": "Change midPriceValue to maxPrice instead of maxPrice/2",
-      "testId": "SM2",
-      "description": "Initial state mutation - should break flow model determinism"
-    },
-    {
-      "id": "M9",
-      "file": "packages/simulator/src/flow-model.ts",
-      "location": "flowModelNextTick - maker offset bounds",
-      "mutation": "Change randomInt(state.rng, 1, 5) to randomInt(state.rng, 0, 6)",
-      "testId": "SM3",
-      "description": "Offset bounds mutation - should catch order validity test"
-    },
-    {
-      "id": "M10",
-      "file": "packages/simulator/src/driver.ts",
-      "location": "startSimulator - ticksPerSec",
-      "mutation": "Change const ticksPerSec = 10 to const ticksPerSec = 5",
-      "testId": "SM4",
-      "description": "Rate mutation - should fail driver rate test"
-    },
-    {
-      "id": "M11",
-      "file": "packages/simulator/src/driver.ts",
-      "location": "startSimulator - backoff on FULL",
-      "mutation": "Remove backedOff++ when result === FULL",
-      "testId": "SM5",
-      "description": "Backoff counter mutation - should fail retry test"
-    },
-    {
-      "id": "M12",
-      "file": "packages/simulator/src/flow-model.ts",
-      "location": "flowModelNextTick - breaker sweep interval",
-      "mutation": "Change brekerSweepInterval from 50 to 100",
-      "testId": "SM6",
-      "description": "Sweep frequency mutation - should catch breaker-demo test"
-    },
-    {
-      "id": "M13",
-      "file": "packages/runtime/src/command-router.ts",
-      "location": "routeKillShard - message type",
-      "mutation": "Change type: 'KillShard' to type: 'Kill'",
-      "testId": "CH1",
-      "description": "Message type mutation - should fail serialization"
-    },
-    {
-      "id": "M14",
-      "file": "packages/runtime/src/command-router.ts",
-      "location": "routeFreezeShard - durationMs field",
-      "mutation": "Remove durationMs field from freeze payload",
-      "testId": "CH2",
-      "description": "Field removal mutation - should fail freeze duration validation"
-    },
-    {
-      "id": "M15",
-      "file": "packages/api/src/routes/system.ts",
-      "location": "GET /system/shards - queue depth",
-      "mutation": "Change queueDepth to queueDepth * 2",
-      "testId": "HT2",
-      "description": "Metric scaling mutation - should fail shard status test"
-    },
-    {
-      "id": "M16",
-      "file": "packages/api/src/routes/system.ts",
-      "location": "GET /system/recovery - limit",
-      "mutation": "Change LIMIT 100 to LIMIT 10",
-      "testId": "RG2",
-      "description": "Query limit mutation - should fail recovery log test"
-    },
-    {
-      "id": "M17",
-      "file": "packages/api/src/routes/system.ts",
-      "location": "POST /system/verify-replay - snapshot check",
-      "mutation": "Skip checksum computation, always return true",
-      "testId": "SY1",
-      "description": "Bypass mutation - should fail healthy stream test"
-    },
-    {
-      "id": "M18",
-      "file": "packages/common/src/api/roles.ts",
-      "location": "ENDPOINT_ROLES - /system/simulator start",
-      "mutation": "Change from ['ADMIN'] to ['TRADER', 'ADMIN']",
-      "testId": "OC1",
-      "description": "Role matrix mutation - should fail role enforcement test"
-    },
-    {
-      "id": "M19",
-      "file": "packages/api/src/routes/system.ts",
-      "location": "GET /system/metrics/summary - available flag",
-      "mutation": "Always return available: true regardless of Prometheus status",
-      "testId": "MS3",
-      "description": "Availability flag mutation - should fail unavailable test"
-    },
-    {
-      "id": "M20",
-      "file": "packages/simulator/src/driver.ts",
-      "location": "createSimulatorDriver - seed offset",
-      "mutation": "Change seed += index to seed += 1",
-      "testId": "SM2",
-      "description": "Seed offset mutation - should fail multi-symbol determinism"
-    },
-    {
-      "id": "M21",
-      "file": "packages/api/src/routes/system.ts",
-      "location": "POST /system/simulator/start - demo check",
-      "mutation": "Remove isDemo check, allow in prod",
-      "testId": "OC1",
-      "description": "Demo gate removal - should fail role/availability test"
-    },
-    {
-      "id": "M22",
-      "file": "packages/common/src/risk-types.ts",
-      "location": "RiskCommand union - KillShard type",
-      "mutation": "Remove KillShard type from union",
-      "testId": "CH1",
-      "description": "Type removal mutation - should fail TypeScript compilation or serialization"
-    },
-    {
-      "id": "M23",
-      "file": "packages/simulator/src/flow-model.ts",
-      "location": "flowModelNextTick - maker quantity",
-      "mutation": "Change randomGeometric(state.rng, 0.6) to randomGeometric(state.rng, 0.1)",
-      "testId": "SM3",
-      "description": "Distribution mutation - should fail quantity bounds test"
-    },
-    {
-      "id": "M24",
-      "file": "packages/api/src/routes/system.ts",
-      "location": "GET /system/shards - heartbeat age calculation",
-      "mutation": "Change Date.now() - to Date.now() + in heartbeat age",
-      "testId": "HT3",
-      "description": "Time calculation flip - should fail stale detection"
-    },
-    {
-      "id": "M25",
-      "file": "packages/simulator/src/driver.ts",
-      "location": "startSimulator - retry logic",
-      "mutation": "Remove retry on FULL, only count backedOff",
-      "testId": "SM5",
-      "description": "Retry removal - should fail backoff handling test"
-    }
-  ]
-}
+[
+  {
+    "id": 1,
+    "name": "Reducer ignores epoch change",
+    "file": "web/src/state/stream-state.ts",
+    "mutation": "Remove epoch change handling (lines 87-93)",
+    "test": "US2"
+  },
+  {
+    "id": 2,
+    "name": "Conflated snapshot merged as delta",
+    "file": "web/src/state/stream-state.ts",
+    "mutation": "Change conflated snapshot to merge instead of replace (line 68)",
+    "test": "US3"
+  },
+  {
+    "id": 3,
+    "name": "book.* seq gap does not force refetch",
+    "file": "web/src/state/stream-state.ts",
+    "mutation": "Remove refetch on book seq gap (line 84)",
+    "test": "US4"
+  },
+  {
+    "id": 4,
+    "name": "User topic gap does not force refetch",
+    "file": "web/src/state/stream-state.ts",
+    "mutation": "Remove refetch on user.* gap (line 75)",
+    "test": "US4"
+  },
+  {
+    "id": 5,
+    "name": "Lower seq delta applied without ignoring",
+    "file": "web/src/state/stream-state.ts",
+    "mutation": "Remove seq comparison check (line 81)",
+    "test": "US5"
+  },
+  {
+    "id": 6,
+    "name": "Token placed in WebSocket URL",
+    "file": "web/src/hooks/useSocket.ts",
+    "mutation": "Add token parameter to WebSocket URL",
+    "test": "US1"
+  },
+  {
+    "id": 7,
+    "name": "202 labelled success",
+    "file": "web/src/lib/lifecycle.ts",
+    "mutation": "Change PENDING status text to 'success'",
+    "test": "UL2"
+  },
+  {
+    "id": 8,
+    "name": "FILLED loses to CANCEL_REQUESTED",
+    "file": "web/src/lib/lifecycle.ts",
+    "mutation": "Reverse status priority (line 25)",
+    "test": "UL1"
+  },
+  {
+    "id": 9,
+    "name": "Money parsed with Number",
+    "file": "web/src/lib/money.ts",
+    "mutation": "Change BigInt to Number for parsing",
+    "test": "UZ1"
+  },
+  {
+    "id": 10,
+    "name": "Estimate shown for MARKET orders",
+    "file": "web/src/lib/money.ts",
+    "mutation": "Remove MARKET type check (line 14)",
+    "test": "UZ3"
+  },
+  {
+    "id": 11,
+    "name": "Retry generates new clientOrderId",
+    "file": "web/src/components/forms.ts",
+    "mutation": "Reuse clientOrderId on retry instead of generating new",
+    "test": "UF3"
+  },
+  {
+    "id": 12,
+    "name": "Double submit allowed",
+    "file": "web/src/components/forms.ts",
+    "mutation": "Remove in-flight request check",
+    "test": "UF2"
+  },
+  {
+    "id": 13,
+    "name": "Route guard table drifts from PAGE_ROLES",
+    "file": "web/src/auth/guards.ts",
+    "mutation": "Hardcode role check instead of using PAGE_ROLES",
+    "test": "UG1"
+  },
+  {
+    "id": 14,
+    "name": "Write controls shown to ADMIN on P2",
+    "file": "web/src/pages/Trading.tsx",
+    "mutation": "Remove ADMIN check for write controls",
+    "test": "UG3"
+  },
+  {
+    "id": 15,
+    "name": "Metric helper accepts accountId label",
+    "file": "packages/telemetry/src/metrics.ts",
+    "mutation": "Remove validation that rejects accountId label",
+    "test": "TL2"
+  },
+  {
+    "id": 16,
+    "name": "Metrics server serves another path",
+    "file": "packages/telemetry/src/server.ts",
+    "mutation": "Add another route handler (e.g., /status)",
+    "test": "TL3"
+  },
+  {
+    "id": 17,
+    "name": "Heartbeat is fenced",
+    "file": "packages/shard/src/shard-host.ts",
+    "mutation": "Add lease_id check to heartbeat upsert (make it fenced)",
+    "test": "HT1"
+  },
+  {
+    "id": 18,
+    "name": "Stale threshold off by one",
+    "file": "packages/shard/src/shard-host.ts",
+    "mutation": "Change 15 second threshold to 10 or 20 seconds",
+    "test": "HT3"
+  },
+  {
+    "id": 19,
+    "name": "Summary forwards client input to PromQL",
+    "file": "packages/api/src/routes/system.ts",
+    "mutation": "Use user input in PromQL query instead of fixed query",
+    "test": "MS3"
+  },
+  {
+    "id": 20,
+    "name": "Prometheus failure returns 500",
+    "file": "packages/api/src/routes/system.ts",
+    "mutation": "Remove graceful 200 response on Prometheus down (line 228)",
+    "test": "MS2"
+  },
+  {
+    "id": 21,
+    "name": "Chaos endpoint active outside demo",
+    "file": "packages/api/src/routes/admin.ts",
+    "mutation": "Remove isDemo check on chaos endpoints",
+    "test": "CH3"
+  },
+  {
+    "id": 22,
+    "name": "Simulator uses Math.random",
+    "file": "packages/simulator/src/flow-model.ts",
+    "mutation": "Replace mulberry32 with Math.random",
+    "test": "SM2"
+  },
+  {
+    "id": 23,
+    "name": "Simulator emits off-tick price",
+    "file": "packages/simulator/src/flow-model.ts",
+    "mutation": "Remove tick grid alignment check",
+    "test": "SM3"
+  },
+  {
+    "id": 24,
+    "name": "Dashboard references non-existent metric",
+    "file": "ops/grafana/dashboards/matchledger.json",
+    "mutation": "Change metric name in panel query to non-existent metric",
+    "test": "GD1"
+  },
+  {
+    "id": 25,
+    "name": "Demo reset wipes journals",
+    "file": "packages/api/src/routes/admin.ts",
+    "mutation": "Add DELETE FROM journal to reset endpoint",
+    "test": "CH5"
+  }
+]

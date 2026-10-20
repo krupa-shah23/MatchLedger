@@ -98,8 +98,30 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
   app.get<{ Querystring: unknown }>(
     "/recon/runs",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      // TODO: query recon_runs from database
-      return reply.code(200).send([]);
+      try {
+        const result = await deps.executor.query(
+          `SELECT id, account_id, uploaded_at, status FROM recon_runs ORDER BY uploaded_at DESC LIMIT 100`,
+          []
+        );
+        return reply.code(200).send({
+          runs: (result.rows as any[]).map((row) => ({
+            runId: row.id,
+            accountId: row.account_id,
+            uploadedAt: row.uploaded_at,
+            status: row.status,
+          })),
+        });
+      } catch (err) {
+        return reply.code(500).type("application/problem+json").send({
+          type: "about:blank#internal_error",
+          title: "Failed to list runs",
+          status: 500,
+          code: "internal_error",
+          detail: "Database query failed",
+          instance: "/recon/runs",
+          requestId: request.id,
+        });
+      }
     }
   );
 
@@ -117,8 +139,39 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
   app.get<{ Querystring: { runId?: string } }>(
     "/recon/breaks",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      // TODO: query breaks from database, optionally filtered by runId
-      return reply.code(200).send([]);
+      try {
+        const query = request.query as any;
+        let sql = `SELECT id, run_id, account_id, break_type, status FROM recon_breaks`;
+        const params: any[] = [];
+
+        if (query.runId) {
+          sql += ` WHERE run_id = $1`;
+          params.push(query.runId);
+        }
+
+        sql += ` ORDER BY id DESC LIMIT 100`;
+
+        const result = await deps.executor.query(sql, params);
+        return reply.code(200).send({
+          breaks: (result.rows as any[]).map((row) => ({
+            breakId: row.id,
+            runId: row.run_id,
+            accountId: row.account_id,
+            type: row.break_type,
+            status: row.status,
+          })),
+        });
+      } catch (err) {
+        return reply.code(500).type("application/problem+json").send({
+          type: "about:blank#internal_error",
+          title: "Failed to list breaks",
+          status: 500,
+          code: "internal_error",
+          detail: "Database query failed",
+          instance: "/recon/breaks",
+          requestId: request.id,
+        });
+      }
     }
   );
 
@@ -188,8 +241,35 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
   app.get<{ Params: { id: string } }>(
     "/recon/breaks/:id/audit",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      // TODO: query audit trail from database (status changes and resolutions)
-      return reply.code(200).send([]);
+      try {
+        const params = request.params as any;
+        const result = await deps.executor.query(
+          `SELECT id, break_id, old_status, new_status, changed_at, changed_by, reason
+           FROM recon_break_audit WHERE break_id = $1 ORDER BY changed_at DESC`,
+          [params.id]
+        );
+        return reply.code(200).send({
+          breakId: params.id,
+          audit: (result.rows as any[]).map((row) => ({
+            id: row.id,
+            oldStatus: row.old_status,
+            newStatus: row.new_status,
+            changedAt: row.changed_at,
+            changedBy: row.changed_by,
+            reason: row.reason,
+          })),
+        });
+      } catch (err) {
+        return reply.code(500).type("application/problem+json").send({
+          type: "about:blank#internal_error",
+          title: "Failed to get audit trail",
+          status: 500,
+          code: "internal_error",
+          detail: "Database query failed",
+          instance: "/recon/breaks/:id/audit",
+          requestId: request.id,
+        });
+      }
     }
   );
 }
