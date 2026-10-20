@@ -1,0 +1,31 @@
+---
+global:
+  scrape_interval: 5s
+  scrape_timeout: 10s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Shard process(es)
+  - job_name: "shard"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # API process
+  - job_name: "api"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Runtime orchestrator
+  - job_name: "runtime"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Projections (read model)
+  - job_name: "projections"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Risk subsystem
+  - job_name: "risk"
+    static_configs:
+      - targets: ["localhost:9090"]

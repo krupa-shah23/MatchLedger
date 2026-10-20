@@ -1,102 +1,80 @@
 /**
- * Metrics server: Prometheus-compatible metrics on separate port
- * Tracks HTTP request latency, projector lag, and pipeline state
+ * Metrics integration: wire API metrics to telemetry package
+ * Tracks order lifecycle, WebSocket connections, consumer lag, and breaker state
  */
 
-import http from 'http';
+import { getOrCreateHistogram, getOrCreateCounter, getOrCreateGauge, startMetricsServer } from '@matchledger/telemetry';
 
-interface MetricsState {
-  requestCount: number;
-  requestDurations: number[]; // milliseconds
-  projectorLag: number; // max(seq) - checkpoint
-  pipelineState: 'running' | 'stopped' | 'error';
+/**
+ * Record order lifecycle timestamp (journaled → accepted → resting → filled).
+ * Called when order state changes; calculates elapsed time from journal timestamp.
+ */
+export function recordOrderLifecycle(startTs: number, nowMs: number): void {
+  const elapsedMs = nowMs - startTs;
+  const histogram = getOrCreateHistogram('ml_order_lifecycle_ms');
+  histogram.observe({}, elapsedMs);
 }
 
-class MetricsCollector {
-  private state: MetricsState = {
-    requestCount: 0,
-    requestDurations: [],
-    projectorLag: 0,
-    pipelineState: 'running',
-  };
-
-  recordRequest(durationMs: number) {
-    this.state.requestCount++;
-    this.state.requestDurations.push(durationMs);
-    // Keep last 1000 samples
-    if (this.state.requestDurations.length > 1000) {
-      this.state.requestDurations.shift();
-    }
-  }
-
-  setProjectorLag(lag: number) {
-    this.state.projectorLag = lag;
-  }
-
-  setPipelineState(state: 'running' | 'stopped' | 'error') {
-    this.state.pipelineState = state;
-  }
-
-  getMetrics(): string {
-    const avgLatency = this.state.requestDurations.length > 0
-      ? this.state.requestDurations.reduce((a, b) => a + b, 0) / this.state.requestDurations.length
-      : 0;
-
-    const p95Latency = this.getPercentile(95);
-    const p99Latency = this.getPercentile(99);
-
-    const pipelineStateValue = {
-      'running': 1,
-      'stopped': 0,
-      'error': -1,
-    }[this.state.pipelineState];
-
-    return [
-      `# HELP http_requests_total Total HTTP requests`,
-      `# TYPE http_requests_total counter`,
-      `http_requests_total ${this.state.requestCount}`,
-      '',
-      `# HELP http_request_duration_ms HTTP request duration milliseconds`,
-      `# TYPE http_request_duration_ms gauge`,
-      `http_request_duration_ms{quantile="avg"} ${avgLatency.toFixed(2)}`,
-      `http_request_duration_ms{quantile="p95"} ${p95Latency.toFixed(2)}`,
-      `http_request_duration_ms{quantile="p99"} ${p99Latency.toFixed(2)}`,
-      '',
-      `# HELP projector_lag_sequences Projector lag in sequences`,
-      `# TYPE projector_lag_sequences gauge`,
-      `projector_lag_sequences ${this.state.projectorLag}`,
-      '',
-      `# HELP pipeline_state Pipeline operational state`,
-      `# TYPE pipeline_state gauge`,
-      `pipeline_state ${pipelineStateValue}`,
-    ].join('\n');
-  }
-
-  private getPercentile(p: number): number {
-    if (this.state.requestDurations.length === 0) return 0;
-    const sorted = [...this.state.requestDurations].sort((a, b) => a - b);
-    const index = Math.ceil((p / 100) * sorted.length) - 1;
-    return sorted[Math.max(0, index)] || 0;
-  }
+/**
+ * Record WebSocket connection event.
+ */
+export function recordWebSocketConnection(symbol: string, connected: boolean): void {
+  const counter = getOrCreateCounter('ml_websocket_connections');
+  counter.inc({ symbol, action: connected ? 'open' : 'close' });
 }
 
-export const collector = new MetricsCollector();
-
-export async function startMetricsServer(port: number): Promise<http.Server> {
-  const server = http.createServer((req, res) => {
-    if (req.url === '/metrics' && req.method === 'GET') {
-      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end(collector.getMetrics());
-    } else {
-      res.writeHead(404);
-      res.end('Not found');
-    }
-  });
-
-  return new Promise((resolve) => {
-    server.listen(port, () => {
-      console.log(`✓ Metrics server listening on port ${port}`);
-      resolve(server);
-    });
-  });
+/**
+ * Record WebSocket message.
+ */
+export function recordWebSocketMessage(symbol: string): void {
+  const counter = getOrCreateCounter('ml_websocket_messages_total');
+  counter.inc({ symbol });
 }
+
+/**
+ * Update consumer lag (max offset - committed offset).
+ */
+export function setConsumerLag(lag: number): void {
+  const gauge = getOrCreateGauge('ml_consumer_lag');
+  gauge.set({}, lag);
+}
+
+/**
+ * Update projector lag (snapshot_seq - committed).
+ */
+export function setProjectorLag(lag: number): void {
+  const gauge = getOrCreateGauge('ml_projector_lag');
+  gauge.set({}, lag);
+}
+
+/**
+ * Update circuit breaker state.
+ */
+export function setBreakerState(symbol: string, state: 'CLOSED' | 'OPEN' | 'HALTED'): void {
+  const stateValue = state === 'CLOSED' ? 0 : state === 'OPEN' ? 1 : 2;
+  const gauge = getOrCreateGauge('ml_breaker_state');
+  gauge.set({ symbol }, stateValue);
+}
+
+/**
+ * Update dedupe set size.
+ */
+export function setDedupeSetSize(size: number): void {
+  const gauge = getOrCreateGauge('ml_dedupe_set_size');
+  gauge.set({}, size);
+}
+
+/**
+ * Update invariant gauges (ledger zero-sum, journal monotonic).
+ */
+export function setInvariantLedgerZeroSum(isZero: boolean): void {
+  const gauge = getOrCreateGauge('ml_invariant_ledger_zero_sum');
+  gauge.set({}, isZero ? 1 : 0);
+}
+
+export function setInvariantJournalMonotonic(isMonotonic: boolean): void {
+  const gauge = getOrCreateGauge('ml_invariant_journal_monotonic');
+  gauge.set({}, isMonotonic ? 1 : 0);
+}
+
+export { startMetricsServer } from '@matchledger/telemetry';

@@ -910,6 +910,106 @@ paths:
         '409':
           description: Conflict (duplicate requestId)
 
+  /admin/demo/reset:
+    post:
+      tags: [Admin]
+      summary: Reset demo environment (demo only, idempotent)
+      operationId: resetDemo
+      responses:
+        '200':
+          description: Demo environment reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reset:
+                    type: boolean
+                  simulatorCleared:
+                    type: boolean
+                  message:
+                    type: string
+        '500':
+          description: Internal server error
+
+  /admin/demo/chaos/kill/{symbol}:
+    post:
+      tags: [Admin]
+      summary: Kill shard (demo only)
+      operationId: killShard
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '202':
+          description: Kill command queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  symbol:
+                    type: string
+                  action:
+                    type: string
+                  queued:
+                    type: boolean
+        '500':
+          description: Internal server error
+
+  /admin/demo/chaos/freeze/{symbol}:
+    post:
+      tags: [Admin]
+      summary: Freeze shard (demo only)
+      operationId: freezeShard
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                durationMs:
+                  type: integer
+                reason:
+                  type: string
+      responses:
+        '202':
+          description: Freeze command queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  symbol:
+                    type: string
+                  action:
+                    type: string
+                  durationMs:
+                    type: integer
+                  queued:
+                    type: boolean
+        '500':
+          description: Internal server error
+
   /system/invariants:
     get:
       tags: [System]
@@ -953,6 +1053,294 @@ paths:
                     type: integer
                   pipelineState:
                     type: string
+
+  /system/shards:
+    get:
+      tags: [System]
+      summary: Get shard status and heartbeat info
+      operationId: getShards
+      responses:
+        '200':
+          description: Shard status including lease, heartbeat, and journal info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shards:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        leaseId:
+                          type: string
+                        owner:
+                          type: string
+                        epoch:
+                          type: integer
+                        acquiredAt:
+                          type: string
+                          format: date-time
+                        lastHeartbeatAt:
+                          type: string
+                          format: date-time
+                        lastSeq:
+                          type: integer
+                        ownedSymbols:
+                          type: array
+                          items:
+                            type: string
+                        snapshotSeq:
+                          type: integer
+                        journalSeq:
+                          type: integer
+                        isStale:
+                          type: boolean
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /system/recovery:
+    get:
+      tags: [System]
+      summary: Get recovery log history
+      operationId: getRecovery
+      responses:
+        '200':
+          description: Recovery operation log
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recoveries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        leaseId:
+                          type: string
+                        startedAt:
+                          type: string
+                          format: date-time
+                        completedAt:
+                          type: string
+                          format: date-time
+                        durationMs:
+                          type: integer
+                        snapshotSeq:
+                          type: integer
+                        tailLength:
+                          type: integer
+                        symbolsRecovered:
+                          type: array
+                          items:
+                            type: string
+                        createdAt:
+                          type: string
+                          format: date-time
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /system/metrics/summary:
+    get:
+      tags: [System]
+      summary: Get metrics summary from Prometheus
+      operationId: getMetricsSummary
+      responses:
+        '200':
+          description: Aggregate metrics summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+                  windowSeconds:
+                    type: integer
+                    nullable: true
+                  commandsPerSec:
+                    type: number
+                    nullable: true
+                  latencyMs:
+                    type: object
+                    nullable: true
+                    properties:
+                      p50:
+                        type: number
+                      p95:
+                        type: number
+                      p99:
+                        type: number
+                  queueDepthMax:
+                    type: integer
+                    nullable: true
+                  consumerLagMax:
+                    type: integer
+                    nullable: true
+                  eventLoopP99Ms:
+                    type: number
+                    nullable: true
+                  byShard:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        leaseId:
+                          type: string
+                        commandsPerSec:
+                          type: number
+
+  /system/verify-replay:
+    post:
+      tags: [System]
+      summary: Verify journal replay integrity
+      operationId: verifyReplay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [streamId]
+              properties:
+                streamId:
+                  type: string
+                  description: Stream ID (symbol) to verify
+      responses:
+        '200':
+          description: Replay verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  streamId:
+                    type: string
+                  upToSeq:
+                    type: integer
+                  equal:
+                    type: boolean
+                  checksum:
+                    type: string
+        '400':
+          description: Invalid request body
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Stream not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /system/simulator:
+    get:
+      tags: [System]
+      summary: Get simulator status (demo only)
+      operationId: getSimulatorStatus
+      responses:
+        '200':
+          description: Simulator status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  running:
+                    type: boolean
+                  sent:
+                    type: integer
+                  backedOff:
+                    type: integer
+                  symbols:
+                    type: array
+                    items:
+                      type: string
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /system/simulator/start:
+    post:
+      tags: [System]
+      summary: Start the simulator (demo only)
+      operationId: startSimulator
+      responses:
+        '200':
+          description: Simulator started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  running:
+                    type: boolean
+                  sent:
+                    type: integer
+                  backedOff:
+                    type: integer
+                  symbols:
+                    type: array
+                    items:
+                      type: string
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /system/simulator/stop:
+    post:
+      tags: [System]
+      summary: Stop the simulator (demo only)
+      operationId: stopSimulator
+      responses:
+        '200':
+          description: Simulator stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  running:
+                    type: boolean
+                  sent:
+                    type: integer
+                  backedOff:
+                    type: integer
+                  symbols:
+                    type: array
+                    items:
+                      type: string
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
 tags:
   - name: Orders

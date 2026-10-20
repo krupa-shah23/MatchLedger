@@ -1,5 +1,5 @@
 /**
- * Admin routes: users, accounts, deposit
+ * Admin routes: users, accounts, deposit, chaos (demo only)
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
@@ -7,6 +7,7 @@ import { z } from "zod";
 import { hashPassword } from "../auth/passwords.js";
 import type { SqlExecutor } from "../auth/users.js";
 import type { RuntimeFacade } from "../orders/submit.js";
+import { routeKillShard, routeFreezeShard } from "@matchledger/runtime";
 
 const CreateUserSchema = z.object({
   username: z.string().min(1).max(64),
@@ -25,9 +26,18 @@ const DepositSchema = z.object({
   amount: z.string().min(1),
 });
 
+export interface CommandRouterConfig {
+  producer: any;
+  brokers: string[];
+  shardPartitions: number;
+}
+
 export interface AdminRoutesDeps {
   executor: SqlExecutor;
   facade: RuntimeFacade;
+  isDemo?: boolean;
+  commandRouter?: CommandRouterConfig;
+  simulatorState?: { current: any | null };
 }
 
 export async function registerAdminRoutes(app: FastifyInstance, deps: AdminRoutesDeps): Promise<void> {
@@ -153,4 +163,111 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminRoute
       }
     }
   );
+
+  // Demo-only reset endpoint
+  if (deps.isDemo) {
+    // POST /admin/demo/reset - reset demo environment (idempotent)
+    app.post(
+      "/admin/demo/reset",
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+          // Stop simulator if running
+          if (deps.simulatorState && deps.simulatorState.current) {
+            const { stopSimulator } = await import("@matchledger/simulator");
+            try {
+              const stoppedState = await stopSimulator(deps.simulatorState.current);
+              deps.simulatorState.current = stoppedState;
+            } catch (err) {
+              // Ignore errors if simulator not initialized
+            }
+          }
+          // Reset simulator state to null (will reinitialize on next start)
+          if (deps.simulatorState) {
+            deps.simulatorState.current = null;
+          }
+
+          return reply.code(200).send({
+            reset: true,
+            simulatorCleared: true,
+            message: "Demo environment reset",
+          });
+        } catch (err) {
+          return reply.code(500).type("application/problem+json").send({
+            type: "about:blank#internal_error",
+            title: "Demo reset failed",
+            status: 500,
+            code: "internal_error",
+            detail: "Failed to reset demo environment",
+            instance: "/admin/demo/reset",
+            requestId: request.id,
+          });
+        }
+      }
+    );
+  }
+
+  // Demo-only chaos endpoints
+  if (deps.isDemo && deps.commandRouter) {
+    // POST /admin/demo/chaos/kill/{symbol} - kill shard (demo only)
+    app.post<{ Params: { symbol: string }; Body: unknown }>(
+      "/admin/demo/chaos/kill/:symbol",
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const params = request.params as any;
+        try {
+          const body = (request.body as any) || {};
+          const reason = body.reason || "Chaos test via API";
+
+          await routeKillShard(deps.commandRouter!, params.symbol, reason);
+
+          return reply.code(202).send({
+            symbol: params.symbol,
+            action: "kill",
+            queued: true,
+          });
+        } catch (err) {
+          return reply.code(500).type("application/problem+json").send({
+            type: "about:blank#internal_error",
+            title: "Kill shard failed",
+            status: 500,
+            code: "internal_error",
+            detail: "Failed to route kill command",
+            instance: `/admin/demo/chaos/kill/${params.symbol}`,
+            requestId: request.id,
+          });
+        }
+      }
+    );
+
+    // POST /admin/demo/chaos/freeze/{symbol} - freeze shard (demo only)
+    app.post<{ Params: { symbol: string }; Body: unknown }>(
+      "/admin/demo/chaos/freeze/:symbol",
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const params = request.params as any;
+        try {
+          const body = (request.body as any) || {};
+          const durationMs = body.durationMs || 5000;
+          const reason = body.reason || "Chaos test via API";
+
+          await routeFreezeShard(deps.commandRouter!, params.symbol, durationMs, reason);
+
+          return reply.code(202).send({
+            symbol: params.symbol,
+            action: "freeze",
+            durationMs,
+            queued: true,
+          });
+        } catch (err) {
+          return reply.code(500).type("application/problem+json").send({
+            type: "about:blank#internal_error",
+            title: "Freeze shard failed",
+            status: 500,
+            code: "internal_error",
+            detail: "Failed to route freeze command",
+            instance: `/admin/demo/chaos/freeze/${params.symbol}`,
+            requestId: request.id,
+          });
+        }
+      }
+    );
+  }
 }

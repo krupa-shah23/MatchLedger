@@ -123,7 +123,9 @@ export type RiskCommand =
   | { readonly type: "OrderRejectedByMatcher"; readonly orderId: string; readonly reason: string }
   | { readonly type: "ApplyAdjustment"; readonly adjustmentId: string; readonly accountId: string; readonly asset: string; readonly amount: bigint }
   | { readonly type: "SweepProbe"; readonly olderThanMs: number }
-  | { readonly type: "ReleaseUnreached"; readonly orderId: string };
+  | { readonly type: "ReleaseUnreached"; readonly orderId: string }
+  | { readonly type: "KillShard"; readonly symbol: string; readonly reason?: string }
+  | { readonly type: "FreezeShard"; readonly symbol: string; readonly durationMs: number; readonly reason?: string };
 
 export type RiskEvent =
   | { readonly type: "AccountOpened"; readonly accountId: string }

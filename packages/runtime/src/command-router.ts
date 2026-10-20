@@ -115,3 +115,69 @@ export async function routeResume(
     },
   ]);
 }
+
+/**
+ * Route kill shard (demo only) through control.commands topic.
+ */
+export async function routeKillShard(
+  config: CommandRouterConfig,
+  symbol: string,
+  reason?: string
+): Promise<void> {
+  const partition = partitionOf(symbol, config.shardPartitions);
+
+  const killCmd = {
+    type: "KillShard",
+    symbol,
+    reason: reason || "Chaos test",
+  };
+
+  const envelope = {
+    schemaVersion: 1,
+    msgId: `kill:${symbol}:${Date.now()}`,
+    type: "KillShard",
+    payload: killCmd,
+  };
+
+  await config.producer.sendBatch("control.commands", [
+    {
+      key: symbol,
+      value: encodeEnvelope(envelope),
+      partition,
+    },
+  ]);
+}
+
+/**
+ * Route freeze shard (demo only) through control.commands topic.
+ */
+export async function routeFreezeShard(
+  config: CommandRouterConfig,
+  symbol: string,
+  durationMs: number,
+  reason?: string
+): Promise<void> {
+  const partition = partitionOf(symbol, config.shardPartitions);
+
+  const freezeCmd = {
+    type: "FreezeShard",
+    symbol,
+    durationMs,
+    reason: reason || "Chaos test",
+  };
+
+  const envelope = {
+    schemaVersion: 1,
+    msgId: `freeze:${symbol}:${Date.now()}`,
+    type: "FreezeShard",
+    payload: freezeCmd,
+  };
+
+  await config.producer.sendBatch("control.commands", [
+    {
+      key: symbol,
+      value: encodeEnvelope(envelope),
+      partition,
+    },
+  ]);
+}

@@ -19,12 +19,15 @@ import { registerWebSocketGateway } from "./ws/gateway.js";
 import type { Config } from "./config.js";
 import type { SqlExecutor } from "@matchledger/projections";
 import type { RuntimeFacade } from "./orders/submit.js";
+import type { CommandRouterConfig } from "./routes/admin.js";
 
 export interface AppDeps {
   config: Config;
   executor: SqlExecutor;
   facade: RuntimeFacade;
-  instruments: Array<{ symbol: string; tick: string; lot: string }>;
+  instruments: Array<{ symbol: string; tick: string; lot: string; spec?: any }>;
+  simulatorState?: { current: any | null };
+  commandRouter?: CommandRouterConfig;
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -44,8 +47,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await registerAccountRoutes(app, { executor: deps.executor });
   await registerRiskRoutes(app, { executor: deps.executor, facade: deps.facade });
   await registerReconRoutes(app, { executor: deps.executor });
-  await registerAdminRoutes(app, { executor: deps.executor, facade: deps.facade });
-  await registerSystemRoutes(app, { executor: deps.executor, facade: deps.facade });
+  await registerAdminRoutes(app, {
+    executor: deps.executor,
+    facade: deps.facade,
+    isDemo: deps.config.PROFILE === "demo",
+    commandRouter: deps.commandRouter,
+    simulatorState: deps.simulatorState,
+  });
+  await registerSystemRoutes(app, {
+    executor: deps.executor,
+    facade: deps.facade,
+    isDemo: deps.config.PROFILE === "demo",
+    instruments: deps.instruments,
+    simulatorState: deps.simulatorState,
+  });
 
   return app;
 }

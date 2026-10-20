@@ -3,11 +3,12 @@
   "references": [
     { "path": "./packages/engine-core" },     { "path": "./packages/common" },     { "path": "./packages/common/test" }, { "path": "./packages/shard/test" },
     { "path": "./packages/journal" }, { "path": "./packages/telemetry" }, { "path": "./packages/shard" },
+    { "path": "./packages/simulator" },
     { "path": "./packages/risk" }, { "path": "./packages/risk/test" }, { "path": "./packages/ledger" },
     { "path": "./packages/runtime" },
     { "path": "./packages/system-tests" },
     { "path": "./packages/recon" }, { "path": "./packages/projections" },
-    { "path": "./packages/api" }, { "path": "./packages/simulator" },
+    { "path": "./packages/api" },
     { "path": "./packages/benchmarks" }, { "path": "./web" }
   ]
 }

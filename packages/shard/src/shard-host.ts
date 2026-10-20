@@ -7,11 +7,15 @@
 
 import { PartitionConsumer, createDeadLetterMessage, KafkaEventSink } from "@matchledger/transport";
 import { LeaseStore, FencedPgJournal, createSqlExecutor } from "@matchledger/journal";
-import { getOrCreateCounter, getOrCreateGauge } from "@matchledger/telemetry";
+import { getOrCreateCounter, getOrCreateGauge, getOrCreateHistogram } from "@matchledger/telemetry";
 import { OffsetTickets } from "./offset-tickets.js";
 import { republish } from "./republish.js";
 import type { Pool } from "pg";
 import type { ConsumerMessage } from "@matchledger/transport";
+
+const HEARTBEAT_MS = 5000; // Default heartbeat interval
+
+export type Scheduler = (fn: () => void, intervalMs: number) => () => void;
 
 export interface ShardHostConfig {
   pool: Pool;
@@ -25,6 +29,8 @@ export interface ShardHostConfig {
     journal: FencedPgJournal
   ) => any; // Returns ShardRunner when fully implemented
   recoverSymbol: (symbol: string, pool: Pool) => Promise<void>;
+  scheduler?: Scheduler;
+  heartbeatMs?: number;
 }
 
 export class ShardHost {
@@ -39,6 +45,10 @@ export class ShardHost {
       sink: KafkaEventSink;
       revoked: boolean;
       ownedSymbols: Set<string>;
+      leaseId: string;
+      lastSeq: number;
+      stopHeartbeat?: () => void;
+      recoveryStart?: number;
     }
   >();
 
@@ -58,6 +68,10 @@ export class ShardHost {
       leaseEpoch: getOrCreateGauge("ml_shard_lease_epoch"),
       ownershipChanges: getOrCreateCounter("ml_shard_ownership_changes"),
       lastSeq: getOrCreateGauge("ml_shard_last_seq"),
+      heartbeatLatency: getOrCreateHistogram("ml_shard_heartbeat_latency_ms"),
+      recoveryDuration: getOrCreateGauge("ml_recovery_duration_ms"),
+      recoverySnapshotSeq: getOrCreateGauge("ml_recovery_snapshot_seq"),
+      recoveryTailLength: getOrCreateGauge("ml_recovery_tail_length"),
     };
   }
 
@@ -77,6 +91,7 @@ export class ShardHost {
       await sink.init();
 
       // Step 3: Recover snapshot + tail replay for each symbol
+      const recoveryStart = Date.now();
       for (const symbol of symbols) {
         await this.config.recoverSymbol(symbol, this.config.pool);
       }
@@ -115,6 +130,14 @@ export class ShardHost {
       this.prevOwnershipMap.set(partition, ownedSymbols);
       metrics.leaseEpoch.set({ shard_id: this.config.shardId }, Number(epoch));
 
+      // Start heartbeat writer
+      const heartbeatMs = this.config.heartbeatMs ?? HEARTBEAT_MS;
+      const scheduler = this.config.scheduler ?? ((fn, intervalMs) => {
+        const id = setInterval(fn, intervalMs);
+        return () => clearInterval(id);
+      });
+      const stopHeartbeat = scheduler(() => this.writeHeartbeat(leaseId), heartbeatMs);
+
       // Store assignment state
       this.partitions.set(partition, {
         symbols,
@@ -125,6 +148,10 @@ export class ShardHost {
         sink,
         revoked: false,
         ownedSymbols,
+        leaseId,
+        lastSeq: 0,
+        stopHeartbeat,
+        recoveryStart,
       });
     } catch (error) {
       // Fencing or fatal error: exit
@@ -143,6 +170,11 @@ export class ShardHost {
 
       state.revoked = true;
 
+      // Stop heartbeat writer
+      if (state.stopHeartbeat) {
+        state.stopHeartbeat();
+      }
+
       // Stop consuming (no more message callbacks for this partition)
       await this.config.consumer.pause([{ topic: "orders.accepted", partition }]);
 
@@ -154,10 +186,9 @@ export class ShardHost {
       await state.sink.disconnect();
 
       // Release lease
-      const leaseId = `shard-${partition}`;
       await this.config.pool.query(
         "DELETE FROM shard_leases WHERE lease_id = $1",
-        [leaseId]
+        [state.leaseId]
       );
 
       this.partitions.delete(partition);
@@ -284,11 +315,84 @@ export class ShardHost {
    */
   recordBatchMetrics(partition: number, lastSeqBySymbol: ReadonlyMap<string, number>): void {
     const metrics = this.getMetrics();
+    const state = this.partitions.get(partition);
+    if (!state) return;
+
+    // Update last seq from batch
+    if (lastSeqBySymbol.size > 0) {
+      const maxSeq = Math.max(...lastSeqBySymbol.values());
+      state.lastSeq = maxSeq;
+    }
+
     for (const [symbol, seq] of lastSeqBySymbol.entries()) {
       metrics.lastSeq.set(
         { shard_id: this.config.shardId, symbol },
         seq
       );
+    }
+  }
+
+  /**
+   * Write heartbeat to database (unfenced upsert).
+   */
+  private async writeHeartbeat(leaseId: string): Promise<void> {
+    const metrics = this.getMetrics();
+    const before = Date.now();
+
+    try {
+      const state = Array.from(this.partitions.values()).find(s => s.leaseId === leaseId);
+      if (!state) return;
+
+      await this.config.pool.query(
+        `INSERT INTO shard_heartbeats (lease_id, last_heartbeat_at, last_seq, owned_symbols, updated_at)
+         VALUES ($1, now(), $2, $3, now())
+         ON CONFLICT (lease_id) DO UPDATE SET
+         last_heartbeat_at = now(),
+         last_seq = $2,
+         owned_symbols = $3,
+         updated_at = now()`,
+        [leaseId, state.lastSeq, JSON.stringify(Array.from(state.ownedSymbols))]
+      );
+
+      const elapsed = Date.now() - before;
+      metrics.heartbeatLatency.observe({ shard_id: this.config.shardId }, elapsed);
+    } catch (e) {
+      console.error(`[shard] Heartbeat write failed for ${leaseId}:`, e);
+    }
+  }
+
+  /**
+   * Write recovery completion log (called after recovery completes).
+   */
+  async writeRecoveryLog(leaseId: string, snapshotSeq: number, tailLength: number): Promise<void> {
+    const metrics = this.getMetrics();
+    const state = Array.from(this.partitions.values()).find(s => s.leaseId === leaseId);
+    if (!state || !state.recoveryStart) return;
+
+    const recoveryEnd = Date.now();
+    const recoveryDurationMs = recoveryEnd - state.recoveryStart;
+
+    try {
+      await this.config.pool.query(
+        `INSERT INTO recovery_log (lease_id, started_at, completed_at, duration_ms, snapshot_seq, tail_length, symbols_recovered, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+        [
+          leaseId,
+          new Date(state.recoveryStart),
+          new Date(recoveryEnd),
+          recoveryDurationMs,
+          snapshotSeq,
+          tailLength,
+          JSON.stringify(Array.from(state.ownedSymbols)),
+        ]
+      );
+
+      // Observe recovery metrics
+      metrics.recoveryDuration.set({ shard_id: this.config.shardId }, recoveryDurationMs);
+      metrics.recoverySnapshotSeq.set({ shard_id: this.config.shardId }, snapshotSeq);
+      metrics.recoveryTailLength.set({ shard_id: this.config.shardId }, tailLength);
+    } catch (e) {
+      console.error(`[shard] Recovery log write failed for ${leaseId}:`, e);
     }
   }
 

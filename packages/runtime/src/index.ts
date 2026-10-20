@@ -2,7 +2,7 @@ export { wireRuntime } from "./wire.js";
 export { recoverPipeline } from "./recover-pipeline.js";
 export { startControlPlaneConsumer, recoverWatermarks } from "./control-plane.js";
 export { recoverControlPlane } from "./recover-control-plane.js";
-export { routeCancel, routeHalt, routeResume } from "./command-router.js";
+export { routeCancel, routeHalt, routeResume, routeKillShard, routeFreezeShard } from "./command-router.js";
 export { republishPendingOrders, hasPlaceOrderInJournal } from "./control-plane-redelivery.js";
 export { createEventSink, configFromEnv } from "./transport-flag.js";
 export { submitOrderDurably } from "./submit-order.js";

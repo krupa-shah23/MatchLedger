@@ -49,8 +49,18 @@ export const ENDPOINT_ROLES: Record<string, Set<ApiRole>> = {
   "GET /admin/accounts": new Set(["ADMIN"]),
   "POST /admin/accounts": new Set(["ADMIN"]),
   "POST /admin/accounts/{id}/deposit": new Set(["ADMIN"]),
+  "POST /admin/demo/reset": new Set(["ADMIN"]),
+  "POST /admin/demo/chaos/kill/{symbol}": new Set(["ADMIN"]),
+  "POST /admin/demo/chaos/freeze/{symbol}": new Set(["ADMIN"]),
 
   // System
   "GET /system/invariants": new Set(["ADMIN"]),
   "GET /system/health": new Set(["ADMIN"]),
+  "GET /system/shards": new Set(["ADMIN"]),
+  "GET /system/recovery": new Set(["ADMIN"]),
+  "GET /system/metrics/summary": new Set(["ADMIN"]),
+  "POST /system/verify-replay": new Set(["ADMIN"]),
+  "GET /system/simulator": new Set(["ADMIN"]),
+  "POST /system/simulator/start": new Set(["ADMIN"]),
+  "POST /system/simulator/stop": new Set(["ADMIN"]),
 };

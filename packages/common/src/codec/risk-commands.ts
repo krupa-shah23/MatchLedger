@@ -99,6 +99,15 @@ export function serializeRiskCommand(cmd: RiskCommand): string {
     case "ReleaseUnreached":
       payload.orderId = cmd.orderId;
       break;
+    case "KillShard":
+      payload.symbol = cmd.symbol;
+      if (cmd.reason !== undefined) payload.reason = cmd.reason;
+      break;
+    case "FreezeShard":
+      payload.symbol = cmd.symbol;
+      payload.durationMs = cmd.durationMs;
+      if (cmd.reason !== undefined) payload.reason = cmd.reason;
+      break;
     default:
       return assertNever(cmd);
   }
@@ -175,6 +184,15 @@ export function deserializeRiskCommand(json: string): RiskCommand {
       return { type: "SweepProbe", olderThanMs: requireNumber(obj, "olderThanMs") };
     case "ReleaseUnreached":
       return { type: "ReleaseUnreached", orderId: requireString(obj, "orderId") };
+    case "KillShard":
+      return { type: "KillShard", symbol: requireString(obj, "symbol"), reason: requireOptionalString(obj, "reason") };
+    case "FreezeShard":
+      return {
+        type: "FreezeShard",
+        symbol: requireString(obj, "symbol"),
+        durationMs: requireNumber(obj, "durationMs"),
+        reason: requireOptionalString(obj, "reason"),
+      };
     default:
       throw new CodecError("type", `unknown command type ${JSON.stringify(type)}`);
   }

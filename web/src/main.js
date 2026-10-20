@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SystemPage } from "./pages/Dashboard";
 import "./index.css";
 const queryClient = new QueryClient();
 // Auth context
@@ -298,6 +299,7 @@ export function App() {
               <Route path="/" element={<TradingPage />}/>
               <Route path="/portfolio" element={<PortfolioPage />}/>
               <Route path="/orders/:orderId" element={<OrderDetailsPage />}/>
+              <Route path="/system" element={<SystemPage />}/>
               <Route path="*" element={<Navigate to="/"/>}/>
             </Routes>
           </>)}

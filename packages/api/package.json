@@ -13,6 +13,7 @@
     "@matchledger/projections": "file:../projections",
     "@matchledger/recon": "file:../recon",
     "@matchledger/risk": "file:../risk",
+    "@matchledger/telemetry": "file:../telemetry",
     "fastify": "5.10.0",
     "jose": "6.2.12",
     "prom-client": "15.1.3",

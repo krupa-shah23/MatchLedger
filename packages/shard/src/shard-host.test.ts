@@ -31,3 +31,35 @@ describe("ShardHost Metrics (TL5-TL6)", () => {
     expect(ownershipMetric).toBeDefined();
   });
 });
+
+describe("Heartbeat Writer and Recovery Logging (HT1, RG1, RG3)", () => {
+  it("HT1: Catalogue contains heartbeat latency metric", () => {
+    const metric = METRICS_CATALOGUE["ml_shard_heartbeat_latency_ms"];
+    expect(metric).toBeDefined();
+    expect(metric?.type).toBe("histogram");
+    expect(metric?.labelNames).toContain("shard_id");
+  });
+
+  it("RG1: Catalogue contains recovery metrics", () => {
+    const durationMetric = METRICS_CATALOGUE["ml_recovery_duration_ms"];
+    const seqMetric = METRICS_CATALOGUE["ml_recovery_snapshot_seq"];
+    const tailLengthMetric = METRICS_CATALOGUE["ml_recovery_tail_length"];
+
+    expect(durationMetric).toBeDefined();
+    expect(durationMetric?.type).toBe("gauge");
+    expect(seqMetric).toBeDefined();
+    expect(seqMetric?.type).toBe("gauge");
+    expect(tailLengthMetric).toBeDefined();
+    expect(tailLengthMetric?.type).toBe("gauge");
+  });
+
+  it("RG3: Recovery metrics have shard_id label", () => {
+    const durationMetric = METRICS_CATALOGUE["ml_recovery_duration_ms"];
+    const seqMetric = METRICS_CATALOGUE["ml_recovery_snapshot_seq"];
+    const tailLengthMetric = METRICS_CATALOGUE["ml_recovery_tail_length"];
+
+    expect(durationMetric?.labelNames).toContain("shard_id");
+    expect(seqMetric?.labelNames).toContain("shard_id");
+    expect(tailLengthMetric?.labelNames).toContain("shard_id");
+  });
+});
