@@ -201,6 +201,8 @@ export function OrderDetailPage({ orderId: initialOrderId, onLoadOrder }: OrderD
 }
 
 function formatCurrency(minorUnits: string): string {
-  const num = Number(minorUnits);
-  return (num / 1000000).toFixed(2);
+  const bigVal = BigInt(minorUnits);
+  const dollars = bigVal / 1000000n;
+  const cents = (bigVal % 1000000n) / 10000n;
+  return `${dollars}.${String(cents).padStart(2, "0")}`;
 }

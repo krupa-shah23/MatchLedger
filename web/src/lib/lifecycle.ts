@@ -72,9 +72,9 @@ export function deriveLifecycle(order: Order, now: number): LifecycleState {
       };
 
     case "PARTIALLY_FILLED":
-      const filledNum = Number(order.filledQty);
-      const qtyNum = Number(order.quantity);
-      const pct = qtyNum > 0 ? Math.round((filledNum / qtyNum) * 100) : 0;
+      const filledQty = BigInt(order.filledQty || "0");
+      const totalQty = BigInt(order.quantity || "0");
+      const pct = totalQty > 0n ? (filledQty * 100n) / totalQty : 0n;
       return {
         stage: "filled",
         spinner: false,

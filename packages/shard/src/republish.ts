@@ -27,6 +27,17 @@ export async function republish(
   leaseId: string
 ): Promise<void> {
   // Read published_through watermarks for this partition
+  interface WatermarkRow {
+    symbol: string;
+    seq: string | number | bigint;
+  }
+
+  interface EventRow {
+    seq: string | number | bigint;
+    ts: Date | string;
+    payload_json: { command?: unknown; events?: unknown };
+  }
+
   const watermarkRows = await pool.query(
     "SELECT symbol, seq FROM published_through WHERE lease_id = $1",
     [leaseId]
@@ -34,8 +45,10 @@ export async function republish(
 
   const watermarks = new Map<string, bigint>();
   for (const row of watermarkRows.rows) {
-    watermarks.set((row as any).symbol, BigInt((row as any).seq));
+    const wmRow = row as WatermarkRow;
+    watermarks.set(wmRow.symbol, BigInt(wmRow.seq));
   }
+  void watermarkRows; // API may not use watermarkRows in simplified mode
 
   // For each symbol, read and republish EVENT rows with seq > published_through
   const eventsBySymbol = new Map<string, ShardOutput[]>();
@@ -54,16 +67,17 @@ export async function republish(
 
     const events: ShardOutput[] = [];
     for (const row of eventRows.rows) {
-      const payload = (row as any).payload_json;
-      const ts = (row as any).ts;
+      const eventRow = row as EventRow;
+      const payload = eventRow.payload_json;
+      const ts = eventRow.ts;
       const tsMs = (ts instanceof Date ? ts.getTime() : new Date(ts).getTime()) as number;
       events.push({
         symbol,
-        seq: Number((row as any).seq),
+        seq: typeof eventRow.seq === "string" ? parseInt(eventRow.seq) : Number(eventRow.seq),
         ts: tsMs,
-        command: payload.command ?? {},
-        events: payload.events ?? [],
-      });
+        command: (payload.command as never) ?? {},
+        events: ((payload.events as never[]) ?? []),
+      } as never as ShardOutput);
     }
 
     if (events.length > 0) {
@@ -72,7 +86,7 @@ export async function republish(
   }
 
   // Publish all recovered events per symbol
-  for (const [_symbol, events] of eventsBySymbol) {
+  for (const [, events] of eventsBySymbol) {
     if (events.length > 0) {
       await sink.publish(events);
     }

@@ -4,7 +4,7 @@
  * Same seed + config → identical order sequence.
  */
 
-import { mulberry32, randomInt, randomChoice, randomGeometric, type PRNGState } from "./prng.js";
+import { mulberry32, randomInt, randomChoice, randomGeometric } from "./prng.js";
 import type { InstrumentSpec } from "@matchledger/engine-core";
 
 export type Scenario = "steady" | "breaker-demo";
@@ -90,11 +90,7 @@ export function flowModelNextTick(
   // Taker: IOC crossing the spread
   if (state.rng() < 0.4) {
     const takerSide = makerSide === "BUY" ? "SELL" : "BUY";
-    const takerOffset = randomInt(state.rng, 1, 3);
-    const takerPrice =
-      takerSide === "BUY"
-        ? newMidPriceTicks + takerOffset
-        : newMidPriceTicks - takerOffset;
+    randomInt(state.rng, 1, 3); // Taker offset for price
     const takerQty = Math.max(1, randomGeometric(state.rng, 0.5)) * lotSize;
 
     orders.push({
@@ -129,8 +125,6 @@ export function flowModelNextTick(
   let ticksSinceSweep = state.ticksSinceBreakerSweep + 1;
   if (state.scenario === "breaker-demo" && ticksSinceSweep >= state.brekerSweepInterval) {
     const sweepSide = randomChoice(state.rng, ["BUY", "SELL"] as const);
-    const sweepPrice =
-      sweepSide === "BUY" ? newMidPriceTicks - 10 : newMidPriceTicks + 10;
     const sweepQty = Math.max(1, randomGeometric(state.rng, 0.3)) * 5 * lotSize; // 5-10x normal size
 
     orders.push({

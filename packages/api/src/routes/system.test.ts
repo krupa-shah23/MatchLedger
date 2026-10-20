@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { registerSystemRoutes, type SystemRoutesDeps } from "./system.js";
 import type { FastifyInstance } from "fastify";
 import Fastify from "fastify";
+import { createHash } from "node:crypto";
 
 describe("System Routes (HT2, HT3, RG2)", () => {
   let app: FastifyInstance;
@@ -312,8 +313,7 @@ describe("Verify Replay (SY1, SY2)", () => {
 
   it("SY1: Replays to latest snapshot seq and compares checksums on healthy stream", async () => {
     const stateJson = { bids: [], asks: [], version: 2, breaker: undefined };
-    const crypto = require("node:crypto");
-    const expectedChecksum = crypto.createHash("sha256").update(JSON.stringify(stateJson)).digest("hex");
+    const expectedChecksum = createHash("sha256").update(JSON.stringify(stateJson)).digest("hex");
 
     mockExecutor.query.mockResolvedValueOnce({
       rows: [

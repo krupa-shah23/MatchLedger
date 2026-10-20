@@ -26,11 +26,12 @@ export function formatMoney(minorUnits: bigint | string | number | null): string
     value = BigInt(Math.floor(minorUnits));
   }
 
-  const dollars = value / 100n;
-  const cents = value % 100n;
   const isNegative = value < 0n;
+  const absValue = isNegative ? -value : value;
+  const absDollars = absValue / 100n;
+  const absCents = absValue % 100n;
 
-  return `${isNegative ? "-" : ""}$${Math.abs(Number(dollars))}.${String(Math.abs(Number(cents))).padStart(2, "0")}`;
+  return `${isNegative ? "-" : ""}$${absDollars}.${String(absCents).padStart(2, "0")}`;
 }
 
 /**

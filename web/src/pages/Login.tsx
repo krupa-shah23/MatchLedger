@@ -7,10 +7,16 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiClient } from "../api/client.js";
 
+interface LoginUser {
+  role: string;
+  id?: string;
+  [key: string]: unknown;
+}
+
 interface LoginPageProps {
   apiBaseUrl: string;
   demoMode: boolean;
-  onLoginSuccess: (token: string, user: any) => void;
+  onLoginSuccess: (token: string, user: LoginUser) => void;
 }
 
 export function LoginPage({ apiBaseUrl, demoMode, onLoginSuccess }: LoginPageProps) {
@@ -29,7 +35,7 @@ export function LoginPage({ apiBaseUrl, demoMode, onLoginSuccess }: LoginPagePro
     try {
       setIsLoading(true);
       setError(null);
-      const response = await apiClient.post<any>("/auth/login", {
+      const response = await apiClient.post<{ token: string; user: LoginUser }>("/auth/login", {
         username: user,
         password: pass,
       });

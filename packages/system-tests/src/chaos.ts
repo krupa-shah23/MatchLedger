@@ -30,7 +30,7 @@ export function blockEventLoop(ms: number): Promise<void> {
  * Returns a function to send SIGCONT (resume).
  */
 export async function freezeProcess(pid: number): Promise<() => void> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     process.kill(pid, "SIGSTOP");
 
     resolve(() => {
@@ -61,10 +61,10 @@ export async function pauseContainer(containerName: string): Promise<() => Promi
           return new Promise<void>((res, rej) => {
             const unpause = spawn("docker-compose", ["unpause", containerName]);
             let err = "";
-            unpause.stderr.on("data", (data) => {
-              err += data.toString();
+            unpause.stderr.on("data", (data: unknown) => {
+              err += String(data);
             });
-            unpause.on("close", (c) => {
+            unpause.on("close", (c: number) => {
               if (c !== 0) {
                 rej(new Error(`docker-compose unpause failed: ${err}`));
               } else {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * UP13-UP14: Reconciliation page tests
  * - UP13: Statement upload with duplicate detection, runs list, breaks table

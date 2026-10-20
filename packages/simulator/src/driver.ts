@@ -6,7 +6,7 @@
 
 import type { InstrumentSpec } from "@matchledger/engine-core";
 import type { Scenario } from "./flow-model.js";
-import { createFlowModel, flowModelNextTick, type GeneratedOrder } from "./flow-model.js";
+import { createFlowModel, flowModelNextTick } from "./flow-model.js";
 
 export type Scheduler = (fn: () => Promise<void>, intervalMs: number) => () => void;
 
@@ -34,7 +34,7 @@ export interface SimulatorDriverState {
   readonly scheduler: Scheduler;
   readonly submitPort: SubmitPort;
   readonly instruments: Map<string, InstrumentSpec>;
-  readonly flowModels: Map<string, any>;
+  readonly flowModels: Map<string, unknown>;
   readonly orderCounters: Map<string, number>;
   readonly counters: Counters;
   readonly running: boolean;
@@ -52,7 +52,7 @@ export async function createSimulatorDriver(
     instruments: Map<string, InstrumentSpec>;
   }
 ): Promise<SimulatorDriverState> {
-  const flowModels = new Map<string, any>();
+  const flowModels = new Map<string, unknown>();
   const orderCounters = new Map<string, number>();
 
   // Initialize flow models for each symbol
@@ -89,16 +89,15 @@ export async function startSimulator(
   }
 
   const ticksPerSec = 10; // 10 ticks per second
-  const ordersPerTick = state.ratePerSec / ticksPerSec;
   let tickNumber = 0;
 
   const tickFn = async () => {
     for (const symbol of state.symbols) {
-      const flowModel = state.flowModels.get(symbol)!;
+      const flowModel = state.flowModels.get(symbol) as unknown;
       const counter = state.orderCounters.get(symbol)!;
 
       // Generate orders for this tick
-      const { orders, newState, nextCounter } = flowModelNextTick(flowModel, tickNumber, counter);
+      const { orders, newState, nextCounter } = flowModelNextTick(flowModel as never, tickNumber, counter);
       state.flowModels.set(symbol, newState);
       state.orderCounters.set(symbol, nextCounter);
 
@@ -124,7 +123,7 @@ export async function startSimulator(
               state.counters.backedOff++;
             }
           }
-        } catch (err) {
+        } catch {
           state.counters.backedOff++;
         }
       }

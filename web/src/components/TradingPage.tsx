@@ -45,7 +45,7 @@ interface ConnectionState {
 
 export function TradingPage() {
   const [selectedSymbol, setSelectedSymbol] = useState<Symbol>(DEMO_SYMBOLS[0]);
-  const [connectionState, setConnectionState] = useState<ConnectionState>({
+  const [connectionState] = useState<ConnectionState>({
     connected: true,
     stale: false,
     conflated: false,
@@ -109,9 +109,6 @@ function SymbolPicker({
 }
 
 function BookLadder({ book }: { book: { bids: [string, string][]; asks: [string, string][] } }) {
-  const midPrice = book.bids[0] && book.asks[0]
-    ? ((BigInt(book.bids[0][0]) + BigInt(book.asks[0][0])) / 2n).toString()
-    : "N/A";
 
   return (
     <div style={{ border: "1px solid #ddd", padding: 10, marginBottom: 10 }}>
@@ -136,7 +133,7 @@ function BookLadder({ book }: { book: { bids: [string, string][]; asks: [string,
               key={i}
               style={{
                 backgroundColor: "#ffcccc",
-                width: `${(Number(ask[1]) / 2000) * 100}%`,
+                width: `${((BigInt(ask[1]) * 100n) / 2000n).toString()}%`,
               }}
             >
               {" "}
@@ -167,7 +164,7 @@ function BookLadder({ book }: { book: { bids: [string, string][]; asks: [string,
               key={i}
               style={{
                 backgroundColor: "#ccffcc",
-                width: `${(Number(bid[1]) / 2000) * 100}%`,
+                width: `${((BigInt(bid[1]) * 100n) / 2000n).toString()}%`,
               }}
             >
               {" "}

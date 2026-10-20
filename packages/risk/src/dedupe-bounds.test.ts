@@ -70,8 +70,9 @@ describe("DW: Dedupe Window Bounds", () => {
 
     expect(newSnapshot.version).toBe(1); // Old field preserved for backward compat
     expect(newSnapshot.dedupeBounds).toBeDefined();
-    expect(newSnapshot.dedupeBounds.windowFloor).toBe(0);
-    expect(newSnapshot.dedupeBounds.windowSeq).toBe(100000);
+    const bounds = newSnapshot.dedupeBounds as { windowFloor: number; windowSeq: number };
+    expect(bounds.windowFloor).toBe(0);
+    expect(bounds.windowSeq).toBe(100000);
   });
 
   it("DW4: Resubmission of evicted id through gateway - blocked by order_requests", () => {

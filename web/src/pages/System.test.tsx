@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * UP15-UP16: System page component tests
  * - UP15: Render shards table, metrics card, invariants panel, recovery list

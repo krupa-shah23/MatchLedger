@@ -60,7 +60,7 @@ export function evictOldIds(
  * Upcaster for RiskState snapshot version bump.
  * Converts old snapshot (no window floor) to new format with bounds.
  */
-export function upcasterV1toV2(oldSnapshot: any): any {
+export function upcasterV1toV2(oldSnapshot: Record<string, unknown>): Record<string, unknown> {
   return {
     ...oldSnapshot,
     dedupeBounds: {

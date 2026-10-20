@@ -26,9 +26,12 @@ export interface Message {
  * Wraps @confluentinc/kafka-javascript producer with init, send to explicit partition,
  * commit, abort, and fenced-error detection.
  */
+type KafkaProducer = unknown;
+type KafkaInstance = unknown;
+
 export class TransactionalProducer {
-  private producer: any | null = null;
-  private kafka: any | null = null;
+  private producer: KafkaProducer | null = null;
+  private kafka: KafkaInstance | null = null;
 
   constructor(private config: TransactionalProducerConfig) {}
 

@@ -26,25 +26,22 @@ export type Mutation =
 export function mapRiskRecord(
   record: { record_type: string; payload_json: unknown; seq: number }
 ): Mutation[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const payload = record.payload_json as any;
+  const payload = record.payload_json as Record<string, unknown> | { type: string };
   const mutations: Mutation[] = [];
 
   if (record.record_type === "COMMAND") {
     const cmd = payload as { type: string };
     switch (cmd.type) {
       case "SubmitOrder": {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = cmd as any;
+        const c = cmd as Record<string, unknown>;
         mutations.push({
           type: "INSERT_ORDER",
-          orderId: c.orderId,
+          orderId: String(c.orderId ?? ""),
           data: {
-            account_id: c.accountId,
+            account_id: String(c.accountId ?? ""),
             client_order_id: null,
-            symbol: c.symbol,
-            side: c.side,
+            symbol: String(c.symbol ?? ""),
+            side: String(c.side ?? ""),
             order_type: c.kind,
             time_in_force: c.timeInForce,
             quantity: c.quantity,

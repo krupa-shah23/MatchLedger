@@ -17,6 +17,9 @@ const HEARTBEAT_MS = 5000; // Default heartbeat interval
 
 export type Scheduler = (fn: () => void, intervalMs: number) => () => void;
 
+type ShardRunner = unknown; // ShardRunner type would be imported from engine-core
+type DecodedMessage = { payload?: unknown; symbol?: string; type?: string } | Record<string, unknown>;
+
 export interface ShardHostConfig {
   pool: Pool;
   consumer: PartitionConsumer;
@@ -27,7 +30,7 @@ export interface ShardHostConfig {
     partition: number,
     symbols: readonly string[],
     journal: FencedPgJournal
-  ) => any; // Returns ShardRunner when fully implemented
+  ) => ShardRunner; // Returns ShardRunner when fully implemented
   recoverSymbol: (symbol: string, pool: Pool) => Promise<void>;
   scheduler?: Scheduler;
   heartbeatMs?: number;
@@ -40,7 +43,7 @@ export class ShardHost {
       symbols: readonly string[];
       epoch: bigint;
       journal: FencedPgJournal;
-      runner: any; // ShardRunner type would be imported from engine-core
+      runner: ShardRunner; // ShardRunner type would be imported from engine-core
       offsetTickets: OffsetTickets;
       sink: KafkaEventSink;
       revoked: boolean;
@@ -104,7 +107,7 @@ export class ShardHost {
       const journal = new FencedPgJournal(sql, leaseId, epoch);
 
       // Step 5: Build ShardRunner, start, start TickInjector
-      const runner = this.config.runnerFactory(partition, symbols, journal);
+      const runner = this.config.runnerFactory(partition, symbols, journal) as { start: () => void };
       runner.start();
 
       // Step 6: Read next_offset from consumer_offsets, seek, resume consuming
@@ -179,7 +182,7 @@ export class ShardHost {
       await this.config.consumer.pause([{ topic: "orders.accepted", partition }]);
 
       // Stop runner with drain:false (discard unjournaled queue)
-      state.runner.stop();
+      (state.runner as { stop: () => void }).stop();
       // Note: runner.done() would block; we don't await it here
 
       // Disconnect producer (stop taking writes)
@@ -207,7 +210,7 @@ export class ShardHost {
       state.revoked = true;
 
       // Stop runner without attempting cleanup
-      state.runner.stop();
+      (state.runner as { stop: () => void }).stop();
 
       // Disconnect producer (no commit attempts)
       try {
@@ -237,10 +240,10 @@ export class ShardHost {
     }
 
     // Decode message
-    let decoded: any;
+    let decoded: DecodedMessage;
     try {
-      const parsed = JSON.parse(msg.value.toString());
-      decoded = parsed.payload || parsed;
+      const parsed = JSON.parse(msg.value.toString()) as DecodedMessage;
+      decoded = (parsed as { payload?: unknown }).payload || parsed;
     } catch (error) {
       // Undecodable: publish to dead-letter queue, advance offset
       const dlqEntry = {
@@ -251,9 +254,8 @@ export class ShardHost {
         rawBytes: msg.value,
         timestamp: Date.now(),
       };
-      const dlqMsg = createDeadLetterMessage(dlqEntry);
-
       // Publish to dlq.<topic>
+      createDeadLetterMessage(dlqEntry); // TODO: publish to dlq
       await this.config.consumer.seek(msg.topic, partition, msg.offset + 1n);
 
       // Advance stored offset with offset-only fenced upsert
@@ -262,13 +264,14 @@ export class ShardHost {
     }
 
     // tryEnqueue: if accepted, push offset ticket
-    const enqueueResult = state.runner.tryEnqueue(decoded);
+    const runner = state.runner as { tryEnqueue: (msg: DecodedMessage) => string };
+    const enqueueResult = runner.tryEnqueue(decoded);
     const metrics = this.getMetrics();
 
     if (enqueueResult === "ACCEPTED") {
       metrics.commands.inc({
         shard_id: this.config.shardId,
-        symbol: decoded.symbol || "unknown",
+        symbol: (decoded as Record<string, unknown>).symbol as string || "unknown",
       });
       state.offsetTickets.push({
         topic: msg.topic,

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Role-based dashboard landing page.
  * Routes to appropriate page based on user role.
@@ -8,6 +9,20 @@ import { useNavigate } from "react-router-dom";
 
 interface DashboardProps {
   userRole: string;
+}
+
+// API response types
+interface Rejection {
+  rejectionId: string;
+  symbol: string;
+  accountId: string;
+  reason: string;
+  snapshot?: { heldCash?: string };
+}
+
+interface Resting {
+  count: number;
+  held: bigint;
 }
 
 export function Dashboard({ userRole }: DashboardProps) {
@@ -38,9 +53,9 @@ export function TradingPage() {
 }
 
 export function RiskPage() {
-  const [breakers, setBreakers] = React.useState<any[]>([]);
-  const [rejections, setRejections] = React.useState<any[]>([]);
-  const [resting, setResting] = React.useState<any>({});
+  const [breakers, setBreakers] = React.useState<Array<{ symbol: string; state: string }>>([]);
+  const [rejections, setRejections] = React.useState<Rejection[]>([]);
+  const [resting, setResting] = React.useState<Record<string, Resting>>({});
   const [haltReason, setHaltReason] = React.useState("");
   const [resumeReason, setResumeReason] = React.useState("");
   const [selectedSymbol, setSelectedSymbol] = React.useState("");
@@ -71,8 +86,8 @@ export function RiskPage() {
           setRejections(data.rejections || []);
 
           // Calculate resting orders and held funds per symbol
-          const restingMap: any = {};
-          data.rejections?.forEach((rej: any) => {
+          const restingMap: Record<string, Resting> = {};
+          (data.rejections as Rejection[] | undefined)?.forEach((rej: Rejection) => {
             if (!restingMap[rej.symbol]) {
               restingMap[rej.symbol] = { count: 0, held: 0n };
             }
@@ -316,12 +331,44 @@ export function RiskPage() {
   );
 }
 
+interface Shard {
+  leaseId: string;
+  epoch: number;
+  ownerId: string;
+  heartbeatAge: number;
+  queueDepth: number;
+  lastSeq: number;
+  snapshotSeq: number;
+  stale: boolean;
+}
+
+interface Metrics {
+  available: boolean;
+  commandRate?: number;
+}
+
+interface Invariants {
+  valid: boolean;
+  checks?: Array<{ name: string; pass: boolean }>;
+}
+
+interface RecoveryEntry {
+  timestamp: string;
+  duration: number;
+}
+
+interface SimulatorState {
+  running: boolean;
+  sent?: number;
+  backedOff?: number;
+}
+
 export function SystemPage() {
-  const [shards, setShards] = React.useState<any[]>([]);
-  const [metrics, setMetrics] = React.useState<any>(null);
-  const [invariants, setInvariants] = React.useState<any>(null);
-  const [recovery, setRecovery] = React.useState<any[]>([]);
-  const [simulator, setSimulator] = React.useState<any>(null);
+  const [shards, setShards] = React.useState<Shard[]>([]);
+  const [metrics, setMetrics] = React.useState<Metrics | null>(null);
+  const [invariants, setInvariants] = React.useState<Invariants | null>(null);
+  const [recovery, setRecovery] = React.useState<RecoveryEntry[]>([]);
+  const [simulator, setSimulator] = React.useState<SimulatorState | null>(null);
   const [isDemo, setIsDemo] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
 
@@ -827,8 +874,8 @@ export function ReconPage() {
                   <td style={{ padding: 8 }}>{brk.breakId}</td>
                   <td style={{ padding: 8 }}>{brk.accountId}</td>
                   <td style={{ padding: 8 }}>{brk.asset}</td>
-                  <td style={{ padding: 8 }}>${(Number(brk.expected) / 100).toFixed(2)}</td>
-                  <td style={{ padding: 8 }}>${(Number(brk.actual) / 100).toFixed(2)}</td>
+                  <td style={{ padding: 8 }}>${(() => { const val = String(BigInt(brk.expected)); return val.slice(0, -2) + "." + val.slice(-2); })()}</td>
+                  <td style={{ padding: 8 }}>${(() => { const val = String(BigInt(brk.actual)); return val.slice(0, -2) + "." + val.slice(-2); })()}</td>
                   <td style={{ padding: 8, color: "red" }}>{brk.status}</td>
                   <td style={{ padding: 8 }}>
                     <button
@@ -854,9 +901,9 @@ export function ReconPage() {
           <div style={{ marginBottom: 15 }}>
             <p><strong>Account:</strong> {selectedBreak.accountId}</p>
             <p><strong>Asset:</strong> {selectedBreak.asset}</p>
-            <p><strong>Expected:</strong> ${(Number(selectedBreak.expected) / 100).toFixed(2)}</p>
-            <p><strong>Actual:</strong> ${(Number(selectedBreak.actual) / 100).toFixed(2)}</p>
-            <p><strong>Difference:</strong> ${(Number(selectedBreak.expected - selectedBreak.actual) / 100).toFixed(2)}</p>
+            <p><strong>Expected:</strong> ${(() => { const val = String(BigInt(selectedBreak.expected)); return val.slice(0, -2) + "." + val.slice(-2); })()}</p>
+            <p><strong>Actual:</strong> ${(() => { const val = String(BigInt(selectedBreak.actual)); return val.slice(0, -2) + "." + val.slice(-2); })()}</p>
+            <p><strong>Difference:</strong> ${(() => { const diff = String(BigInt(selectedBreak.expected) - BigInt(selectedBreak.actual)); return diff.slice(0, -2) + "." + diff.slice(-2); })()}</p>
           </div>
 
           {/* Audit Trail */}

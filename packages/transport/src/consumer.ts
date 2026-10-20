@@ -16,13 +16,16 @@ export interface ConsumerMessage {
   value: Buffer;
 }
 
+type KafkaConsumer = unknown; // Kafka consumer type from @confluentinc/kafka-javascript
+type KafkaClient = unknown; // Kafka client type from @confluentinc/kafka-javascript
+
 /**
  * Partition consumer wrapper (Kafka client names per docs/spike-4.md)
  * Wraps @confluentinc/kafka-javascript consumer with assign, seek, pause, resume, callbacks.
  */
 export class PartitionConsumer {
-  private consumer: any | null = null;
-  private kafka: any | null = null;
+  private consumer: KafkaConsumer | null = null;
+  private kafka: KafkaClient | null = null;
   private running = false;
 
   constructor(private config: PartitionConsumerConfig) {}
@@ -47,7 +50,7 @@ export class PartitionConsumer {
     await this.consumer.connect();
   }
 
-  async assign(topic: string, partition: number): Promise<void> {
+  async assign(topic: string): Promise<void> {
     if (!this.consumer) {
       throw new Error("Consumer not initialized");
     }

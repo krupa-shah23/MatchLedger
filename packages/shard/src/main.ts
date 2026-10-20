@@ -6,10 +6,16 @@
  * Fail-stop on: FencedWriterError, fenced producer, unhandledRejection, uncaughtException.
  */
 
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import { createPool } from "@matchledger/journal";
-import { PartitionConsumer, checkTopics } from "@matchledger/transport";
+import type { Pool } from "pg";
+import { PartitionConsumer, checkTopics, type ConsumerMessage } from "@matchledger/transport";
 import { ShardHost } from "./shard-host.js";
+
+interface ZodErrorElement {
+  path: (string | number)[];
+  message: string;
+}
 
 const ConfigSchema = z.object({
   TRANSPORT: z.enum(["inproc", "kafka"]),
@@ -37,14 +43,14 @@ async function main(): Promise<void> {
   try {
     config = ConfigSchema.parse(process.env);
   } catch (error) {
-    const message = error instanceof z.ZodError
-      ? error.errors.map((e: any) => `${e.path.join(".")}: ${e.message}`).join("\n")
+    const message = error instanceof ZodError
+      ? error.errors.map((e: ZodErrorElement) => `${e.path.join(".")}: ${e.message}`).join("\n")
       : String(error);
     console.error(`Configuration error:\n${message}`);
     process.exit(1);
   }
 
-  let pool: any;
+  let pool: Pool;
   let consumer: PartitionConsumer | null = null;
   let shardHost: ShardHost | null = null;
   let sigTermCount = 0;
@@ -82,17 +88,17 @@ async function main(): Promise<void> {
       shardHost = new ShardHost({
         pool,
         consumer,
-        leaseStore: null as any, // Would be created with pool
+        leaseStore: null as unknown, // Would be created with pool
         brokers,
         shardId: config.SHARD_ID,
-        runnerFactory: null as any, // Would be created with engine core
-        recoverSymbol: null as any, // Would be created with engine core
-      });
+        runnerFactory: null as unknown, // Would be created with engine core
+        recoverSymbol: null as unknown, // Would be created with engine core
+      } as never);
 
       // Subscribe to partitions (rebalance callbacks)
       await consumer.run(
-        (msg: any) => shardHost!.onMessage(msg),
-        (error: any) => {
+        (msg: ConsumerMessage) => shardHost!.onMessage(msg),
+        (error: Error) => {
           console.error("[shard] Consumer error:", error.message);
           failStop(error);
         }
@@ -136,7 +142,7 @@ async function main(): Promise<void> {
     });
 
     // Fail-stop on unhandled rejection or exception
-    process.on("unhandledRejection", (reason, promise) => {
+    process.on("unhandledRejection", (reason) => {
       console.error("[shard] Unhandled rejection:", reason);
       failStop(new Error(`Unhandled rejection: ${reason}`));
     });

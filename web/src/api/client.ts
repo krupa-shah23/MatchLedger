@@ -3,7 +3,7 @@
  * Handles bearer token auth, error parsing, 401 retry, and Retry-After.
  */
 
-import type { ErrorResponse, LoginResponse } from "@matchledger/common";
+import type { ErrorResponse } from "@matchledger/common";
 
 export class ApiError extends Error {
   constructor(

@@ -45,7 +45,7 @@ interface PortfolioPageProps {
   onAccountSelect?: (accountId: string) => void;
 }
 
-export function PortfolioPage({ accounts, userRole, onAccountSelect }: PortfolioPageProps) {
+export function PortfolioPage({ accounts, onAccountSelect }: PortfolioPageProps) {
   const [selectedAccountId, setSelectedAccountId] = useState(accounts?.[0]?.id || "");
 
   // Mock data for demo
@@ -158,10 +158,10 @@ export function PortfolioPage({ accounts, userRole, onAccountSelect }: Portfolio
                   <td style={{ padding: 8, textAlign: "right" }}>
                     {pos.mark ? `$${formatCurrency(pos.mark)}` : "—"}
                   </td>
-                  <td style={{ padding: 8, textAlign: "right", color: Number(pos.unrealizedPnL) >= 0 ? "green" : "red" }}>
+                  <td style={{ padding: 8, textAlign: "right", color: BigInt(pos.unrealizedPnL) >= 0n ? "green" : "red" }}>
                     ${formatCurrency(pos.unrealizedPnL)}
                   </td>
-                  <td style={{ padding: 8, textAlign: "right", color: Number(pos.realizedPnL) >= 0 ? "green" : "red" }}>
+                  <td style={{ padding: 8, textAlign: "right", color: BigInt(pos.realizedPnL) >= 0n ? "green" : "red" }}>
                     ${formatCurrency(pos.realizedPnL)}
                   </td>
                 </tr>
@@ -245,6 +245,8 @@ function CashCard({
 }
 
 function formatCurrency(minorUnits: string): string {
-  const num = Number(minorUnits);
-  return (num / 1000000).toFixed(2);
+  const bigVal = BigInt(minorUnits);
+  const dollars = bigVal / 1000000n;
+  const cents = (bigVal % 1000000n) / 10000n;
+  return `${dollars}.${String(cents).padStart(2, "0")}`;
 }

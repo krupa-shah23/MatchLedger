@@ -29,10 +29,10 @@ export function OrderEntry({ symbol, apiBaseUrl, onOrderSubmitted }: OrderEntryP
 
   // Validation
   const qtyNum = parseInt(quantity) || 0;
-  const priceNum = parseFloat(price) || 0;
+  const priceStr = price.trim();
   const qtyError = qtyNum <= 0 ? "Quantity must be positive" : null;
   const priceError =
-    orderType === "LIMIT" && priceNum <= 0 ? "Price required for LIMIT orders" : null;
+    orderType === "LIMIT" && !priceStr ? "Price required for LIMIT orders" : null;
   const marketPriceError =
     orderType === "MARKET" && price ? "MARKET orders must not have price" : null;
   const clientIdError = !clientOrderId ? "Client order ID required" : null;
@@ -155,7 +155,7 @@ export function OrderEntry({ symbol, apiBaseUrl, onOrderSubmitted }: OrderEntryP
 
       {estimate && (
         <div style={{ backgroundColor: "#f5f5f5", padding: 8, borderRadius: 4, fontSize: 12 }}>
-          <strong>Estimate:</strong> ${(Number(estimate) / 1000000).toFixed(2)}
+          <strong>Estimate:</strong> ${(() => { const bigVal = BigInt(estimate); const dollars = bigVal / 1000000n; const cents = (bigVal % 1000000n) / 10000n; return `${dollars}.${String(cents).padStart(2, "0")}`; })()}
         </div>
       )}
 

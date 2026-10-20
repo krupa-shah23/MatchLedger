@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * UP11-UP12: Risk console page tests
  * - UP11: Render breaker table with incident clock, resting orders, rejections feed

@@ -184,7 +184,7 @@ test.describe('DEMO Scenarios', () => {
     await stopButton.click();
 
     // Verify counters updated (sent > 0)
-    const sentText = await page.locator('text=/Sent:/).textContent();
+    const sentText = await page.locator('text=/Sent:/').textContent();
     expect(sentText).toBeTruthy();
   });
 });

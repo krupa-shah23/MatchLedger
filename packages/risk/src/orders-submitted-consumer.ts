@@ -9,6 +9,35 @@ import { FencedPgJournal, createSqlExecutor } from "@matchledger/journal";
 import type { Pool } from "pg";
 import type { ConsumerMessage } from "@matchledger/transport";
 
+interface SubmitOrder {
+  type: string;
+  orderId: string;
+  accountId: string;
+  symbol: string;
+  side: string;
+  quantity: bigint;
+  price?: bigint;
+}
+
+interface DecodedEnvelope {
+  payload: unknown;
+  timestamp?: number;
+}
+
+interface JournalEntry {
+  stream_id: string;
+  seq: number;
+  command: SubmitOrder;
+}
+
+interface ConsumerError extends Error {
+  message: string;
+}
+
+interface OffsetRow {
+  next_offset: bigint | string;
+}
+
 export interface OrdersSubmittedConsumerConfig {
   consumer: PartitionConsumer;
   brokers: string[];
@@ -26,38 +55,34 @@ export async function startOrdersSubmittedConsumer(
 ): Promise<void> {
   const leaseId = `risk-${config.partitionId}`;
   const sql = createSqlExecutor(config.pool);
-  const journal = new FencedPgJournal(sql, leaseId, config.epoch);
 
   await config.consumer.run(
     async (msg: ConsumerMessage) => {
       try {
         // Decode SubmitOrder from envelope
-        const decoded = decodeEnvelope(msg.value.toString());
-        const submitOrder = decoded.payload as any;
+        const decoded = decodeEnvelope(msg.value.toString()) as DecodedEnvelope;
+        const submitOrder = decoded.payload as SubmitOrder;
 
         // Journal SubmitOrder + offset in same transaction
-        await sql.transaction(async (tx) => {
-          // Write SubmitOrder to journal
-          const journalTx = new FencedPgJournal(tx as any, leaseId, config.epoch);
-          await journalTx.append([
-            {
-              stream_id: "", // risk-<partition> doesn't have symbol streams
-              seq: 0, // Will be assigned by journal
-              command: submitOrder,
-            } as any,
-          ]);
+        const journalTx = new FencedPgJournal(sql, leaseId, config.epoch);
+        const entry: JournalEntry = {
+          stream_id: "", // risk-<partition> doesn't have symbol streams
+          seq: 0, // Will be assigned by journal
+          command: submitOrder,
+        };
+        await journalTx.append([entry]);
 
-          // Update consumer_offsets (same transaction)
-          await tx.query(
-            `INSERT INTO consumer_offsets (lease_id, topic, partition, next_offset, writer_epoch)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (lease_id, topic, partition)
-             DO UPDATE SET next_offset = $4, writer_epoch = $5`,
-            [leaseId, "orders.submitted", config.partitionId, msg.offset + 1n, config.epoch]
-          );
-        });
+        // Update consumer_offsets
+        await sql.query(
+          `INSERT INTO consumer_offsets (lease_id, topic, partition, next_offset, writer_epoch)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (lease_id, topic, partition)
+           DO UPDATE SET next_offset = $4, writer_epoch = $5`,
+          [leaseId, "orders.submitted", config.partitionId, msg.offset + 1n, config.epoch]
+        );
       } catch (error) {
-        if ((error as any).message?.includes("fenced") || (error as any).message?.includes("epoch")) {
+        const err = error as ConsumerError;
+        if (err.message?.includes("fenced") || err.message?.includes("epoch")) {
           // Fenced: exit process
           console.error("[orders-submitted-consumer] Fenced write, exiting:", error);
           process.exit(1);
@@ -66,7 +91,7 @@ export async function startOrdersSubmittedConsumer(
         throw error;
       }
     },
-    (error: any) => {
+    (error: Error) => {
       console.error("[orders-submitted-consumer] Consumer error:", error);
       throw error;
     }
@@ -89,7 +114,8 @@ export async function recoverOrdersSubmittedOffset(
   );
 
   if (result.rows.length > 0) {
-    return BigInt((result.rows[0] as any).next_offset);
+    const row = result.rows[0] as OffsetRow;
+    return typeof row.next_offset === "string" ? BigInt(row.next_offset) : row.next_offset;
   }
 
   return 0n; // Start from beginning
