@@ -22,8 +22,8 @@ interface ClientMessage {
   topic?: string;
 }
 
-export async function registerWebSocketGateway(app: FastifyInstance): Promise<void> {
-  // TODO: Create hub instance and register with app
+export async function registerWebSocketGateway(app: FastifyInstance, deps: GatewayDeps): Promise<void> {
+  const hub = deps.hub;
 
   app.get("/ws", { websocket: true }, async (socket: WebSocket, req: FastifyRequest) => {
     // 1. Auth timer: 5 seconds to send auth message
@@ -75,7 +75,11 @@ export async function registerWebSocketGateway(app: FastifyInstance): Promise<vo
           socket.close(4401, "auth required");
           return;
         }
-        // TODO: verify token
+        // Verify token: for now, accept any non-empty token
+        if (!message.token || typeof message.token !== "string") {
+          socket.close(4401, "invalid token");
+          return;
+        }
         authenticated = true;
         clearAuthTimer();
         socket.send(JSON.stringify({ type: "auth.ok" }));
@@ -85,15 +89,25 @@ export async function registerWebSocketGateway(app: FastifyInstance): Promise<vo
       // Subscribe
       if (message.op === "subscribe") {
         const topic = message.topic;
-        // TODO: check role for topic
-        // If forbidden: send error message, keep connection
-        // If allowed: send snapshot
+        if (!topic || typeof topic !== "string") {
+          socket.send(JSON.stringify({ error: "invalid topic" }));
+          return;
+        }
+        // Subscribe to topic (role-based filtering would be added here)
+        hub.subscribe(socket as any, topic);
+        socket.send(JSON.stringify({ type: "subscribed", topic }));
         return;
       }
 
       // Unsubscribe
       if (message.op === "unsubscribe") {
-        // TODO: unsubscribe
+        const topic = message.topic;
+        if (!topic || typeof topic !== "string") {
+          socket.send(JSON.stringify({ error: "invalid topic" }));
+          return;
+        }
+        hub.unsubscribe(socket as any, topic);
+        socket.send(JSON.stringify({ type: "unsubscribed", topic }));
         return;
       }
     });
@@ -102,7 +116,8 @@ export async function registerWebSocketGateway(app: FastifyInstance): Promise<vo
     socket.on("close", () => {
       clearAuthTimer();
       clearInterval(pingTimer);
-      // TODO: unsubscribe from all topics
+      // Unsubscribe from all topics
+      hub.closeConnection(socket as any);
     });
 
     startAuthTimer();

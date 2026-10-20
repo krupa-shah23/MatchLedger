@@ -16,6 +16,7 @@ import { registerReconRoutes } from "./routes/recon.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerWebSocketGateway } from "./ws/gateway.js";
+import { Hub } from "./ws/hub.js";
 import type { Config } from "./config.js";
 import type { SqlExecutor } from "@matchledger/projections";
 import type { RuntimeFacade } from "./orders/submit.js";
@@ -32,13 +33,14 @@ export interface AppDeps {
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
+  const hub = new Hub();
 
   // Register plugins
   await app.register(websocketPlugin);
   await app.register(multipartPlugin);
 
   // Register WebSocket gateway first (before other routes)
-  await registerWebSocketGateway(app);
+  await registerWebSocketGateway(app, { hub });
 
   // Register HTTP routes with dependencies
   await registerAuthRoutes(app, { executor: deps.executor, config: deps.config });
