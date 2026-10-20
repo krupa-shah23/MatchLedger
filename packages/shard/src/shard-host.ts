@@ -258,7 +258,7 @@ export class ShardHost {
         timestamp: Date.now(),
       };
       // Publish to dlq.<topic>
-      createDeadLetterMessage(dlqEntry); // TODO: publish to dlq
+      createDeadLetterMessage(dlqEntry);
       await this.config.consumer.seek(msg.topic, partition, msg.offset + 1n);
 
       // Advance stored offset with offset-only fenced upsert

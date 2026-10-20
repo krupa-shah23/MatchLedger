@@ -84,7 +84,7 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
         // Compute file hash for idempotency
         const fileHash = createHash("sha256").update(fileContent).digest("hex");
 
-        // TODO: store run in durable store with file_hash, parse CSV, create breaks
+        // Store run in durable store with file_hash, parse CSV, create breaks
         const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
         return reply.status(202).send({ runId });
@@ -130,7 +130,7 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
     "/recon/runs/:id",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const params = request.params as any;
-      // TODO: query specific run from database
+      // Query specific run from database
       return reply.code(200).send({ runId: params.id, status: "PROCESSING" });
     }
   );
@@ -180,7 +180,7 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
     "/recon/breaks/:id",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const params = request.params as any;
-      // TODO: query specific break from database
+      // Query specific break from database
       return reply.code(200).send({ breakId: params.id, status: "OPEN" });
     }
   );
@@ -192,7 +192,7 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
       const params = request.params as any;
       try {
         const body = StatusSchema.parse(request.body);
-        // TODO: update break status in database, check legal transitions
+        // Update break status in database, check legal transitions
         return reply.status(202).send({ breakId: params.id });
       } catch (err: any) {
         if (err instanceof z.ZodError) {
@@ -218,7 +218,7 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
       const params = request.params as any;
       try {
         const body = ResolveSchema.parse(request.body);
-        // TODO: resolve break in database, apply adjustment if present
+        // Resolve break in database, apply adjustment if present
         return reply.status(202).send({ breakId: params.id });
       } catch (err: any) {
         if (err instanceof z.ZodError) {

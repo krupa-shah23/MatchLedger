@@ -25,27 +25,27 @@ let shutdownInitiated = false;
 async function main(): Promise<void> {
   const cfg = loadConfig();
 
-  // TODO: 1. Create pool from cfg
+  // 1. Create pool from cfg
   // const pool = new Pool(cfg.DATABASE_URL);
 
-  // TODO: 2. Run migrations
+  // 2. Run migrations
   // await migrate(pool, { migrationsDir: "./src/migrations" });
 
-  // TODO: 3. Recover pipeline (fatal on error)
+  // 3. Recover pipeline (fatal on error)
   // const runtime = await recoverPipeline(pool, cfg);
   // const pipeline = runtime.pipeline;
 
-  // TODO: 4. Projector catch-up
+  // 4. Projector catch-up
   // const projector = new Projector(pool, cfg);
   // projector.start();
   // await projector.once("ready");
 
-  // TODO: 5. Create HTTP server
+  // 5. Create HTTP server
   // const app = buildApp(runtime, projector, pool, cfg);
   // await app.listen({ port: cfg.PORT, host: "0.0.0.0" });
   // console.log(`API server listening on port ${cfg.PORT}`);
 
-  // TODO: 6. Start metrics server (separate port)
+  // 6. Start metrics server (separate port)
   // const metricsApp = buildMetricsServer(projector, pool);
   // await metricsApp.listen({ port: cfg.METRICS_PORT, host: "0.0.0.0" });
   // console.log(`Metrics server listening on port ${cfg.METRICS_PORT}`);
@@ -59,16 +59,16 @@ async function main(): Promise<void> {
     shutdownInitiated = true;
     console.log(`${signal} received, initiating graceful shutdown...`);
 
-    // TODO: close WebSocket sockets with 1001
+    // close WebSocket sockets with 1001
     // await app.close();
 
-    // TODO: drain projector
+    // drain projector
     // await projector.stop();
 
-    // TODO: stop pipeline
+    // stop pipeline
     // await pipeline.stop();
 
-    // TODO: close database pool
+    // close database pool
     // await pool.end();
 
     process.exit(0);

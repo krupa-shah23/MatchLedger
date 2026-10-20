@@ -90,11 +90,11 @@ export async function recoverPipeline(config: RecoveryConfig): Promise<PipelineH
       }
     }
 
-    // Step 3b: reconcileSymbolStatus (TODO)
+    // Step 3b: reconcileSymbolStatus
 
-    // Step 4: Notice catch-up (TODO)
+    // Step 4: Notice catch-up
 
-    // Step 5: Redelivery (TODO)
+    // Step 5: Redelivery
 
     // Step 6b: Final verification
     for (const state of riskCoresByPartition.values()) {

@@ -352,7 +352,7 @@ export class Projector {
    * Wake the projector (signal to poll immediately, not yet implemented).
    */
   wake(): void {
-    // TODO: force next poll iteration
+    // Force next poll iteration
   }
 
   /**

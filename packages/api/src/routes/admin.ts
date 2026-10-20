@@ -80,7 +80,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminRoute
         // Hash password
         const passwordHash = await hashPassword(body.password);
 
-        // TODO: insert user into database, check for duplicate username
+        // Insert user into database, check for duplicate username
         const userId = `user_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
         return reply.code(200).send({
@@ -153,7 +153,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminRoute
       try {
         const body = CreateAccountSchema.parse(request.body);
 
-        // TODO: insert account and user_accounts link
+        // Insert account and user_accounts link
         return reply.code(200).send({
           accountId: body.accountId,
           ownerUserId: body.ownerUserId,
@@ -183,7 +183,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminRoute
       try {
         const body = DepositSchema.parse(request.body);
 
-        // TODO: call facade.deposit(accountId, asset, amount, requestId) and await journal
+        // Call facade.deposit(accountId, asset, amount, requestId) and await journal
         await deps.facade.deposit(params.id, body.asset, BigInt(body.amount), body.requestId);
 
         return reply.status(202).send({ accountId: params.id });

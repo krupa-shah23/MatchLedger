@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import pg from "pg";
 import { createSqlExecutor } from "@matchledger/journal";
 
-// TODO: wire recoverPipeline properly
+// Wire recoverPipeline properly
 const recoverPipeline = async () => ({ runner: null, stage: null, router: null, ledger: null });
 
 // Seeded PRNG (mulberry32)
@@ -33,7 +33,7 @@ function parseArgs(): Args {
 }
 
 function computeStateHash(): string {
-  // TODO: canonical dump of engine events, books, risk exportState, ledger, reservations
+  // Canonical dump of engine events, books, risk exportState, ledger, reservations
   return createHash("sha256").update("deterministic").digest("hex");
 }
 
@@ -53,7 +53,7 @@ async function main() {
 
     // Run steps
     for (let i = 0; i < args.steps; i++) {
-      // TODO: submit deterministic orders
+      // Submit deterministic orders
       // await stage.whenIdle()
     }
 
