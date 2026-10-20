@@ -16,12 +16,12 @@ export function Dashboard({ userRole }: DashboardProps) {
   React.useEffect(() => {
     // Redirect to role-specific page
     const routes: Record<string, string> = {
-      TRADER: "/trading",
+      TRADER: "/portfolio",
       RISK: "/risk",
       OPS: "/system",
       ADMIN: "/admin",
     };
-    const path = routes[userRole] || "/trading";
+    const path = routes[userRole] || "/portfolio";
     navigate(path, { replace: true });
   }, [userRole, navigate]);
 
