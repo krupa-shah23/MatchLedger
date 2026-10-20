@@ -63,8 +63,12 @@ export function OrderEntry({ symbol, apiBaseUrl, onOrderSubmitted }: OrderEntryP
 
       // Retry on 409 (conflict - already submitted)
       while (retryCount < 3) {
+        interface OrderResponse {
+          clientOrderId: string;
+          orderId?: string;
+        }
         try {
-          const response = await apiClient.post<any>("/orders", {
+          const response = await apiClient.post<OrderResponse>("/orders", {
             clientOrderId: submissionId,
             symbol,
             side,

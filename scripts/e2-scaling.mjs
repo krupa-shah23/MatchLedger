@@ -10,7 +10,6 @@
  * Output: e2-scaling-results.json
  */
 
-import { spawn } from "node:child_process";
 import { promisify } from "node:util";
 import * as fs from "node:fs";
 
@@ -91,8 +90,9 @@ try {
 /**
  * Run one scenario: K shards, workload type, return metrics.
  */
-async function runScenario(config) {
-  // Placeholder: actual implementation would:
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function runScenario(__config) {
+  // Placeholder: actual implementation would (config for future implementation):
   // 1. Start K shard containers (docker-compose with scale)
   // 2. Start order generator with specified workload
   // 3. Collect metrics for duration

@@ -164,7 +164,7 @@ export function reduce(state: StreamState, event: StreamEvent): StreamResult {
         symbol,
         bids: (payload.bids as Array<[string, string]>) || [],
         asks: (payload.asks as Array<[string, string]>) || [],
-        lastTrade: payload.lastTrade as any || null,
+        lastTrade: (payload.lastTrade as { price: string; quantity: string; time: string } | null) || null,
       };
       newState.market.set(symbol, market);
       break;

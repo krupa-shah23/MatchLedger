@@ -13,13 +13,11 @@
  * Proves: Failover + recovery preserves ordering, no lost orders, no duplicates
  */
 
-import { spawn } from "node:child_process";
 import { createPool } from "pg";
 
 const SEED = process.env.SEED || 42;
 const SHARD_COUNT = 2;
 const SYMBOLS = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META", "NFLX"];
-const PARTITIONS = 4;
 const FLOW_DURATION_MS = 30000; // 30 second seeded flow
 const KILL_DELAY_MS = 10000; // Kill shard A after 10 seconds
 
@@ -103,8 +101,9 @@ async function runUninterruptedScenario(db, seed) {
   console.log(`  Flow complete`);
 }
 
-async function runWithFailover(db, seed) {
-  // Placeholder: Start 2 shards, run scenario, kill shard A
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function runWithFailover(__db, __seed) {
+  // Placeholder: Start 2 shards, run scenario, kill shard A (db and seed for future implementation)
   console.log(`  Starting shard processes...`);
   console.log(`  Running seeded flow...`);
   await new Promise((resolve) => setTimeout(resolve, KILL_DELAY_MS));

@@ -88,7 +88,7 @@ export async function startSimulator(
     return state;
   }
 
-  const ticksPerSec = 10; // 10 ticks per second
+  const ticksPerSec = parseInt(process.env.SIMULATOR_TICKS_PER_SEC ?? "10", 10); // configurable via SIMULATOR_TICKS_PER_SEC
   let tickNumber = 0;
 
   const tickFn = async () => {

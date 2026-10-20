@@ -94,8 +94,13 @@ export class PartitionConsumer {
     this.running = true;
 
     try {
+      interface MessageParams {
+        topic: string;
+        partition: number;
+        message: { value: Buffer; key: Buffer | null };
+      }
       await this.consumer.run({
-        eachMessage: async (params: any) => {
+        eachMessage: async (params: MessageParams) => {
           const { topic, partition, message } = params;
           const msg: ConsumerMessage = {
             topic,

@@ -80,7 +80,7 @@ function TradingPage() {
                 } else {
                     setOrdersError("Failed to load orders");
                 }
-            } catch (err) {
+            } catch {
                 setOrdersError("Error connecting to server");
             } finally {
                 setOrdersLoading(false);
@@ -114,7 +114,7 @@ function TradingPage() {
             } else {
                 alert("Failed to place order");
             }
-        } catch (err) {
+        } catch {
             alert("Error placing order");
         }
     };
@@ -224,7 +224,7 @@ function PortfolioPage() {
                 } else {
                     setError("Failed to load balances");
                 }
-            } catch (err) {
+            } catch {
                 setError("Error connecting to server");
             } finally {
                 setLoading(false);
@@ -289,7 +289,7 @@ function OrderDetailsPage() {
                 if (eventsRes.ok) {
                     setEvents(await eventsRes.json());
                 }
-            } catch (err) {
+            } catch {
                 setError("Error connecting to server");
             } finally {
                 setLoading(false);

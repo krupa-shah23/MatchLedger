@@ -60,12 +60,10 @@ export function mapRiskRecord(
         break;
       }
       case "CancelOrder": {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = cmd as any;
+        const c = cmd as Record<string, unknown>;
         mutations.push({
           type: "UPDATE_ORDER",
-          orderId: c.orderId,
+          orderId: String(c.orderId ?? ""),
           data: { cancel_requested: true },
         });
         break;

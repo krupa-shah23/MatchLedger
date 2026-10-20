@@ -216,7 +216,7 @@ export function RiskPage() {
                       )}
                     </td>
                     <td style={{ padding: 8 }}>{rLog.count}</td>
-                    <td style={{ padding: 8 }}>${(Number(rLog.held) / 100).toFixed(2)}</td>
+                    <td style={{ padding: 8 }}>${(BigInt(rLog.held) / 100n).toString()}</td>
                     <td style={{ padding: 8 }}>
                       <button
                         onClick={() => setSelectedSymbol(breaker.symbol)}

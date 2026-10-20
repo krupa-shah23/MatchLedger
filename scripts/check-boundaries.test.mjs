@@ -6,9 +6,8 @@
  * Run: node scripts/check-boundaries.test.mjs
  */
 
-import { writeFile, unlink, readFile } from "node:fs/promises";
+import { writeFile, readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import path from "node:path";
 
 const testPackagePath = "packages/transport/package.json";
 let originalContent;

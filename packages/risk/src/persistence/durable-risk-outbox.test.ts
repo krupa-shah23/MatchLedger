@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { createSqlExecutor, setUpIsolatedSchema } from "@matchledger/journal";
 import type { IsolatedSchema, SqlExecutor } from "@matchledger/journal";

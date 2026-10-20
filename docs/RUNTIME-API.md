@@ -95,3 +95,32 @@ All use `payload_json` paths (real, queryable):
 | `journal_evt_taker` | `record_type = 'EVENT'` | `payload_json->>'takerOrderId'` | Trade takerOrderId |
 | `journal_evt_maker` | `record_type = 'EVENT'` | `payload_json->>'makerOrderId'` | Trade makerOrderId |
 | `journal_evt_type` | `record_type = 'EVENT'` | `(payload_json->>'type'), seq` | Event type + seq |
+
+## System Endpoints (Demo/Admin)
+
+**File:** `packages/api/src/routes/system.ts` and `packages/api/src/routes/admin.ts`
+
+### Simulator Control (Demo Only)
+
+| Endpoint | Method | Purpose | Response |
+|----------|--------|---------|----------|
+| `/system/simulator` | `GET` | Get simulator status (running, scenario, rate, counters) | `{ running, scenario, ratePerSec, counters: { sent, backedOff } }` |
+| `/system/simulator/start` | `POST` | Start simulator (creates account, deposits, starts flows) | `{ running: true, scenario, ratePerSec }` |
+| `/system/simulator/stop` | `POST` | Stop simulator gracefully | `{ running: false }` |
+
+### Chaos Testing (Demo Only)
+
+| Endpoint | Method | Purpose | Response |
+|----------|--------|---------|----------|
+| `/admin/demo/chaos/kill/:symbol` | `POST` | Kill shard for symbol (triggers failover) | `{ action: 'kill', symbol, status: 'queued' }` |
+| `/admin/demo/chaos/freeze/:symbol` | `POST` | Freeze shard for symbol (SIGSTOP, pauses processing) | `{ action: 'freeze', symbol, status: 'queued', resumeAt: timestamp }` |
+
+### System Status Endpoints
+
+| Endpoint | Method | Purpose | Response |
+|----------|--------|---------|----------|
+| `/system/invariants` | `GET` | Check system invariants (ledger zero-sum, positions, etc.) | `{ valid, ledgerZeroSum, positionsZeroSum, noNegativeAvailable, projectionsEqualRisk }` |
+| `/system/health` | `GET` | Health check (projector lag, pipeline state) | `{ status, projectorLagSeq, pipelineState, ts }` |
+| `/system/shards` | `GET` | Shard status and lease information | `{ shards: [{ leaseId, owner, epoch, isStale, lastSeq, ... }] }` |
+| `/system/recovery` | `GET` | Recovery operation history | `{ recoveries: [{ leaseId, durationMs, snapshotSeq, tailLength, ... }] }` |
+| `/system/metrics/summary` | `GET` | Aggregated metrics from Prometheus | `{ available, commandsPerSec, latencyMs: { p50, p95, p99 }, ... }` |

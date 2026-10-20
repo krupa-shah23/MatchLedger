@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createPool } from "@matchledger/journal";
 import { runMigrations, LeaseStore, createSqlExecutor } from "@matchledger/journal";

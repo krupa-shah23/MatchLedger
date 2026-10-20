@@ -116,8 +116,11 @@ export class ShardHost {
         [leaseId, partition]
       );
 
+      interface OffsetRow {
+        next_offset: string | number | bigint;
+      }
       const nextOffset = offsetRows.rows.length > 0
-        ? BigInt((offsetRows.rows[0] as any).next_offset)
+        ? BigInt((offsetRows.rows[0] as OffsetRow).next_offset)
         : 0n;
 
       await this.config.consumer.seek("orders.accepted", partition, nextOffset);

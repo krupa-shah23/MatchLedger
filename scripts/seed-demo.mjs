@@ -48,7 +48,7 @@ async function seedUsers() {
   console.log("Seeding users...");
   for (const user of DEMO_USERS) {
     try {
-      const result = await post("/auth/register", user);
+      await post("/auth/register", user);
       console.log(`✓ Created ${user.username}`);
     } catch (err) {
       if (err.toString().includes("409") || err.toString().includes("Conflict")) {
@@ -64,7 +64,7 @@ async function seedAccounts() {
   console.log("\nSeeding accounts...");
   for (const account of DEMO_ACCOUNTS) {
     try {
-      const result = await post("/accounts", account);
+      await post("/accounts", account);
       console.log(`✓ Created account ${account.name}`);
     } catch (err) {
       if (err.toString().includes("409")) {
@@ -121,7 +121,7 @@ async function seedOrders(token) {
       });
 
       if (res.ok) {
-        const result = await res.json();
+        await res.json();
         console.log(`✓ Created order ${order.clientOrderId}`);
       } else if (res.status === 409) {
         console.log(`✓ Order ${order.clientOrderId} already exists`);
