@@ -86,6 +86,11 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
 
         // Store run in durable store with file_hash, parse CSV, create breaks
         const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        await deps.executor.query(
+          `INSERT INTO recon_runs (id, account_id, file_hash, uploaded_at, status)
+           VALUES ($1, 'default-account', $2, now(), 'PROCESSING')`,
+          [runId, fileHash]
+        );
 
         return reply.status(202).send({ runId });
       } catch (err) {
@@ -129,9 +134,41 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
   app.get<{ Params: { id: string } }>(
     "/recon/runs/:id",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const params = request.params as any;
-      // Query specific run from database
-      return reply.code(200).send({ runId: params.id, status: "PROCESSING" });
+      try {
+        const params = request.params as any;
+        const result = await deps.executor.query(
+          `SELECT id, account_id, uploaded_at, status FROM recon_runs WHERE id = $1`,
+          [params.id]
+        );
+        if (result.rows.length === 0) {
+          return reply.code(404).type("application/problem+json").send({
+            type: "about:blank#not_found",
+            title: "Run not found",
+            status: 404,
+            code: "not_found",
+            detail: `Run ${params.id} not found`,
+            instance: "/recon/runs/:id",
+            requestId: request.id,
+          });
+        }
+        const row = result.rows[0] as any;
+        return reply.code(200).send({
+          runId: row.id,
+          accountId: row.account_id,
+          uploadedAt: row.uploaded_at,
+          status: row.status,
+        });
+      } catch (err) {
+        return reply.code(500).type("application/problem+json").send({
+          type: "about:blank#internal_error",
+          title: "Failed to get run",
+          status: 500,
+          code: "internal_error",
+          detail: "Database query failed",
+          instance: "/recon/runs/:id",
+          requestId: request.id,
+        });
+      }
     }
   );
 
@@ -179,9 +216,42 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
   app.get<{ Params: { id: string } }>(
     "/recon/breaks/:id",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const params = request.params as any;
-      // Query specific break from database
-      return reply.code(200).send({ breakId: params.id, status: "OPEN" });
+      try {
+        const params = request.params as any;
+        const result = await deps.executor.query(
+          `SELECT id, run_id, account_id, break_type, status FROM recon_breaks WHERE id = $1`,
+          [params.id]
+        );
+        if (result.rows.length === 0) {
+          return reply.code(404).type("application/problem+json").send({
+            type: "about:blank#not_found",
+            title: "Break not found",
+            status: 404,
+            code: "not_found",
+            detail: `Break ${params.id} not found`,
+            instance: "/recon/breaks/:id",
+            requestId: request.id,
+          });
+        }
+        const row = result.rows[0] as any;
+        return reply.code(200).send({
+          breakId: row.id,
+          runId: row.run_id,
+          accountId: row.account_id,
+          type: row.break_type,
+          status: row.status,
+        });
+      } catch (err) {
+        return reply.code(500).type("application/problem+json").send({
+          type: "about:blank#internal_error",
+          title: "Failed to get break",
+          status: 500,
+          code: "internal_error",
+          detail: "Database query failed",
+          instance: "/recon/breaks/:id",
+          requestId: request.id,
+        });
+      }
     }
   );
 
@@ -193,6 +263,10 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
       try {
         const body = StatusSchema.parse(request.body);
         // Update break status in database, check legal transitions
+        await deps.executor.query(
+          `UPDATE recon_breaks SET status = $1 WHERE id = $2`,
+          [body.reason, params.id]
+        );
         return reply.status(202).send({ breakId: params.id });
       } catch (err: any) {
         if (err instanceof z.ZodError) {
@@ -206,7 +280,15 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
             requestId: request.id,
           });
         }
-        throw err;
+        return reply.code(500).type("application/problem+json").send({
+          type: "about:blank#internal_error",
+          title: "Failed to update break status",
+          status: 500,
+          code: "internal_error",
+          detail: "Database update failed",
+          instance: `/recon/breaks/${params.id}/status`,
+          requestId: request.id,
+        });
       }
     }
   );
@@ -219,6 +301,10 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
       try {
         const body = ResolveSchema.parse(request.body);
         // Resolve break in database, apply adjustment if present
+        await deps.executor.query(
+          `UPDATE recon_breaks SET status = 'RESOLVED' WHERE id = $1`,
+          [params.id]
+        );
         return reply.status(202).send({ breakId: params.id });
       } catch (err: any) {
         if (err instanceof z.ZodError) {
@@ -232,7 +318,15 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
             requestId: request.id,
           });
         }
-        throw err;
+        return reply.code(500).type("application/problem+json").send({
+          type: "about:blank#internal_error",
+          title: "Failed to resolve break",
+          status: 500,
+          code: "internal_error",
+          detail: "Database update failed",
+          instance: `/recon/breaks/${params.id}/resolve`,
+          requestId: request.id,
+        });
       }
     }
   );

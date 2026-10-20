@@ -82,6 +82,10 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminRoute
 
         // Insert user into database, check for duplicate username
         const userId = `user_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        await deps.executor.query(
+          `INSERT INTO users (id, username, password_hash, role) VALUES ($1, $2, $3, $4)`,
+          [userId, body.username, passwordHash, body.role]
+        );
 
         return reply.code(200).send({
           userId,
@@ -154,6 +158,15 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminRoute
         const body = CreateAccountSchema.parse(request.body);
 
         // Insert account and user_accounts link
+        await deps.executor.query(
+          `INSERT INTO accounts (id, name) VALUES ($1, $2)`,
+          [body.accountId, body.accountId]
+        );
+        await deps.executor.query(
+          `INSERT INTO user_accounts (user_id, account_id) VALUES ($1, $2)`,
+          [body.ownerUserId, body.accountId]
+        );
+
         return reply.code(200).send({
           accountId: body.accountId,
           ownerUserId: body.ownerUserId,
