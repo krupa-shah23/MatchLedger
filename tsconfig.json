@@ -1,14 +1,24 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/engine-core" },     { "path": "./packages/common" },     { "path": "./packages/common/test" }, { "path": "./packages/shard/test" },
-    { "path": "./packages/journal" }, { "path": "./packages/telemetry" }, { "path": "./packages/shard" },
+    { "path": "./packages/common" },
+    { "path": "./packages/engine-core" },
+    { "path": "./packages/common/test" },
+    { "path": "./packages/journal" },
+    { "path": "./packages/telemetry" },
+    { "path": "./packages/transport" },
     { "path": "./packages/simulator" },
-    { "path": "./packages/risk" }, { "path": "./packages/risk/test" }, { "path": "./packages/ledger" },
+    { "path": "./packages/risk" },
+    { "path": "./packages/ledger" },
+    { "path": "./packages/risk/test" },
+    { "path": "./packages/shard" },
+    { "path": "./packages/shard/test" },
     { "path": "./packages/runtime" },
+    { "path": "./packages/projections" },
+    { "path": "./packages/recon" },
     { "path": "./packages/system-tests" },
-    { "path": "./packages/recon" }, { "path": "./packages/projections" },
     { "path": "./packages/api" },
-    { "path": "./packages/benchmarks" }, { "path": "./web" }
+    { "path": "./packages/benchmarks" },
+    { "path": "./web" }
   ]
 }
