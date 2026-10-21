@@ -373,13 +373,13 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
             }
           }
 
-          const scheduler: Scheduler = (fn, intervalMs) => {
+          const scheduler: Scheduler = (fn: () => void, intervalMs: number) => {
             const interval = setInterval(fn, intervalMs);
             return () => clearInterval(interval);
           };
 
           const submitPort: SubmitPort = {
-            submitOrder: async (order) => {
+            submitOrder: async (order: any) => {
               const cmd = {
                 type: "SubmitOrder",
                 accountId: "simulator-account",
