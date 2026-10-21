@@ -39,9 +39,9 @@ export class PartitionConsumer {
       "group.protocol": "classic",
       "enable.auto.commit": false,
       "isolation.level": "read_committed",
+      "group.instance.id": this.config.groupInstanceId,
       kafkaJS: {
         groupId: this.config.groupId,
-        groupInstanceId: this.config.groupInstanceId,
         autoCommit: false,
         fromBeginning: false,
       },

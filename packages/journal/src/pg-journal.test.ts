@@ -1,19 +1,39 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { Client } from "pg";
 import { createPool } from "./pool.js";
+import { withSchema, uniqueSchemaName } from "./test-schema.js";
 import { PgJournal, JournalSequenceError } from "./pg-journal.js";
 import { PgSnapshotStore } from "./snapshot-store.js";
 import { OrderRequestStore } from "./order-request-store.js";
 import { SeqDeduper } from "@matchledger/common";
 
 const run = process.env.RUN_CONTAINERS === "1" || process.env.RUN_INTEGRATION === "1";
+const baseConnectionString = process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres";
+
+async function createTestSchema(prefix: string): Promise<string> {
+  const schema = uniqueSchemaName(prefix);
+  const bootstrap = new Client({ connectionString: baseConnectionString });
+  await bootstrap.connect();
+  await bootstrap.query(`CREATE SCHEMA ${schema}`);
+  await bootstrap.end();
+  return schema;
+}
+
+async function dropTestSchema(schema: string): Promise<void> {
+  const cleanup = new Client({ connectionString: baseConnectionString });
+  await cleanup.connect();
+  await cleanup.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+  await cleanup.end();
+}
 
 describe.skipIf(!run)("J: Journal", () => {
   let pool: ReturnType<typeof createPool>;
   let journal: PgJournal;
+  let schema: string;
 
   beforeEach(async () => {
-    pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
-    await pool.query("DROP TABLE IF EXISTS journal CASCADE");
+    schema = await createTestSchema("journal_test");
+    pool = createPool({ connectionString: withSchema(baseConnectionString, schema) });
     await pool.query(`CREATE TABLE journal (
       stream_id TEXT NOT NULL, seq BIGINT NOT NULL CHECK (seq >= 1),
       record_type TEXT NOT NULL, idx INTEGER NOT NULL,
@@ -23,6 +43,11 @@ describe.skipIf(!run)("J: Journal", () => {
       PRIMARY KEY (stream_id, seq, record_type, idx)
     )`);
     journal = new PgJournal(pool, 1);
+  });
+
+  afterEach(async () => {
+    await pool.end();
+    await dropTestSchema(schema);
   });
 
   it("J1: Append batch of commands", async () => {
@@ -52,10 +77,11 @@ describe.skipIf(!run)("J: Journal", () => {
 describe.skipIf(!run)("SS: Snapshot Store", () => {
   let pool: ReturnType<typeof createPool>;
   let store: PgSnapshotStore;
+  let schema: string;
 
   beforeEach(async () => {
-    pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
-    await pool.query("DROP TABLE IF EXISTS snapshots CASCADE");
+    schema = await createTestSchema("snapshot_test");
+    pool = createPool({ connectionString: withSchema(baseConnectionString, schema) });
     await pool.query(`CREATE TABLE snapshots (
       stream_id TEXT NOT NULL, last_seq BIGINT NOT NULL,
       last_ts BIGINT NOT NULL, schema_version SMALLINT NOT NULL,
@@ -74,16 +100,18 @@ describe.skipIf(!run)("SS: Snapshot Store", () => {
 
   afterEach(async () => {
     await pool.end();
+    await dropTestSchema(schema);
   });
 });
 
 describe.skipIf(!run)("OR: Order Request Store", () => {
   let pool: ReturnType<typeof createPool>;
   let store: OrderRequestStore;
+  let schema: string;
 
   beforeEach(async () => {
-    pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
-    await pool.query("DROP TABLE IF EXISTS order_requests CASCADE");
+    schema = await createTestSchema("order_request_test");
+    pool = createPool({ connectionString: withSchema(baseConnectionString, schema) });
     await pool.query(`CREATE TABLE order_requests (
       account_id TEXT NOT NULL, client_order_id TEXT NOT NULL,
       order_id TEXT NOT NULL UNIQUE, payload_hash TEXT NOT NULL,
@@ -113,6 +141,7 @@ describe.skipIf(!run)("OR: Order Request Store", () => {
 
   afterEach(async () => {
     await pool.end();
+    await dropTestSchema(schema);
   });
 });
 

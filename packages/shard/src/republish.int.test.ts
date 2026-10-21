@@ -1,31 +1,30 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createPool } from "@matchledger/journal";
-import { runMigrations } from "@matchledger/journal";
-import { createSqlExecutor } from "@matchledger/journal";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { createSqlExecutor, setUpIsolatedSchema } from "@matchledger/journal";
+import type { IsolatedSchema } from "@matchledger/journal";
 import { republish } from "./republish.js";
-import type { Pool } from "pg";
 import type { EventSink } from "@matchledger/common";
 
 const run = process.env.RUN_CONTAINERS === "1" || process.env.RUN_INTEGRATION === "1";
 
 describe.skipIf(!run)("KC: Crash Windows (Republish)", () => {
-  let pool: Pool;
+  let isolated: IsolatedSchema;
+  let pool: IsolatedSchema["pool"];
 
-  beforeEach(async () => {
-    pool = createPool({
-      connectionString:
-        process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres",
-    });
-    await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
-    await pool.query("CREATE SCHEMA IF NOT EXISTS public");
-    await runMigrations(
-      pool,
-      new URL("../../../journal/migrations", import.meta.url).pathname.replace("/dist/", "/src/")
+  beforeAll(async () => {
+    isolated = await setUpIsolatedSchema(
+      process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres",
+      "republish_test",
+      new URL("../../journal/migrations", import.meta.url).pathname.replace("/dist/", "/src/"),
     );
+    pool = isolated.pool;
   });
 
-  afterEach(async () => {
-    await pool.end();
+  beforeEach(async () => {
+    await pool.query("TRUNCATE TABLE shard_leases, journal, published_through");
+  });
+
+  afterAll(async () => {
+    if (isolated) await isolated.teardown();
   });
 
   it("KC5: Republish events after journal commit, before Kafka commit", async () => {
@@ -45,7 +44,7 @@ describe.skipIf(!run)("KC: Crash Windows (Republish)", () => {
       for (let seq = 41; seq <= 44; seq++) {
         await tx.query(
           `INSERT INTO journal (stream_id, seq, record_type, idx, schema_version, ts, writer_epoch, payload_json)
-           VALUES ($1, $2, 'EVENT', 0, 1, now(), 1, $3)`,
+           VALUES ($1, $2, 'EVENT', 0, 1, (extract(epoch from now()) * 1000)::bigint, 1, $3)`,
           [symbol, seq, JSON.stringify({ symbol, seq, events: [`event${seq}`] })]
         );
       }
@@ -70,8 +69,8 @@ describe.skipIf(!run)("KC: Crash Windows (Republish)", () => {
 
     // Should have republished events 41-44
     expect(publishedEvents).toHaveLength(4);
-    expect(publishedEvents[0].seq).toBe(41n);
-    expect(publishedEvents[3].seq).toBe(44n);
+    expect(publishedEvents[0].seq).toBe(41);
+    expect(publishedEvents[3].seq).toBe(44);
   });
 
   it("KC7: Republish same events again (duplicates on topic, consumer dedupes by symbol:seq)", async () => {
@@ -90,7 +89,7 @@ describe.skipIf(!run)("KC: Crash Windows (Republish)", () => {
       for (let seq = 41; seq <= 44; seq++) {
         await tx.query(
           `INSERT INTO journal (stream_id, seq, record_type, idx, schema_version, ts, writer_epoch, payload_json)
-           VALUES ($1, $2, 'EVENT', 0, 1, now(), 1, $3)`,
+           VALUES ($1, $2, 'EVENT', 0, 1, (extract(epoch from now()) * 1000)::bigint, 1, $3)`,
           [symbol, seq, JSON.stringify({ symbol, seq })]
         );
       }
@@ -138,7 +137,7 @@ describe.skipIf(!run)("KC: Crash Windows (Republish)", () => {
       for (let seq = 1; seq <= 3; seq++) {
         await tx.query(
           `INSERT INTO journal (stream_id, seq, record_type, idx, schema_version, ts, writer_epoch, payload_json)
-           VALUES ($1, $2, 'EVENT', 0, 1, now(), 1, $3)`,
+           VALUES ($1, $2, 'EVENT', 0, 1, (extract(epoch from now()) * 1000)::bigint, 1, $3)`,
           [symbol, seq, JSON.stringify({ symbol, seq })]
         );
       }

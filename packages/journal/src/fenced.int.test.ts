@@ -1,28 +1,35 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { createPool } from "./pool.js";
-import { runMigrations } from "./migrate.js";
+import { setUpIsolatedSchema, withSchema } from "./test-schema.js";
+import type { IsolatedSchema } from "./test-schema.js";
 import { LeaseStore } from "./lease-store.js";
 import { FencedPgJournal, FencedWriterError } from "./fenced-pg-journal.js";
 import { createSqlExecutor } from "./sql-executor.js";
-import type { Pool } from "pg";
 
 const run = process.env.RUN_CONTAINERS === "1" || process.env.RUN_INTEGRATION === "1";
 
 describe.skipIf(!run)("LS: Lease Store", () => {
-  let pool: Pool;
+  let isolated: IsolatedSchema;
+  let pool: IsolatedSchema["pool"];
   let store: LeaseStore;
 
-  beforeEach(async () => {
-    pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
-    await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
-    await pool.query("CREATE SCHEMA IF NOT EXISTS public");
-    await runMigrations(pool, new URL("../migrations", import.meta.url).pathname.replace("/dist/", "/src/"));
+  beforeAll(async () => {
+    isolated = await setUpIsolatedSchema(
+      process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres",
+      "lease_store_test",
+      new URL("../migrations", import.meta.url).pathname.replace("/dist/", "/src/"),
+    );
+    pool = isolated.pool;
     const sql = createSqlExecutor(pool);
     store = new LeaseStore(sql);
   });
 
-  afterEach(async () => {
-    await pool.end();
+  beforeEach(async () => {
+    await pool.query("TRUNCATE TABLE shard_leases");
+  });
+
+  afterAll(async () => {
+    if (isolated) await isolated.teardown();
   });
 
   it("LS1: acquire twice for one lease returns epochs 1 then 2", async () => {
@@ -34,8 +41,9 @@ describe.skipIf(!run)("LS: Lease Store", () => {
   });
 
   it("LS2: concurrent acquire from many connections returns distinct increasing epochs", async () => {
-    const pool2 = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
-    const pool3 = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
+    const baseConnectionString = process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres";
+    const pool2 = createPool({ connectionString: withSchema(baseConnectionString, isolated.schema) });
+    const pool3 = createPool({ connectionString: withSchema(baseConnectionString, isolated.schema) });
 
     try {
       const sql1 = createSqlExecutor(pool);
@@ -76,21 +84,28 @@ describe.skipIf(!run)("LS: Lease Store", () => {
 });
 
 describe.skipIf(!run)("FN: Fenced Journal", () => {
-  let pool: Pool;
+  let isolated: IsolatedSchema;
+  let pool: IsolatedSchema["pool"];
   let sql: ReturnType<typeof createSqlExecutor>;
   let store: LeaseStore;
 
-  beforeEach(async () => {
-    pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
-    await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
-    await pool.query("CREATE SCHEMA IF NOT EXISTS public");
-    await runMigrations(pool, new URL("../migrations", import.meta.url).pathname.replace("/dist/", "/src/"));
+  beforeAll(async () => {
+    isolated = await setUpIsolatedSchema(
+      process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres",
+      "fenced_journal_test",
+      new URL("../migrations", import.meta.url).pathname.replace("/dist/", "/src/"),
+    );
+    pool = isolated.pool;
     sql = createSqlExecutor(pool);
+  });
+
+  beforeEach(async () => {
+    await pool.query("TRUNCATE TABLE shard_leases, journal, consumer_offsets, published_through");
     store = new LeaseStore(sql);
   });
 
-  afterEach(async () => {
-    await pool.end();
+  afterAll(async () => {
+    if (isolated) await isolated.teardown();
   });
 
   it("FN1: append with current epoch writes rows with that writer_epoch and upserts offset", async () => {

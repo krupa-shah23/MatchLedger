@@ -18,9 +18,9 @@ export async function checkTopics(brokers: string[], topics: readonly TopicConfi
   try {
     await admin.connect();
 
-    const metadata = await admin.fetchTopicMetadata() as { topics?: Array<{ name: string; partitions: { length: number } }> };
+    const metadata = await admin.fetchTopicMetadata() as Array<{ name: string; partitions: { length: number } }>;
     const existingTopics = new Map(
-      (metadata.topics || []).map((t: { name: string; partitions: { length: number } }) => [t.name, t.partitions.length])
+      metadata.map((t: { name: string; partitions: { length: number } }) => [t.name, t.partitions.length])
     );
 
     const errors: string[] = [];

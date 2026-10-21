@@ -89,17 +89,22 @@ export class TransactionalProducer {
     try {
       const tx = await this.producer.transaction();
       await tx.send({
-        topic: "__test__",
-        messages: [{ key: "test", value: "test" }],
+        topic: "orders.accepted",
+        messages: [{ key: "test", value: "test", partition: 0 }],
       });
       await tx.abort();
       return false;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
+      const type = (error as { type?: string }).type;
       if (
         msg.includes("fenced") ||
         msg.includes("old epoch") ||
-        msg.includes("FENCED")
+        msg.includes("FENCED") ||
+        // librdkafka purges the producer's internal queue as a side effect of
+        // the fatal _FENCED error raised when a newer producer instance with
+        // the same transactional.id has taken over.
+        type === "ERR__PURGE_QUEUE"
       ) {
         return true;
       }

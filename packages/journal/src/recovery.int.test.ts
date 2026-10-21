@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createPool } from "./pool.js";
-import { runMigrations } from "./migrate.js";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { setUpIsolatedSchema } from "./test-schema.js";
+import type { IsolatedSchema } from "./test-schema.js";
 import { PgJournal } from "./pg-journal.js";
 import { PgSnapshotStore } from "./snapshot-store.js";
 import { recoverStream } from "./recovery.js";
@@ -9,19 +9,29 @@ import type { InstrumentConfig } from "@matchledger/engine-core";
 const run = process.env.RUN_CONTAINERS === "1" || process.env.RUN_INTEGRATION === "1";
 
 describe.skipIf(!run)("RC: Recovery", () => {
-  let pool: ReturnType<typeof createPool>;
+  let isolated: IsolatedSchema;
+  let pool: IsolatedSchema["pool"];
   let journal: PgJournal;
   let snapshots: PgSnapshotStore;
   const spec: InstrumentConfig = { symbol: "ABC", tickSize: 1n, lotSize: 1n, maxQuantity: 1000n, maxPrice: 10000n };
 
-  beforeEach(async () => {
-    pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
-    // Drop all tables to start fresh for each test
-    await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
-    await pool.query("CREATE SCHEMA IF NOT EXISTS public");
-    await runMigrations(pool, new URL("../migrations", import.meta.url).pathname.replace("/dist/", "/src/"));
+  beforeAll(async () => {
+    isolated = await setUpIsolatedSchema(
+      process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres",
+      "recovery_test",
+      new URL("../migrations", import.meta.url).pathname.replace("/dist/", "/src/"),
+    );
+    pool = isolated.pool;
     journal = new PgJournal(pool, 1);
     snapshots = new PgSnapshotStore(pool);
+  });
+
+  beforeEach(async () => {
+    await pool.query("TRUNCATE TABLE journal, snapshots");
+  });
+
+  afterAll(async () => {
+    if (isolated) await isolated.teardown();
   });
 
   it("RC1: Empty journal, no snapshot", async () => {
@@ -53,9 +63,5 @@ describe.skipIf(!run)("RC: Recovery", () => {
     const r2 = await recoverStream({ journal, snapshots, symbol: "XYZ", spec: specXYZ });
     expect(r1.lastSeq).toBe(1);
     expect(r2.lastSeq).toBe(1);
-  });
-
-  afterEach(async () => {
-    await pool.end();
   });
 });

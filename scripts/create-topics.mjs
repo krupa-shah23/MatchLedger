@@ -26,7 +26,7 @@ const expectedTopics = [
 async function getExistingTopics() {
   try {
     const metadata = await admin.fetchTopicMetadata();
-    return new Map((metadata.topics || []).map((t) => [t.name, t.partitions.length]));
+    return new Map(metadata.map((t) => [t.name, t.partitions.length]));
   } catch {
     return new Map();
   }

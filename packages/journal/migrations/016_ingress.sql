@@ -6,4 +6,4 @@ ALTER TABLE order_requests ADD COLUMN published_at timestamptz;
 
 -- Index for queries: "find orders with published_at but no trade yet"
 CREATE INDEX idx_order_requests_published_at ON order_requests(published_at)
-WHERE published_at IS NOT NULL AND status = 'PENDING_ACK';
+WHERE published_at IS NOT NULL;

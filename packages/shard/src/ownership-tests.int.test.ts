@@ -1,28 +1,28 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createPool } from "@matchledger/journal";
-import { runMigrations, LeaseStore, createSqlExecutor } from "@matchledger/journal";
-import type { Pool } from "pg";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { LeaseStore, createSqlExecutor, setUpIsolatedSchema } from "@matchledger/journal";
+import type { IsolatedSchema } from "@matchledger/journal";
 
 const run = process.env.RUN_CONTAINERS === "1" || process.env.RUN_INTEGRATION === "1";
 
 describe.skipIf(!run)("OW: Ownership Lifecycle Tests", () => {
-  let pool: Pool;
+  let isolated: IsolatedSchema;
+  let pool: IsolatedSchema["pool"];
 
-  beforeEach(async () => {
-    pool = createPool({
-      connectionString:
-        process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres",
-    });
-    await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
-    await pool.query("CREATE SCHEMA IF NOT EXISTS public");
-    await runMigrations(
-      pool,
-      new URL("../../../journal/migrations", import.meta.url).pathname.replace("/dist/", "/src/")
+  beforeAll(async () => {
+    isolated = await setUpIsolatedSchema(
+      process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres",
+      "ownership_test",
+      new URL("../../journal/migrations", import.meta.url).pathname.replace("/dist/", "/src/"),
     );
+    pool = isolated.pool;
   });
 
-  afterEach(async () => {
-    await pool.end();
+  beforeEach(async () => {
+    await pool.query("TRUNCATE TABLE shard_leases, consumer_offsets");
+  });
+
+  afterAll(async () => {
+    if (isolated) await isolated.teardown();
   });
 
   it("OW1: Lease acquired before recovery prevents zombie writes", async () => {
