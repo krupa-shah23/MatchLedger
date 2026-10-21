@@ -16,8 +16,8 @@ export interface ConsumerMessage {
   value: Buffer;
 }
 
-type KafkaConsumer = unknown; // Kafka consumer type from @confluentinc/kafka-javascript
-type KafkaClient = unknown; // Kafka client type from @confluentinc/kafka-javascript
+type KafkaConsumer = any; // Kafka consumer type from @confluentinc/kafka-javascript
+type KafkaClient = any; // Kafka client type from @confluentinc/kafka-javascript
 
 /**
  * Partition consumer wrapper (Kafka client names per docs/spike-4.md)
@@ -31,11 +31,11 @@ export class PartitionConsumer {
   constructor(private config: PartitionConsumerConfig) {}
 
   async init(): Promise<void> {
-    this.kafka = new Kafka({
+    this.kafka = new (Kafka as any)({
       kafkaJS: { brokers: this.config.brokers },
     });
 
-    this.consumer = this.kafka.consumer({
+    this.consumer = (this.kafka as any).consumer({
       "group.protocol": "classic",
       "enable.auto.commit": false,
       "isolation.level": "read_committed",
@@ -47,7 +47,7 @@ export class PartitionConsumer {
       },
     });
 
-    await this.consumer.connect();
+    await (this.consumer as any).connect();
   }
 
   async assign(topic: string): Promise<void> {
@@ -99,15 +99,15 @@ export class PartitionConsumer {
         partition: number;
         message: { value: Buffer; key: Buffer | null };
       }
-      await this.consumer.run({
-        eachMessage: async (params: MessageParams) => {
+      await (this.consumer as any).run({
+        eachMessage: async (params: any) => {
           const { topic, partition, message } = params;
           const msg: ConsumerMessage = {
             topic,
             partition,
-            offset: BigInt(message.offset),
-            key: message.key ? message.key.toString() : null,
-            value: message.value as Buffer,
+            offset: BigInt((message as any).offset),
+            key: (message as any).key ? (message as any).key.toString() : null,
+            value: (message as any).value as Buffer,
           };
 
           try {

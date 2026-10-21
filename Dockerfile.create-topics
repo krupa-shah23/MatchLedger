@@ -1,0 +1,9 @@
+FROM node:24-alpine
+WORKDIR /app
+# Copy only package files needed to install @confluentinc/kafka-javascript
+COPY package.json package-lock.json ./
+# Install only @confluentinc/kafka-javascript and its dependencies
+RUN npm install --save-exact '@confluentinc/kafka-javascript' --legacy-peer-deps && rm -rf node_modules/.bin
+# Copy the create-topics script
+COPY scripts/create-topics.mjs ./scripts/
+ENTRYPOINT ["node", "scripts/create-topics.mjs"]
