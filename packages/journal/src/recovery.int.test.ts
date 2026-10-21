@@ -18,7 +18,7 @@ describe.skipIf(!run)("RC: Recovery", () => {
     pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
     // Drop all tables to start fresh for each test
     await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
-    await pool.query("CREATE SCHEMA public");
+    await pool.query("CREATE SCHEMA IF NOT EXISTS public");
     await runMigrations(pool, new URL("../migrations", import.meta.url).pathname.replace("/dist/", "/src/"));
     journal = new PgJournal(pool, 1);
     snapshots = new PgSnapshotStore(pool);

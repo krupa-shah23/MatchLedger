@@ -16,7 +16,7 @@ describe.skipIf(!run)("MG: Migrations", () => {
     pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
     // Drop all tables and projections to start fresh
     await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
-    await pool.query("CREATE SCHEMA public");
+    await pool.query("CREATE SCHEMA IF NOT EXISTS public");
   });
 
   it("MG1: Migrations apply in order and are idempotent", async () => {

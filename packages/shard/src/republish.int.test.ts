@@ -17,7 +17,7 @@ describe.skipIf(!run)("KC: Crash Windows (Republish)", () => {
         process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres",
     });
     await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
-    await pool.query("CREATE SCHEMA public");
+    await pool.query("CREATE SCHEMA IF NOT EXISTS public");
     await runMigrations(
       pool,
       new URL("../../../journal/migrations", import.meta.url).pathname.replace("/dist/", "/src/")

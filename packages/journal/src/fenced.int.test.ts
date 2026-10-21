@@ -15,7 +15,7 @@ describe.skipIf(!run)("LS: Lease Store", () => {
   beforeEach(async () => {
     pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
     await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
-    await pool.query("CREATE SCHEMA public");
+    await pool.query("CREATE SCHEMA IF NOT EXISTS public");
     await runMigrations(pool, new URL("../migrations", import.meta.url).pathname.replace("/dist/", "/src/"));
     const sql = createSqlExecutor(pool);
     store = new LeaseStore(sql);
@@ -83,7 +83,7 @@ describe.skipIf(!run)("FN: Fenced Journal", () => {
   beforeEach(async () => {
     pool = createPool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:matchledger@localhost:5432/postgres" });
     await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
-    await pool.query("CREATE SCHEMA public");
+    await pool.query("CREATE SCHEMA IF NOT EXISTS public");
     await runMigrations(pool, new URL("../migrations", import.meta.url).pathname.replace("/dist/", "/src/"));
     sql = createSqlExecutor(pool);
     store = new LeaseStore(sql);

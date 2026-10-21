@@ -64,12 +64,30 @@ async function main(): Promise<void> {
     // Startup checks: verify topics exist and partition counts match
     if (config.TRANSPORT === "kafka") {
       const brokers = config.KAFKA_BROKERS.split(",");
-      await checkTopics(brokers, [
+      const topics = [
         { name: "orders.accepted", partitions: config.SHARD_PARTITIONS },
         { name: "control.commands", partitions: config.SHARD_PARTITIONS },
         { name: "engine.events", partitions: config.SHARD_PARTITIONS },
-      ]);
-      console.log("[shard] Startup checks passed: all topics exist with correct partition counts");
+      ];
+
+      let lastError: Error | null = null;
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+          await checkTopics(brokers, topics);
+          console.log("[shard] Startup checks passed: all topics exist with correct partition counts");
+          break;
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          if (attempt < 5) {
+            console.log(`[shard] Topic check failed (attempt ${attempt}/5), retrying in 2s...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+      }
+
+      if (lastError) {
+        throw lastError;
+      }
     }
 
     // Initialize consumer and shard host
