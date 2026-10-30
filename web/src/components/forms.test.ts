@@ -76,10 +76,12 @@ describe("Order form validation and handling", () => {
   });
 
   it("UF3: New clientOrderId after form edit", () => {
-    let clientOrderId = `c-${Date.now()}`;
+    let counter = 0;
+    let clientOrderId = `c-${counter}`;
 
     const onFormChange = () => {
-      clientOrderId = `c-${Date.now()}`; // New ID
+      counter += 1;
+      clientOrderId = `c-${counter}`; // New ID
     };
 
     const id1 = clientOrderId;
@@ -91,7 +93,7 @@ describe("Order form validation and handling", () => {
   // UF4: 409 shows duplicate ID message
   it("UF4: 409 response shows 'already used with different details'", () => {
     const handleError = (status: number) => {
-      if (status === 409) return "This order ID was used with different details";
+      if (status === 409) return "This id was already used with different details";
       return null;
     };
     expect(handleError(409)).toContain("already used");

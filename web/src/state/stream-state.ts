@@ -1,57 +1,46 @@
 /**
- * Pure reducer for managing order, market, and account state from WebSocket events.
+ * Pure resync reducer for the live WebSocket topics (book.*, trades.*, user.*,
+ * breaker, risk.rejections, system). One instance covers every subscribed topic.
  *
- * Signature: reduce(state, event) -> { state, effects }
+ * reduce(state, message) -> { state, effects }
  *
- * Invariants:
- * - Pure: no side effects, no external I/O
- * - Idempotent: applying the same event twice produces the same result as once
- * - Ordered: events are processed in order; order is guaranteed by subscription
- * - Live: state reflects the live server state; crashes/disconnects mean replay
+ * Rules (WEEK-11.md section 4.9):
+ * - A delta whose epoch differs from the topic's stored epoch means the stream
+ *   was re-sharded or re-owned: resync, don't try to reconcile it.
+ * - A snapshot marked `conflated` replaces state outright; it is not a delta.
+ * - book.* seq is durable-engine seq: monotonic but not necessarily contiguous,
+ *   so a gap alone is not a resync trigger. Only a lower-or-equal seq is dropped.
+ * - user.*, breaker, risk.rejections, system seq must be contiguous; any gap
+ *   (seq > last + 1) forces a resync, because these topics are not safe to miss.
+ * - The reducer never reads a clock, timer, or random source: reconnect backoff
+ *   and the WebSocket itself live in the hook that calls this, not here.
  */
 
-export interface Order {
-  id: string;
-  symbol: string;
-  side: "BUY" | "SELL";
-  quantity: string;
-  quantityFilled: string;
-  effectivePrice: string | null;
-  status: "PENDING_ACK" | "ACCEPTED" | "FILLED" | "PARTIALLY_FILLED" | "CANCELLED" | "REJECTED";
-  reservationId: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+export type TopicStatus = "idle" | "syncing" | "live" | "stale";
 
-export interface MarketData {
-  symbol: string;
-  bids: Array<[price: string, quantity: string]>;
-  asks: Array<[price: string, quantity: string]>;
-  lastTrade: { price: string; quantity: string; time: string } | null;
+export interface TopicState {
+  epoch: number | null;
+  seq: number | null;
+  status: TopicStatus;
+  conflated: boolean;
+  snapshot: unknown;
 }
 
 export interface StreamState {
-  orders: Map<string, Order>;
-  market: Map<string, MarketData>;
-  account: {
-    balance: string;
-    reserved: string;
-    positions: Map<string, string>;
-  };
-  lastEventId: string;
-  lastEventTime: string;
+  topics: Record<string, TopicState>;
 }
 
-export interface StreamEvent {
-  type: string;
-  id: string;
-  timestamp: string;
-  payload: unknown;
-}
+export type IncomingMessage =
+  | { kind: "snapshot"; topic: string; epoch: number; seq: number; conflated?: boolean; data: unknown }
+  | { kind: "delta"; topic: string; epoch: number; seq: number; data: unknown }
+  | { kind: "disconnect" }
+  | { kind: "close"; code: number };
 
 export type Effect =
-  | { type: "refetch"; resource: "orders" | "market" | "account" }
-  | { type: "notify"; message: string; level: "info" | "warning" | "error" };
+  | { type: "REFETCH_SNAPSHOT"; topic: string }
+  | { type: "REFETCH_ALL" }
+  | { type: "LOGOUT" }
+  | { type: "RECONNECT" };
 
 export interface StreamResult {
   state: StreamState;
@@ -59,142 +48,83 @@ export interface StreamResult {
 }
 
 export function createInitialState(): StreamState {
-  return {
-    orders: new Map(),
-    market: new Map(),
-    account: {
-      balance: "0",
-      reserved: "0",
-      positions: new Map(),
-    },
-    lastEventId: "",
-    lastEventTime: "",
-  };
+  return { topics: {} };
 }
 
-export function reduce(state: StreamState, event: StreamEvent): StreamResult {
-  const effects: Effect[] = [];
+function isBookTopic(topic: string): boolean {
+  return topic.startsWith("book.") || topic.startsWith("trades.");
+}
 
-  // Idempotency check: if we've already processed this event, return unchanged
-  if (event.id <= state.lastEventId && event.timestamp <= state.lastEventTime) {
-    return { state, effects };
-  }
+function withTopic(state: StreamState, topic: string, next: TopicState): StreamState {
+  return { topics: { ...state.topics, [topic]: next } };
+}
 
-  const newState = { ...state };
-  newState.orders = new Map(state.orders);
-  newState.market = new Map(state.market);
-  newState.account = { ...state.account, positions: new Map(state.account.positions) };
-  newState.lastEventId = event.id;
-  newState.lastEventTime = event.timestamp;
-
-  const payload = event.payload as Record<string, unknown>;
-
-  switch (event.type) {
-    case "order.placed": {
-      const order: Order = {
-        id: payload.id as string,
-        symbol: payload.symbol as string,
-        side: payload.side as "BUY" | "SELL",
-        quantity: payload.quantity as string,
-        quantityFilled: "0",
-        effectivePrice: null,
-        status: "PENDING_ACK",
-        reservationId: null,
-        createdAt: event.timestamp,
-        updatedAt: event.timestamp,
+export function reduce(state: StreamState, message: IncomingMessage): StreamResult {
+  switch (message.kind) {
+    case "snapshot": {
+      const next: TopicState = {
+        epoch: message.epoch,
+        seq: message.seq,
+        status: "live",
+        conflated: message.conflated === true,
+        snapshot: message.data,
       };
-      newState.orders.set(order.id, order);
-      break;
+      return { state: withTopic(state, message.topic, next), effects: [] };
     }
 
-    case "order.accepted": {
-      const orderId = payload.id as string;
-      const order = newState.orders.get(orderId);
-      if (order) {
-        order.status = "ACCEPTED";
-        order.reservationId = payload.reservationId as string;
-        order.updatedAt = event.timestamp;
+    case "delta": {
+      const existing = state.topics[message.topic];
+      if (!existing) {
+        return { state, effects: [{ type: "REFETCH_SNAPSHOT", topic: message.topic }] };
       }
-      break;
-    }
 
-    case "order.filled": {
-      const orderId = payload.id as string;
-      const order = newState.orders.get(orderId);
-      if (order) {
-        order.quantityFilled = payload.quantityFilled as string;
-        order.effectivePrice = payload.effectivePrice as string;
-        order.status = payload.quantityFilled === order.quantity ? "FILLED" : "PARTIALLY_FILLED";
-        order.updatedAt = event.timestamp;
-
-        // Update account position
-        const symbol = order.symbol;
-        const qtyStr = String(payload.quantityFilled || "0");
-        const qty = BigInt(qtyStr);
-        const current = BigInt(newState.account.positions.get(symbol) || "0");
-        const side = order.side === "BUY" ? 1n : -1n;
-        newState.account.positions.set(symbol, (current + qty * side).toString());
+      if (existing.epoch !== message.epoch) {
+        const syncing: TopicState = { ...existing, status: "syncing" };
+        return {
+          state: withTopic(state, message.topic, syncing),
+          effects: [{ type: "REFETCH_SNAPSHOT", topic: message.topic }],
+        };
       }
-      break;
-    }
 
-    case "order.cancelled": {
-      const orderId = payload.id as string;
-      const order = newState.orders.get(orderId);
-      if (order) {
-        order.status = "CANCELLED";
-        order.updatedAt = event.timestamp;
-      }
-      break;
-    }
-
-    case "order.rejected": {
-      const orderId = payload.id as string;
-      const order = newState.orders.get(orderId);
-      if (order) {
-        order.status = "REJECTED";
-        order.updatedAt = event.timestamp;
-      }
-      break;
-    }
-
-    case "market.update": {
-      const symbol = payload.symbol as string;
-      const market: MarketData = {
-        symbol,
-        bids: (payload.bids as Array<[string, string]>) || [],
-        asks: (payload.asks as Array<[string, string]>) || [],
-        lastTrade: (payload.lastTrade as { price: string; quantity: string; time: string } | null) || null,
-      };
-      newState.market.set(symbol, market);
-      break;
-    }
-
-    case "account.updated": {
-      const balance = payload.balance;
-      const reserved = payload.reserved;
-      if (typeof balance === "string") newState.account.balance = balance;
-      if (typeof reserved === "string") newState.account.reserved = reserved;
-      const positions = payload.positions;
-      if (positions && typeof positions === "object") {
-        newState.account.positions.clear();
-        const posMap = positions as Record<string, unknown>;
-        for (const sym in posMap) {
-          const qty = posMap[sym];
-          if (typeof qty === "string") {
-            newState.account.positions.set(sym, qty);
-          }
+      if (isBookTopic(message.topic)) {
+        if (existing.seq !== null && message.seq <= existing.seq) {
+          return { state, effects: [] };
         }
+        const live: TopicState = { ...existing, seq: message.seq, snapshot: message.data, status: "live" };
+        return { state: withTopic(state, message.topic, live), effects: [] };
       }
-      break;
+
+      const hasGap = existing.seq !== null && message.seq > existing.seq + 1;
+      if (hasGap) {
+        const syncing: TopicState = { ...existing, status: "syncing" };
+        return {
+          state: withTopic(state, message.topic, syncing),
+          effects: [{ type: "REFETCH_SNAPSHOT", topic: message.topic }],
+        };
+      }
+      const live: TopicState = { ...existing, seq: message.seq, snapshot: message.data, status: "live" };
+      return { state: withTopic(state, message.topic, live), effects: [] };
     }
 
-    default: {
-      // Unknown event type - trigger refetch to catch up
-      effects.push({ type: "refetch", resource: "orders" });
-      break;
+    case "disconnect": {
+      const topics: Record<string, TopicState> = {};
+      for (const [topic, topicState] of Object.entries(state.topics)) {
+        topics[topic] = { ...topicState, status: "stale" };
+      }
+      return { state: { topics }, effects: [{ type: "RECONNECT" }] };
+    }
+
+    case "close": {
+      if (message.code === 4401) {
+        return { state, effects: [{ type: "LOGOUT" }] };
+      }
+      if (message.code === 1013) {
+        return { state, effects: [{ type: "REFETCH_ALL" }, { type: "RECONNECT" }] };
+      }
+      if (message.code === 1001) {
+        return { state, effects: [{ type: "RECONNECT" }] };
+      }
+      return { state, effects: [] };
     }
   }
-
-  return { state: newState, effects };
 }

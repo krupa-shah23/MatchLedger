@@ -8,23 +8,29 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
-import { SystemPage } from "./Dashboard";
+import { MemoryRouter } from "react-router";
+import { AuthProvider } from "../auth/AuthProvider.js";
+import { SystemPage } from "./System.js";
 
 // Mock fetch
 const mockFetch = vi.fn();
 global.fetch = mockFetch as any;
 
-// Mock localStorage
-const mockLocalStorage = {
-  getItem: vi.fn(() => "test-token"),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-  clear: vi.fn(),
-};
-Object.defineProperty(global, "localStorage", { value: mockLocalStorage });
+function renderSystemPage() {
+  sessionStorage.setItem("authToken", "test-token");
+  sessionStorage.setItem("authUser", JSON.stringify({ id: "u1", username: "admin1", role: "ADMIN", accountIds: [] }));
+  return render(
+    <MemoryRouter>
+      <AuthProvider>
+        <SystemPage />
+      </AuthProvider>
+    </MemoryRouter>
+  );
+}
 
 describe("UP: System Page (P7)", () => {
   beforeEach(() => {
+    sessionStorage.clear();
     vi.clearAllMocks();
     mockFetch.mockResolvedValue({
       ok: true,
@@ -55,7 +61,7 @@ describe("UP: System Page (P7)", () => {
   });
 
   it("UP15: Render system page with shard table, metrics, invariants, recovery, and simulator", async () => {
-    render(<SystemPage />);
+    renderSystemPage();
 
     // Wait for heading
     await waitFor(() => {
@@ -78,24 +84,22 @@ describe("UP: System Page (P7)", () => {
     expect(screen.getByText("Snapshot Seq")).toBeInTheDocument();
 
     // Check shard data is rendered
-    expect(screen.getByText("shard-0")).toBeInTheDocument();
+    expect(screen.getAllByText("shard-0")[0]).toBeInTheDocument();
     expect(screen.getByText("shard-host-1")).toBeInTheDocument();
   });
 
   it("UP16: Poll API only while document is visible", async () => {
     vi.useFakeTimers();
 
-    render(<SystemPage />);
+    renderSystemPage();
 
-    // Wait for initial fetch
-    await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalled();
-    });
+    // Initial fetch happens synchronously on mount; no need to wait under fake timers.
+    expect(mockFetch).toHaveBeenCalled();
 
     const initialFetchCount = mockFetch.mock.calls.length;
 
     // Advance time by 6 seconds (one interval + 1s)
-    vi.advanceTimersByTime(6000);
+    await vi.advanceTimersByTimeAsync(6000);
 
     // Should have fetched again (visible)
     expect(mockFetch.mock.calls.length).toBeGreaterThan(initialFetchCount);
@@ -107,11 +111,11 @@ describe("UP: System Page (P7)", () => {
     });
     document.dispatchEvent(new Event("visibilitychange"));
 
-    vi.advanceTimersByTime(6000);
+    await vi.advanceTimersByTimeAsync(6000);
     const visibleFetchCount = mockFetch.mock.calls.length;
 
     // Advance time again while hidden - should not fetch
-    vi.advanceTimersByTime(6000);
+    await vi.advanceTimersByTimeAsync(6000);
     expect(mockFetch.mock.calls.length).toBe(visibleFetchCount);
 
     // Restore visibility
@@ -122,9 +126,8 @@ describe("UP: System Page (P7)", () => {
     document.dispatchEvent(new Event("visibilitychange"));
 
     // Should fetch again when visible
-    await waitFor(() => {
-      expect(mockFetch.mock.calls.length).toBeGreaterThan(visibleFetchCount);
-    });
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(mockFetch.mock.calls.length).toBeGreaterThan(visibleFetchCount);
 
     vi.useRealTimers();
   });

@@ -40,7 +40,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(multipartPlugin);
 
   // Register WebSocket gateway first (before other routes)
-  await registerWebSocketGateway(app, { hub });
+  await registerWebSocketGateway(app, { hub, config: deps.config });
 
   // Register HTTP routes with dependencies
   await registerAuthRoutes(app, { executor: deps.executor, config: deps.config });

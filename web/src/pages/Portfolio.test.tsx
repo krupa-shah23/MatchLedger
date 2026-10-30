@@ -1,58 +1,111 @@
 /**
- * UP7-UP8: Portfolio page (cash, positions, null mark)
+ * UP7-UP8: Portfolio page, against the real PortfolioPage.
  */
-
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import { BrowserRouter } from "react-router";
-import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
+import { AuthProvider } from "../auth/AuthProvider.js";
+import { PortfolioPage } from "./Portfolio.js";
 
-// Mock portfolio page
-const PortfolioPage = () => (
-  <div>
-    <h1>Portfolio</h1>
-    <div data-testid="cash-card">Cash: $10,000.00</div>
-    <div data-testid="positions">
-      <div>AAPL: 100 shares</div>
-      <div>Unrealized P&L: —</div>
-    </div>
-    <div data-testid="held-funds">Held by symbol</div>
-    <div data-testid="reservations">Reservations</div>
-  </div>
-);
+function renderPortfolio(role: "TRADER" | "RISK" = "TRADER") {
+  sessionStorage.setItem("authToken", "tok");
+  sessionStorage.setItem("authUser", JSON.stringify({ id: "u1", username: "t1", role, accountIds: ["acc-1"] }));
+  render(
+    <MemoryRouter>
+      <AuthProvider>
+        <PortfolioPage />
+      </AuthProvider>
+    </MemoryRouter>
+  );
+}
 
 describe("UP: Portfolio Page", () => {
-  let queryClient: QueryClient;
-
   beforeEach(() => {
-    queryClient = new QueryClient();
+    sessionStorage.clear();
+    vi.restoreAllMocks();
   });
 
-  it("UP7: Portfolio shows cash card, held-by-symbol, positions, reservations", async () => {
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <PortfolioPage />
-        </BrowserRouter>
-      </QueryClientProvider>
+  it("UP7: shows cash card, held-by-symbol, positions, and reservations from real endpoints", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("/balances")) {
+          return new Response(
+            JSON.stringify({ total: "500000000", held: "150000000", available: "350000000", heldBy: { AAPL: "Open order" } }),
+            { status: 200 }
+          );
+        }
+        if (url.includes("/positions")) {
+          return new Response(
+            JSON.stringify([{ symbol: "AAPL", quantity: "500", avgCost: "150000000", mark: "155000000", unrealizedPnL: "2500000", realizedPnL: "500000" }]),
+            { status: 200 }
+          );
+        }
+        if (url.includes("/reservations")) {
+          return new Response(JSON.stringify([{ id: "res-1", symbol: "NVDA", side: "BUY", quantity: "50", estimate: "75000000" }]), { status: 200 });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      })
     );
 
-    expect(screen.getByTestId("cash-card")).toBeInTheDocument();
-    expect(screen.getByTestId("positions")).toBeInTheDocument();
-    expect(screen.getByTestId("held-funds")).toBeInTheDocument();
-    expect(screen.getByTestId("reservations")).toBeInTheDocument();
+    renderPortfolio();
+
+    await waitFor(() => expect(screen.getByText("Cash")).toBeInTheDocument());
+    expect(screen.getByText("Held By Position")).toBeInTheDocument();
+    expect(screen.getByText("AAPL")).toBeInTheDocument();
+    expect(screen.getByText("Reservations")).toBeInTheDocument();
   });
 
-  it("UP8: Unrealized P&L shows em dash when null", async () => {
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <PortfolioPage />
-        </BrowserRouter>
-      </QueryClientProvider>
+  it("UP8: a null mark renders an em dash for both mark and unrealized P&L, never 0", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("/balances")) return new Response(JSON.stringify({ total: "0", held: "0", available: "0" }), { status: 200 });
+        if (url.includes("/positions")) {
+          return new Response(
+            JSON.stringify([{ symbol: "TSLA", quantity: "100", avgCost: "200000000", mark: null, unrealizedPnL: null, realizedPnL: "-1000000" }]),
+            { status: 200 }
+          );
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      })
     );
 
-    expect(screen.getByText("Unrealized P&L: —")).toBeInTheDocument();
+    renderPortfolio();
+
+    await waitFor(() => expect(screen.getByText("TSLA")).toBeInTheDocument());
+    const dashes = screen.getAllByText("—");
+    expect(dashes.length).toBe(2); // mark and unrealized P&L
+  });
+
+  it("RISK must pick an account before the portfolio loads", () => {
+    sessionStorage.setItem("authToken", "tok");
+    sessionStorage.setItem("authUser", JSON.stringify({ id: "u1", username: "r1", role: "RISK", accountIds: [] }));
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <PortfolioPage />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText(/Pick an account/)).toBeInTheDocument();
+  });
+
+  it("empty account shows 0.00 balances, never blank or null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("/balances")) return new Response(JSON.stringify({ total: "0", held: "0", available: "0" }), { status: 200 });
+        return new Response(JSON.stringify([]), { status: 200 });
+      })
+    );
+
+    renderPortfolio();
+
+    await waitFor(() => expect(screen.getByText("Cash")).toBeInTheDocument());
+    expect(screen.getByText("No positions")).toBeInTheDocument();
+    expect(screen.getAllByText(/\$0\.00/).length).toBeGreaterThan(0);
   });
 });

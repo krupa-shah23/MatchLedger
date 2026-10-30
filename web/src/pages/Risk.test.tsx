@@ -8,20 +8,28 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
-import { RiskPage } from "./Dashboard";
+import { MemoryRouter } from "react-router";
+import { AuthProvider } from "../auth/AuthProvider.js";
+import { RiskPage } from "./Risk.js";
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch as any;
 
-const mockLocalStorage = {
-  getItem: vi.fn(() => "test-token"),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-};
-Object.defineProperty(global, "localStorage", { value: mockLocalStorage });
+function renderRiskPage() {
+  sessionStorage.setItem("authToken", "test-token");
+  sessionStorage.setItem("authUser", JSON.stringify({ id: "u1", username: "risk1", role: "RISK", accountIds: [] }));
+  return render(
+    <MemoryRouter>
+      <AuthProvider>
+        <RiskPage />
+      </AuthProvider>
+    </MemoryRouter>
+  );
+}
 
 describe("UP: Risk Console (P5)", () => {
   beforeEach(() => {
+    sessionStorage.clear();
     vi.clearAllMocks();
   });
 
@@ -49,7 +57,7 @@ describe("UP: Risk Console (P5)", () => {
       }),
     });
 
-    render(<RiskPage />);
+    renderRiskPage();
 
     await waitFor(() => {
       expect(screen.getByText("Risk Console (P5)")).toBeInTheDocument();
@@ -57,8 +65,8 @@ describe("UP: Risk Console (P5)", () => {
 
     // Check breaker table
     expect(screen.getByText("Breakers")).toBeInTheDocument();
-    expect(screen.getByText("Symbol")).toBeInTheDocument();
-    expect(screen.getByText("ACME")).toBeInTheDocument();
+    expect(screen.getAllByText("Symbol")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("ACME")[0]).toBeInTheDocument();
     expect(screen.getByText("ACTIVE")).toBeInTheDocument();
 
     // Check incident clock columns
@@ -78,12 +86,12 @@ describe("UP: Risk Console (P5)", () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({
-        breakers: [],
+        breakers: [{ symbol: "ACME", status: "ACTIVE", incidentStartTs: Date.now() - 1000, count: 1 }],
         rejections: [],
       }),
     });
 
-    render(<RiskPage />);
+    renderRiskPage();
 
     await waitFor(() => {
       expect(screen.getByText("Halt/Resume")).toBeInTheDocument();
@@ -93,8 +101,12 @@ describe("UP: Risk Console (P5)", () => {
     expect(screen.getByText("Halt Symbol")).toBeInTheDocument();
     expect(screen.getByText("Resume Symbol")).toBeInTheDocument();
 
+    // Select the halted symbol from its row to reveal the resume form
+    const rowResumeButtons = screen.getAllByText("Resume");
+    rowResumeButtons[0]!.click();
+
     // Check mandatory reason requirement
-    const reasons = screen.getAllByPlaceholderText(/Why are you/);
+    const reasons = await screen.findAllByPlaceholderText(/Why are you/);
     expect(reasons.length).toBeGreaterThan(0);
 
     // Resume button should mention HALF_OPEN

@@ -8,11 +8,11 @@ import { formatMoney, formatQuantity, formatTime, estimateReservation, cumulativ
 
 describe("Money Utilities (UZ1-UZ4)", () => {
   it("UZ1: formatMoney displays USD currency with proper formatting", () => {
-    expect(formatMoney(1500000n)).toBe("$15.00");
+    expect(formatMoney(1500000n)).toBe("$15000.00");
     expect(formatMoney(100n)).toBe("$1.00");
     expect(formatMoney(1n)).toBe("$0.01");
     expect(formatMoney(0n)).toBe("$0.00");
-    expect(formatMoney(-1500000n)).toBe("-$15.00");
+    expect(formatMoney(-1500000n)).toBe("-$15000.00");
   });
 
   it("UZ2: formatQuantity handles string and number inputs", () => {
@@ -24,8 +24,8 @@ describe("Money Utilities (UZ1-UZ4)", () => {
   });
 
   it("UZ3: estimateReservation calculates qty * price (MARKET = 0)", () => {
-    expect(estimateReservation("100", "1500000")).toBe(150000000000n);
-    expect(estimateReservation(100, "1500000")).toBe(150000000000n);
+    expect(estimateReservation("100", "1500000")).toBe(150000000n);
+    expect(estimateReservation(100, "1500000")).toBe(150000000n);
     expect(estimateReservation("100", null)).toBe(0n); // MARKET order
     expect(estimateReservation("100", "null")).toBe(0n);
   });

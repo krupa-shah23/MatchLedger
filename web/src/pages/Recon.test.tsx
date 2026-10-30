@@ -8,20 +8,29 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
-import { ReconPage } from "./Dashboard";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
+import { AuthProvider } from "../auth/AuthProvider.js";
+import { ReconPage } from "./Recon.js";
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch as any;
 
-const mockLocalStorage = {
-  getItem: vi.fn(() => "test-token"),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-};
-Object.defineProperty(global, "localStorage", { value: mockLocalStorage });
+function renderReconPage() {
+  sessionStorage.setItem("authToken", "test-token");
+  sessionStorage.setItem("authUser", JSON.stringify({ id: "u1", username: "ops1", role: "OPS", accountIds: [] }));
+  return render(
+    <MemoryRouter>
+      <AuthProvider>
+        <ReconPage />
+      </AuthProvider>
+    </MemoryRouter>
+  );
+}
 
 describe("UP: Reconciliation (P6)", () => {
   beforeEach(() => {
+    sessionStorage.clear();
     vi.clearAllMocks();
   });
 
@@ -51,7 +60,7 @@ describe("UP: Reconciliation (P6)", () => {
       }),
     });
 
-    render(<ReconPage />);
+    renderReconPage();
 
     await waitFor(() => {
       expect(screen.getByText("Reconciliation (P6)")).toBeInTheDocument();
@@ -95,7 +104,7 @@ describe("UP: Reconciliation (P6)", () => {
       }),
     });
 
-    render(<ReconPage />);
+    renderReconPage();
 
     await waitFor(() => {
       expect(screen.getByText("Breaks (1)")).toBeInTheDocument();
@@ -119,34 +128,38 @@ describe("UP: Reconciliation (P6)", () => {
     expect(screen.getByPlaceholderText(/Why is this break being resolved/)).toBeInTheDocument();
 
     // Resolve button should be disabled without reason
-    const resolveBtn = screen.getByText("Resolve");
-    expect(resolveBtn).toBeDisabled();
+    const resolveButtonsAfterOpen = screen.getAllByText("Resolve");
+    const submitResolveBtn = resolveButtonsAfterOpen[resolveButtonsAfterOpen.length - 1];
+    expect(submitResolveBtn).toBeDisabled();
   });
 
   it("UP14: Show 400, 409, 413 errors inline for statement upload", async () => {
-    // Test 409 (duplicate)
+    // Mount fetches (runs/breaks list) consume this default resolved value first.
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ runs: [], breaks: [] }) });
+
+    renderReconPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Upload")).toBeInTheDocument();
+    });
+
+    // Now queue the 409 response for the upload POST specifically.
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 409,
       json: async () => ({ detail: "Already processed" }),
     });
 
-    render(<ReconPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Upload")).toBeInTheDocument();
-    });
-
     // Simulate file selection and upload
-    const fileInput = screen.getByDisplayValue("") as HTMLInputElement;
-    const form = fileInput.closest("form");
-    if (form) {
-      form.dispatchEvent(new Event("submit", { bubbles: true }));
-    }
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["a,b,c"], "statement.csv", { type: "text/csv" });
+    await userEvent.upload(fileInput, file);
+    const form = fileInput.closest("form") as HTMLFormElement;
+    form.requestSubmit();
 
     // 409 error should show inline
     await waitFor(() => {
-      expect(screen.getByText("Statement already processed")).toBeInTheDocument();
+      expect(screen.getByText(/Statement already processed/)).toBeInTheDocument();
     });
 
     // Test 413 (too large)

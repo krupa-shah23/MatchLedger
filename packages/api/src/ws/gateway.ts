@@ -5,11 +5,14 @@
 
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "@fastify/websocket";
+import type { ApiRole } from "@matchledger/common";
 import { Hub } from "./hub.js";
+import { verifyToken } from "../auth/tokens.js";
+import type { Config } from "../config.js";
 
 export interface GatewayDeps {
   hub: Hub;
-  // verifyToken will come from auth plugin
+  config: Config;
 }
 
 interface AuthMessage {
@@ -22,6 +25,18 @@ interface ClientMessage {
   topic?: string;
 }
 
+/**
+ * Topics not safe for every authenticated role to read. Anything not
+ * listed (book.*, trades.*, breaker, user.*) is open to any authenticated
+ * connection; user.* is scoped to the connection's own account on the
+ * hub's publish side, not by a role check here.
+ */
+function topicAllowedForRole(topic: string, role: ApiRole): boolean {
+  if (topic === "risk.rejections") return role === "RISK" || role === "ADMIN";
+  if (topic === "system") return role === "ADMIN";
+  return true;
+}
+
 export async function registerWebSocketGateway(app: FastifyInstance, deps: GatewayDeps): Promise<void> {
   const hub = deps.hub;
 
@@ -29,6 +44,7 @@ export async function registerWebSocketGateway(app: FastifyInstance, deps: Gatew
     // 1. Auth timer: 5 seconds to send auth message
     let authTimer: ReturnType<typeof setTimeout> | undefined;
     let authenticated = false;
+    let role: ApiRole | undefined;
 
     const startAuthTimer = () => {
       authTimer = setTimeout(() => {
@@ -75,14 +91,22 @@ export async function registerWebSocketGateway(app: FastifyInstance, deps: Gatew
           socket.close(4401, "auth required");
           return;
         }
-        // Verify token: for now, accept any non-empty token
         if (!message.token || typeof message.token !== "string") {
           socket.close(4401, "invalid token");
           return;
         }
-        authenticated = true;
-        clearAuthTimer();
-        socket.send(JSON.stringify({ type: "auth.ok" }));
+
+        const secret = new TextEncoder().encode(deps.config.JWT_SECRET);
+        verifyToken({ secret, ttlSeconds: deps.config.JWT_TTL_SECONDS }, message.token)
+          .then((claims) => {
+            role = claims.role;
+            authenticated = true;
+            clearAuthTimer();
+            socket.send(JSON.stringify({ type: "auth.ok" }));
+          })
+          .catch(() => {
+            socket.close(4401, "invalid token");
+          });
         return;
       }
 
@@ -93,7 +117,10 @@ export async function registerWebSocketGateway(app: FastifyInstance, deps: Gatew
           socket.send(JSON.stringify({ error: "invalid topic" }));
           return;
         }
-        // Subscribe to topic (role-based filtering would be added here)
+        if (!role || !topicAllowedForRole(topic, role)) {
+          socket.send(JSON.stringify({ error: "forbidden", topic }));
+          return;
+        }
         hub.subscribe(socket as any, topic);
         socket.send(JSON.stringify({ type: "subscribed", topic }));
         return;

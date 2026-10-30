@@ -42,4 +42,5 @@ export { serializeRiskState, deserializeRiskState } from "./codec/risk-state.js"
 export { CodecError } from "./codec/codec-error.js";
 export { CURRENT_VERSION, UnknownSchemaVersionError, registerUpcaster, getUpcaster } from "./codec/versioning.js";
 export * from "./ui-schemas.js";
-export { PAGE_ROLES, canAccessPage } from "./ui-config.js";
+export { PAGE_ROLES, canAccessPage, canWritePage } from "./ui-config.js";
+export type { PageRoleEntry, Role } from "./ui-config.js";

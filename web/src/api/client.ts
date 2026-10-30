@@ -3,14 +3,25 @@
  * Handles bearer token auth, error parsing, 401 retry, and Retry-After.
  */
 
-import type { ErrorResponse } from "@matchledger/common";
+export interface ProblemDetails {
+  type?: string;
+  title?: string;
+  status?: number;
+  code?: string;
+  detail?: string;
+  instance?: string;
+  requestId?: string;
+  errors?: Array<{ path: string; message: string }>;
+}
 
 export class ApiError extends Error {
   constructor(
     public status: number,
     public code: string,
     message: string,
-    public retryAfterMs?: number
+    public retryAfterMs?: number,
+    public requestId?: string,
+    public fieldErrors?: Array<{ path: string; message: string }>
   ) {
     super(message);
     this.name = "ApiError";
@@ -32,10 +43,17 @@ export class ApiClient {
     this.config = config;
   }
 
-  private parseError(status: number, body: unknown): { code: string; message: string } {
-    if (typeof body === "object" && body !== null && "error" in body) {
-      const error = body as ErrorResponse;
-      return { code: "API_ERROR", message: error.error };
+  private parseProblem(status: number, body: unknown): { code: string; message: string; requestId?: string; fieldErrors?: Array<{ path: string; message: string }> } {
+    if (typeof body === "object" && body !== null) {
+      const problem = body as ProblemDetails;
+      if (problem.code) {
+        return {
+          code: problem.code,
+          message: problem.detail ?? problem.title ?? `HTTP ${status}`,
+          requestId: problem.requestId,
+          fieldErrors: problem.errors,
+        };
+      }
     }
     return { code: `HTTP_${status}`, message: `HTTP ${status}` };
   }
@@ -59,13 +77,16 @@ export class ApiClient {
   }
 
   async fetch<T>(method: string, path: string, body?: unknown): Promise<T> {
+    return this.fetchOnce<T>(method, path, body, false);
+  }
+
+  private async fetchOnce<T>(method: string, path: string, body: unknown, isRetry: boolean): Promise<T> {
     const url = `${this.config.baseUrl}${path}`;
     const token = this.config.getToken();
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
@@ -76,43 +97,46 @@ export class ApiClient {
       body: body ? JSON.stringify(body) : undefined,
     });
 
-    // Handle 429 (rate limited) and 503 (service unavailable)
     if (response.status === 429 || response.status === 503) {
       const retryAfterMs = this.getRetryAfter(response.headers);
       const errorBody = await response.json().catch(() => ({}));
-      const { message } = this.parseError(response.status, errorBody);
-      throw new ApiError(response.status, "RATE_LIMITED", message, retryAfterMs);
+      const { code, message } = this.parseProblem(response.status, errorBody);
+      throw new ApiError(response.status, code, message, retryAfterMs);
     }
 
-    // Handle 401 (unauthorized)
     if (response.status === 401) {
-      // Call onUnauthorized to trigger logout/redirect
-      if (this.config.onUnauthorized && !this.refreshing) {
-        this.refreshing = true;
-        this.refreshPromise = this.config.onUnauthorized().finally(() => {
-          this.refreshing = false;
-          this.refreshPromise = null;
-        });
+      if (isRetry) {
+        const errorBody = await response.json().catch(() => ({}));
+        const { message } = this.parseProblem(response.status, errorBody);
+        throw new ApiError(response.status, "UNAUTHORIZED", message);
       }
 
-      // Wait for any in-flight unauthorized handling
-      if (this.refreshPromise) {
-        await this.refreshPromise;
+      // One automatic refresh, then retry this request exactly once (UA2).
+      if (this.config.onUnauthorized) {
+        if (!this.refreshing) {
+          this.refreshing = true;
+          this.refreshPromise = this.config.onUnauthorized().finally(() => {
+            this.refreshing = false;
+            this.refreshPromise = null;
+          });
+        }
+        if (this.refreshPromise) {
+          await this.refreshPromise;
+        }
+        return this.fetchOnce<T>(method, path, body, true);
       }
 
       const errorBody = await response.json().catch(() => ({}));
-      const { message } = this.parseError(response.status, errorBody);
+      const { message } = this.parseProblem(response.status, errorBody);
       throw new ApiError(response.status, "UNAUTHORIZED", message);
     }
 
-    // Handle other errors
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({}));
-      const { code, message } = this.parseError(response.status, errorBody);
-      throw new ApiError(response.status, code, message);
+      const { code, message, requestId, fieldErrors } = this.parseProblem(response.status, errorBody);
+      throw new ApiError(response.status, code, message, undefined, requestId, fieldErrors);
     }
 
-    // Success
     return (await response.json()) as T;
   }
 

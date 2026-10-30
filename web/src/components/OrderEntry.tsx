@@ -5,6 +5,8 @@
 
 import React, { useState } from "react";
 import { ApiClient, ApiError } from "../api/client.js";
+import { parseDecimalToMinor } from "@matchledger/common";
+import { estimateReservation, formatMoney } from "../utils/money.js";
 
 interface OrderEntryProps {
   symbol: string;
@@ -39,15 +41,19 @@ export function OrderEntry({ symbol, apiBaseUrl, onOrderSubmitted }: OrderEntryP
 
   const canSubmit = !qtyError && !priceError && !marketPriceError && !clientIdError;
 
-  // Update estimate
+  // Estimate = price x quantity as bigint, never floating point. No estimate for MARKET.
   React.useEffect(() => {
-    if (orderType === "LIMIT" && qtyNum > 0 && priceNum > 0) {
-      const est = BigInt(qtyNum) * BigInt(Math.floor(priceNum * 1000000));
-      setEstimate(est.toString());
-    } else if (orderType === "MARKET") {
+    if (orderType === "LIMIT" && qtyNum > 0 && priceStr) {
+      try {
+        const priceMinor = parseDecimalToMinor(priceStr, 2);
+        setEstimate(estimateReservation(qtyNum, priceMinor.toString()).toString());
+      } catch {
+        setEstimate(null);
+      }
+    } else {
       setEstimate(null);
     }
-  }, [quantity, price, orderType, qtyNum, priceNum]);
+  }, [quantity, price, orderType, qtyNum, priceStr]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -78,7 +84,7 @@ export function OrderEntry({ symbol, apiBaseUrl, onOrderSubmitted }: OrderEntryP
             price: orderType === "LIMIT" ? price : undefined,
           });
 
-          onOrderSubmitted?.(response.orderId);
+          if (response.orderId) onOrderSubmitted?.(response.orderId);
           setQuantity("");
           setPrice("");
           setClientOrderId("");
@@ -157,9 +163,14 @@ export function OrderEntry({ symbol, apiBaseUrl, onOrderSubmitted }: OrderEntryP
         </div>
       )}
 
-      {estimate && (
+      {orderType === "LIMIT" && estimate && (
         <div style={{ backgroundColor: "#f5f5f5", padding: 8, borderRadius: 4, fontSize: 12 }}>
-          <strong>Estimate:</strong> ${(() => { const bigVal = BigInt(estimate); const dollars = bigVal / 1000000n; const cents = (bigVal % 1000000n) / 10000n; return `${dollars}.${String(cents).padStart(2, "0")}`; })()}
+          <strong>Estimate:</strong> {formatMoney(BigInt(estimate))}
+        </div>
+      )}
+      {orderType === "MARKET" && (
+        <div style={{ fontSize: 12, color: "#666" }}>
+          No estimate for MARKET orders; the cap appears after acceptance.
         </div>
       )}
 

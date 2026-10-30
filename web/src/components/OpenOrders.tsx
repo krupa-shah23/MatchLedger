@@ -25,12 +25,12 @@ export function OpenOrders({ orders, apiBaseUrl, onCancelRequested }: OpenOrders
 
   const openOrders = orders.filter((o) => !["FILLED", "CANCELLED", "REJECTED"].includes(o.status));
 
-  async function handleCancel(orderId: string) {
+  async function handleCancel(id: string) {
     try {
-      setCancellingId(orderId);
+      setCancellingId(id);
       setCancelError(null);
-      await apiClient.delete(`/orders/${orderId}`);
-      onCancelRequested?.(orderId);
+      await apiClient.delete(`/orders/${id}`);
+      onCancelRequested?.(id);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setCancelError("Order already finished");
@@ -65,35 +65,35 @@ export function OpenOrders({ orders, apiBaseUrl, onCancelRequested }: OpenOrders
         </thead>
         <tbody>
           {openOrders.map((order) => (
-            <React.Fragment key={order.orderId}>
+            <React.Fragment key={order.id}>
               <tr style={{ borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: 8 }}>{order.orderId.substring(0, 8)}...</td>
+                <td style={{ padding: 8 }}>{order.id.substring(0, 8)}...</td>
                 <td style={{ padding: 8 }}>{order.symbol}</td>
                 <td style={{ padding: 8 }}>
                   <strong>{order.side}</strong>
                 </td>
                 <td style={{ padding: 8 }}>{order.quantity}</td>
                 <td style={{ padding: 8 }}>{order.filledQty}</td>
-                <td style={{ padding: 8 }}>{order.price || "—"}</td>
+                <td style={{ padding: 8 }}>—</td>
                 <td style={{ padding: 8, fontSize: 12 }}>
                   <code>{order.status}</code>
                 </td>
                 <td style={{ padding: 8 }}>
                   <button
-                    onClick={() => handleCancel(order.orderId)}
+                    onClick={() => handleCancel(order.id)}
                     disabled={
-                      order.status === "CANCEL_REQUESTED" || cancellingId === order.orderId
+                      order.status === "CANCEL_REQUESTED" || cancellingId === order.id
                     }
                     style={{
                       padding: "4px 8px",
                       fontSize: 12,
                       cursor:
-                        order.status === "CANCEL_REQUESTED" || cancellingId === order.orderId
+                        order.status === "CANCEL_REQUESTED" || cancellingId === order.id
                           ? "not-allowed"
                           : "pointer",
                     }}
                   >
-                    {cancellingId === order.orderId ? "Cancelling..." : "Cancel"}
+                    {cancellingId === order.id ? "Cancelling..." : "Cancel"}
                   </button>
                 </td>
               </tr>

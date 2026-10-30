@@ -1,142 +1,165 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { canAccessPage, canWritePage, PAGE_ROLES } from "@matchledger/common";
+import { ApiClient, ApiError } from "../api/client.js";
 
-describe("Auth and API client", () => {
-  // UG1: Route guards check PAGE_ROLES
-  it("UG1: Route guard allows visible roles only", () => {
-    const PAGE_ROLES = {
-      "/trading": ["TRADER"],
-      "/risk": ["RISK_OFFICER", "ADMIN"],
-      "/system": ["ADMIN"],
-    };
-
-    const canView = (path: string, role: string) => {
-      const allowedRoles = PAGE_ROLES[path as keyof typeof PAGE_ROLES];
-      return allowedRoles ? allowedRoles.includes(role) : false;
-    };
-
-    expect(canView("/trading", "TRADER")).toBe(true);
-    expect(canView("/trading", "ADMIN")).toBe(false);
-    expect(canView("/risk", "RISK_OFFICER")).toBe(true);
-    expect(canView("/risk", "ADMIN")).toBe(true);
-    expect(canView("/system", "ADMIN")).toBe(true);
-    expect(canView("/system", "TRADER")).toBe(false);
+describe("UG: route guards (real PAGE_ROLES)", () => {
+  it("UG1: visible-to set from PAGE_ROLES decides access per role", () => {
+    expect(canAccessPage("/trade", "TRADER")).toBe(true);
+    expect(canAccessPage("/trade", "OPS")).toBe(false);
+    expect(canAccessPage("/risk", "RISK")).toBe(true);
+    expect(canAccessPage("/risk", "ADMIN")).toBe(true);
+    expect(canAccessPage("/system", "ADMIN")).toBe(true);
+    expect(canAccessPage("/system", "TRADER")).toBe(false);
   });
 
-  // UG2: Unauthenticated redirect to login
-  it("UG2: Unauthenticated user redirects to login", () => {
-    const redirectTo = (isAuth: boolean, location: string) => {
-      return !isAuth ? "/login" : location;
-    };
-
-    expect(redirectTo(false, "/trading")).toBe("/login");
-    expect(redirectTo(true, "/trading")).toBe("/trading");
+  it("UG2: unauthenticated (null role) is not granted any protected page", () => {
+    expect(canAccessPage("/portfolio", null)).toBe(false);
+    expect(canAccessPage("/login", null)).toBe(true);
   });
 
-  // UG3: Read-only roles have disabled write controls
-  it("UG3: Read-only role disables submit button", () => {
-    const isReadOnly = (role: string) => !["TRADER", "RISK_OFFICER", "OPS_ANALYST"].includes(role);
-    expect(isReadOnly("ADMIN")).toBe(false);
-    expect(isReadOnly("VIEWER")).toBe(true);
-  });
-
-  // UG4: Nav items match role
-  it("UG4: Nav shows only pages for user role", () => {
-    const getNavItems = (role: string) => {
-      const navMap = {
-        TRADER: ["/", "/trading", "/portfolio"],
-        RISK_OFFICER: ["/", "/risk"],
-        OPS_ANALYST: ["/", "/recon"],
-        ADMIN: ["/", "/trading", "/risk", "/recon", "/system"],
-      };
-      return navMap[role as keyof typeof navMap] || [];
-    };
-
-    expect(getNavItems("TRADER")).toContain("/trading");
-    expect(getNavItems("TRADER")).not.toContain("/risk");
-    expect(getNavItems("ADMIN")).toContain("/system");
-  });
-
-  // UA1: API client adds bearer header
-  it("UA1: API client includes bearer token in Authorization header", () => {
-    const makeRequest = (token: string, path: string) => {
-      const headers = { Authorization: `Bearer ${token}` };
-      return { path, headers };
-    };
-
-    const req = makeRequest("abc123", "/api/v1/orders");
-    expect(req.headers.Authorization).toBe("Bearer abc123");
-    expect(req.headers.Authorization).not.toContain("Bearer Bearer");
-  });
-
-  // UA1: Token never in URL
-  it("UA1: Token never appears in URL", () => {
-    const buildUrl = (token: string, path: string) => {
-      return `${path}`; // No token in URL
-    };
-
-    const url = buildUrl("secret-token", "/api/v1/orders");
-    expect(url).not.toContain("token=");
-    expect(url).not.toContain("secret-token");
-  });
-
-  // UA2: 401 triggers refresh and retry
-  it("UA2: 401 response triggers token refresh", () => {
-    const handleResponse = async (status: number) => {
-      if (status === 401) {
-        // Attempt refresh
-        return "refreshed";
+  it("UG3: writable is always a subset of visible, and ADMIN is read-only on P2", () => {
+    for (const entry of Object.values(PAGE_ROLES)) {
+      for (const role of entry.writable) {
+        expect(entry.visible).toContain(role);
       }
-      return "ok";
-    };
-
-    expect(handleResponse(401)).resolves.toBe("refreshed");
+    }
+    expect(canWritePage("/trade", "ADMIN")).toBe(false);
+    expect(canWritePage("/trade", "TRADER")).toBe(true);
   });
 
-  // UA3: problem+json error parsing
-  it("UA3: problem+json response parsed correctly", () => {
-    const parseProblemJson = (body: string) => {
-      const json = JSON.parse(body);
-      return {
-        code: json.type,
-        detail: json.detail,
-        requestId: json["x-request-id"],
-        fieldErrors: json.fieldErrors,
-      };
-    };
+  it("UG4: nav visibility matches PAGE_ROLES for each role", () => {
+    const pagesVisibleTo = (role: "TRADER" | "RISK" | "OPS" | "ADMIN") =>
+      Object.entries(PAGE_ROLES)
+        .filter(([, entry]) => entry.visible.includes(role))
+        .map(([page]) => page);
 
-    const problemJson = {
-      type: "https://example.com/validation-error",
-      detail: "Quantity must be positive",
-      "x-request-id": "req-123",
-      fieldErrors: { quantity: ["Must be positive"] },
-    };
+    expect(pagesVisibleTo("TRADER")).toContain("/trade");
+    expect(pagesVisibleTo("TRADER")).not.toContain("/risk");
+    expect(pagesVisibleTo("ADMIN")).toContain("/system");
+  });
+});
 
-    const error = parseProblemJson(JSON.stringify(problemJson));
-    expect(error.code).toBe(problemJson.type);
-    expect(error.detail).toBe(problemJson.detail);
-    expect(error.requestId).toBe("req-123");
-    expect(error.fieldErrors.quantity).toContain("Must be positive");
+describe("UA: API client", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
   });
 
-  // UA4: 429 surfaces Retry-After
-  it("UA4: 429 Retry-After header is surfaced", () => {
-    const getRetryAfter = (headers: Record<string, string>, status: number) => {
-      if (status === 429) return headers["retry-after"];
-      return null;
-    };
+  it("UA1: adds the bearer header and never puts the token in the URL", async () => {
+    const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({ url: String(url), headers: init.headers as Record<string, string> });
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      })
+    );
 
-    const headers = { "retry-after": "60" };
-    expect(getRetryAfter(headers, 429)).toBe("60");
+    const client = new ApiClient({ baseUrl: "/api/v1", getToken: () => "secret-token" });
+    await client.get("/orders");
+
+    expect(calls[0]!.url).not.toContain("secret-token");
+    expect(calls[0]!.headers.Authorization).toBe("Bearer secret-token");
   });
 
-  // UA4: 503 says nothing submitted
-  it("UA4: 503 error message indicates nothing was submitted", () => {
-    const getErrorMessage = (status: number) => {
-      if (status === 503) return "Service unavailable. No orders were submitted. Please retry.";
-      return "Unknown error";
-    };
+  it("UA2: a 401 triggers exactly one refresh, then retries once", async () => {
+    let call = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        call += 1;
+        if (call === 1) return new Response(JSON.stringify({ code: "unauthenticated" }), { status: 401 });
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      })
+    );
 
-    const msg = getErrorMessage(503);
-    expect(msg).toContain("No orders were submitted");
+    const onUnauthorized = vi.fn(async () => {});
+    const client = new ApiClient({ baseUrl: "/api/v1", getToken: () => "t", onUnauthorized });
+    const result = await client.get<{ ok: boolean }>("/orders");
+
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(call).toBe(2);
+    expect(result.ok).toBe(true);
+  });
+
+  it("UA2: a second consecutive 401 after refresh logs out (throws, no infinite retry)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ code: "unauthenticated" }), { status: 401 }))
+    );
+
+    const onUnauthorized = vi.fn(async () => {});
+    const client = new ApiClient({ baseUrl: "/api/v1", getToken: () => "t", onUnauthorized });
+
+    await expect(client.get("/orders")).rejects.toBeInstanceOf(ApiError);
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it("UA3: problem+json is parsed into code, detail, requestId, and field errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            type: "about:blank#validation_failed",
+            title: "Validation error",
+            status: 400,
+            code: "validation_failed",
+            detail: "Quantity must be positive",
+            instance: "/orders",
+            requestId: "req-123",
+            errors: [{ path: "quantity", message: "Must be positive" }],
+          }),
+          { status: 400 }
+        )
+      )
+    );
+
+    const client = new ApiClient({ baseUrl: "/api/v1", getToken: () => null });
+    try {
+      await client.post("/orders", {});
+      throw new Error("expected ApiError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError);
+      const apiError = err as ApiError;
+      expect(apiError.code).toBe("validation_failed");
+      expect(apiError.message).toBe("Quantity must be positive");
+      expect(apiError.requestId).toBe("req-123");
+      expect(apiError.fieldErrors).toEqual([{ path: "quantity", message: "Must be positive" }]);
+    }
+  });
+
+  it("UA4: 429 surfaces Retry-After in milliseconds", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ code: "rate_limited", detail: "too many" }), {
+          status: 429,
+          headers: { "Retry-After": "2" },
+        })
+      )
+    );
+
+    const client = new ApiClient({ baseUrl: "/api/v1", getToken: () => null });
+    try {
+      await client.post("/orders", {});
+      throw new Error("expected ApiError");
+    } catch (err) {
+      expect((err as ApiError).retryAfterMs).toBe(2000);
+    }
+  });
+
+  it("UA4: 503 is surfaced as an ApiError distinct from 429, with no retry attempted", async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ code: "unavailable", detail: "nothing was submitted" }), { status: 503 });
+      })
+    );
+
+    const client = new ApiClient({ baseUrl: "/api/v1", getToken: () => null });
+    await expect(client.post("/orders", {})).rejects.toMatchObject({ status: 503 });
+    expect(calls).toBe(1);
   });
 });

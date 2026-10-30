@@ -1,67 +1,167 @@
 /**
- * WS: WebSocket gateway tests (real ws client on port 0)
- * P29: Property test for model client rebuilding book
+ * WS: WebSocket gateway tests, against a real server on an ephemeral port
+ * with a real `ws` client and real signed JWTs (no mocked auth).
  */
+import { describe, it, expect, afterEach } from "vitest";
+import WebSocket from "ws";
+import { buildApp } from "../app.js";
+import { signToken } from "../auth/tokens.js";
+import type { Config } from "../config.js";
+import type { FastifyInstance } from "fastify";
 
-import { describe, it, expect } from "vitest";
+const JWT_SECRET = "test-secret-at-least-32-bytes-long!!";
 
-describe("WS: WebSocket Gateway", () => {
-  it("WS1: No auth message in 5 seconds closes 4401", () => {
-    // Connection timeout for missing auth
-    expect(true).toBe(true);
+const config: Config = {
+  NODE_ENV: "development",
+  PORT: 0,
+  METRICS_PORT: 0,
+  DATABASE_URL: "postgres://localhost/unused",
+  JWT_SECRET,
+  JWT_TTL_SECONDS: 900,
+  SESSION_MAX_SECONDS: 28800,
+  PROFILE: "prod",
+  PRICE_DECIMALS: 2,
+  RATE_LIMIT_ORDERS_PER_SEC: 10,
+  RATE_LIMIT_BURST: 20,
+  PROJECTOR_POLL_MS: 200,
+  PROJECTOR_CHUNK: 1000,
+};
+
+const noopExecutor = { query: async () => ({ rows: [] }) } as never;
+const noopFacade = {
+  hasSubmitCommand: async () => false,
+  submitOrder: async () => ({ kind: "JOURNALED" as const }),
+  cancelOrder: async () => {},
+  haltSymbol: async () => {},
+  resumeSymbol: async () => {},
+  deposit: async () => {},
+  riskView: async () => null,
+  internalTrades: async () => [],
+};
+
+async function startServer(): Promise<{ app: FastifyInstance; url: string }> {
+  const app = await buildApp({ config, executor: noopExecutor, facade: noopFacade, instruments: [] });
+  const address = await app.listen({ port: 0, host: "127.0.0.1" });
+  return { app, url: address.replace("http", "ws") + "/ws" };
+}
+
+async function signFor(role: "TRADER" | "RISK" | "OPS" | "ADMIN"): Promise<string> {
+  const secret = new TextEncoder().encode(JWT_SECRET);
+  return signToken({ secret, ttlSeconds: 900 }, "user-1", role);
+}
+
+function waitForMessage(socket: WebSocket): Promise<Record<string, unknown>> {
+  return new Promise((resolve) => {
+    socket.once("message", (data) => resolve(JSON.parse(data.toString())));
   });
+}
 
-  it("WS2: Bad token closes 4401", () => {
-    // Invalid token handling
-    expect(true).toBe(true);
+function waitForClose(socket: WebSocket): Promise<number> {
+  return new Promise((resolve) => {
+    socket.once("close", (code) => resolve(code));
   });
+}
 
-  it("WS3: Role check per topic", () => {
-    // Topic-level authorization
-    expect(true).toBe(true);
-  });
+let app: FastifyInstance | undefined;
 
-  it("WS4: Subscribe returns snapshot then deltas", () => {
-    // Snapshot + delta stream with seq/epoch
-    expect(true).toBe(true);
-  });
-
-  it("WS5: Ping and pong keepalive", () => {
-    // Ping-pong heartbeat
-    expect(true).toBe(true);
-  });
-
-  it("WS6: Subscription limits and message size", () => {
-    // Max 50 subscriptions, 8 KiB message limit
-    expect(true).toBe(true);
-  });
-
-  it("WS7: Malformed JSON error message", () => {
-    // Error recovery without connection close
-    expect(true).toBe(true);
-  });
-
-  it("WS8: Graceful shutdown closes all sockets", () => {
-    // 1001 close code on shutdown
-    expect(true).toBe(true);
-  });
-
-  it("WS9: Notices only after commit", () => {
-    // Projector notice bus ordering
-    expect(true).toBe(true);
-  });
+afterEach(async () => {
+  await app?.close();
+  app = undefined;
 });
 
-describe("P29: Property test model client rebuilds book", () => {
-  it("P29: Model client rebuilds book from snapshot plus deltas with epoch conflation resync", () => {
-    // Random order flows submitted through API
-    // Model client subscribes to book.ACME
-    // Receives snapshot: mark as baseline
-    // Receives deltas: apply to local copy
-    // On epoch change: resync via REST /symbols/ACME/book
-    // On conflated: true snapshot: resync via REST
-    // Local book equals GET /symbols/ACME/book at quiescence
-    // Including forced slow client (bufferedAmount above HIGH)
-    expect(true).toBe(true);
+describe("WS: WebSocket Gateway", () => {
+  it("WS2: a syntactically valid but unsigned/bad token closes 4401", async () => {
+    const started = await startServer();
+    app = started.app;
+    const socket = new WebSocket(started.url);
+    await new Promise((resolve) => socket.once("open", resolve));
+
+    socket.send(JSON.stringify({ op: "auth", token: "not-a-real-jwt" }));
+    const code = await waitForClose(socket);
+    expect(code).toBe(4401);
+  });
+
+  it("a real, validly signed token is accepted and reaches auth.ok", async () => {
+    const started = await startServer();
+    app = started.app;
+    const socket = new WebSocket(started.url);
+    await new Promise((resolve) => socket.once("open", resolve));
+
+    const token = await signFor("TRADER");
+    socket.send(JSON.stringify({ op: "auth", token }));
+    const message = await waitForMessage(socket);
+    expect(message).toEqual({ type: "auth.ok" });
+    socket.close();
+  });
+
+  it("WS3: a TRADER cannot subscribe to risk.rejections or system, but a RISK/ADMIN role can", async () => {
+    const started = await startServer();
+    app = started.app;
+    const socket = new WebSocket(started.url);
+    await new Promise((resolve) => socket.once("open", resolve));
+
+    const token = await signFor("TRADER");
+    socket.send(JSON.stringify({ op: "auth", token }));
+    await waitForMessage(socket); // auth.ok
+
+    socket.send(JSON.stringify({ op: "subscribe", topic: "risk.rejections" }));
+    const refusal = await waitForMessage(socket);
+    expect(refusal).toEqual({ error: "forbidden", topic: "risk.rejections" });
+
+    socket.send(JSON.stringify({ op: "subscribe", topic: "system" }));
+    const refusal2 = await waitForMessage(socket);
+    expect(refusal2).toEqual({ error: "forbidden", topic: "system" });
+
+    socket.close();
+
+    const adminSocket = new WebSocket(started.url);
+    await new Promise((resolve) => adminSocket.once("open", resolve));
+    const adminToken = await signFor("ADMIN");
+    adminSocket.send(JSON.stringify({ op: "auth", token: adminToken }));
+    await waitForMessage(adminSocket); // auth.ok
+    adminSocket.send(JSON.stringify({ op: "subscribe", topic: "system" }));
+    const accepted = await waitForMessage(adminSocket);
+    expect(accepted).toEqual({ type: "subscribed", topic: "system" });
+    adminSocket.close();
+  });
+
+  it("book.* and trades.* are open to any authenticated role", async () => {
+    const started = await startServer();
+    app = started.app;
+    const socket = new WebSocket(started.url);
+    await new Promise((resolve) => socket.once("open", resolve));
+
+    const token = await signFor("TRADER");
+    socket.send(JSON.stringify({ op: "auth", token }));
+    await waitForMessage(socket);
+
+    socket.send(JSON.stringify({ op: "subscribe", topic: "book.ACME" }));
+    const accepted = await waitForMessage(socket);
+    expect(accepted).toEqual({ type: "subscribed", topic: "book.ACME" });
+    socket.close();
+  });
+
+  it("subscribe before auth.ok is refused with auth required (4401), no subscription happens", async () => {
+    const started = await startServer();
+    app = started.app;
+    const socket = new WebSocket(started.url);
+    await new Promise((resolve) => socket.once("open", resolve));
+
+    socket.send(JSON.stringify({ op: "subscribe", topic: "book.ACME" }));
+    const code = await waitForClose(socket);
+    expect(code).toBe(4401);
+  });
+
+  it("WS7: malformed JSON gets an error message without closing the connection", async () => {
+    const started = await startServer();
+    app = started.app;
+    const socket = new WebSocket(started.url);
+    await new Promise((resolve) => socket.once("open", resolve));
+
+    socket.send("{not json");
+    const message = await waitForMessage(socket);
+    expect(message).toEqual({ error: "malformed JSON" });
+    expect(socket.readyState).toBe(WebSocket.OPEN);
+    socket.close();
   });
 });

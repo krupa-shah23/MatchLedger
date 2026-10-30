@@ -11,7 +11,7 @@ import * as path from "path";
 describe("UZ5: Money ESLint Rule", () => {
   it("UZ5: ESLint rule rejects Number() and parseFloat() on money-named identifiers", () => {
     // Create a temporary test file with a violation
-    const testDir = path.join(process.cwd(), "web/src/.test-eslint");
+    const testDir = path.join(process.cwd(), "src/.test-eslint");
     if (!fs.existsSync(testDir)) {
       fs.mkdirSync(testDir, { recursive: true });
     }

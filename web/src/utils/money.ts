@@ -39,7 +39,7 @@ export function formatMoney(minorUnits: bigint | string | number | null): string
  */
 export function formatQuantity(qty: string | number | null): string {
   if (!qty) return "0";
-  if (typeof qty === "number") return qty.toString();
+  if (typeof qty === "number") return Math.trunc(qty).toString();
   return qty;
 }
 

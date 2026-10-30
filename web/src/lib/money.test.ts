@@ -73,7 +73,7 @@ describe("Money utilities", () => {
   it("UZ3: Estimate = price × quantity as bigint", () => {
     const estimate = (priceMinor: bigint, qty: bigint) => priceMinor * qty;
     expect(estimate(15000n, 100n)).toBe(1500000n);
-    expect(estimate(15000n, 999999n)).toBe(14999985000000n);
+    expect(estimate(15000n, 999999n)).toBe(14999985000n);
   });
 
   // UZ3: MARKET orders have no estimate
