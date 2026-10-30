@@ -3,15 +3,58 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 
-const patterns = [
+// Patterns that apply to every line, regardless of comment or string context.
+const codePatterns = [
   { pattern: /\bit\.todo\b/, name: "it.todo" },
   { pattern: /\bit\.skip\b/, name: "it.skip" },
+  { pattern: /\btest\.todo\b/, name: "test.todo" },
+  { pattern: /\btest\.skip\b/, name: "test.skip" },
+  { pattern: /\bdescribe\.skip\b/, name: "describe.skip" },
   { pattern: /\bxit\b/, name: "xit" },
   { pattern: /\bxdescribe\b/, name: "xdescribe" },
+  { pattern: /\b(?:it|test|describe)\.only\s*\(/, name: ".only" },
   { pattern: /\bTODO\b/, name: "TODO comment" },
+  { pattern: /\bFIXME\b/, name: "FIXME comment" },
+  { pattern: /\bXXX\b/, name: "XXX comment" },
+  { pattern: /\bHACK\b/, name: "HACK comment" },
   { pattern: /["']placeholder["']/i, name: "placeholder string" },
-  { pattern: /["']NOT IMPLEMENTED["']/i, name: "NOT IMPLEMENTED string" },
+  { pattern: /\bstub\b/i, name: "stub" },
+  { pattern: /["'].*not implemented.*["']/i, name: "not implemented string" },
+  { pattern: /["'].*coming soon.*["']/i, name: "coming soon string" },
+  { pattern: /["'].*mock data.*["']/i, name: "mock data string" },
+  { pattern: /["'].*\bdummy\b.*["']/i, name: "dummy string" },
+  { pattern: /\blorem ipsum\b/i, name: "lorem ipsum" },
 ];
+
+// Comment-form-only patterns: these words are common in plain prose/strings
+// (e.g. "temporary hold", "for now" in a user-facing sentence), so they only
+// count as placeholder violations when they appear inside a // or /* ... */
+// style comment, where a developer is explicitly flagging unfinished work.
+const commentOnlyPatterns = [
+  { pattern: /\bfor now\b/i, name: "'for now' comment" },
+  { pattern: /\btemporary\b/i, name: "'temporary' comment" },
+];
+
+function isCommentLine(line) {
+  const trimmed = line.trim();
+  return (
+    trimmed.startsWith("//") ||
+    trimmed.startsWith("/*") ||
+    trimmed.startsWith("*") ||
+    /\/\/[^"'`]*$/.test(line) // a trailing // comment with no string literal after it
+  );
+}
+
+// Detects a function/arrow body whose ENTIRE implementation is a single
+// hardcoded literal return (`return true;`, `return 200;`, `=> true`),
+// which is the shape of a handler that always answers the same way instead
+// of computing a real result. Deliberately narrow (single-statement bodies
+// only) to avoid flagging legitimate one-line helpers that return a
+// genuinely constant, named value (e.g. `export const MAX = () => 100;`
+// style config getters are not matched since this requires the literal
+// `true`/`false`/`200`/`0`).
+const constantReturnPattern =
+  /(?:function[^(]*\([^)]*\)\s*(?::\s*[^{=]+)?\s*\{\s*return\s+(?:true|false|200)\s*;?\s*\}|=>\s*\{\s*return\s+(?:true|false|200)\s*;?\s*\}\s*[,;)]?)/;
 
 function findTsFiles() {
   try {
@@ -41,23 +84,39 @@ function findTsFiles() {
 }
 
 const files = findTsFiles();
-let violations = [];
+const violations = [];
 
 for (const file of files) {
   const content = fs.readFileSync(file, "utf-8");
   const lines = content.split("\n");
+  const isTestFile = /\.test\.tsx?$/.test(file);
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    for (const { pattern, name } of patterns) {
+
+    for (const { pattern, name } of codePatterns) {
       if (pattern.test(line)) {
-        violations.push({
-          file,
-          line: i + 1,
-          pattern: name,
-          content: line.trim().substring(0, 80),
-        });
+        violations.push({ file, line: i + 1, pattern: name, content: line.trim().substring(0, 80) });
       }
+    }
+
+    if (isCommentLine(line)) {
+      for (const { pattern, name } of commentOnlyPatterns) {
+        if (pattern.test(line)) {
+          violations.push({ file, line: i + 1, pattern: name, content: line.trim().substring(0, 80) });
+        }
+      }
+    }
+
+    // Constant-returning handlers: skip test files, where a fixed return
+    // value is often a legitimate fake/mock for a dependency under test.
+    if (!isTestFile && constantReturnPattern.test(line)) {
+      violations.push({
+        file,
+        line: i + 1,
+        pattern: "constant-returning handler",
+        content: line.trim().substring(0, 80),
+      });
     }
   }
 }
