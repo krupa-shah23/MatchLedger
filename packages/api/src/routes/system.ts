@@ -14,6 +14,10 @@ import {
   stopSimulator,
 } from "@matchledger/simulator";
 import { fetchMetricsSummary } from "../system/prom-queries.js";
+import { setInvariantOk } from "../metrics.js";
+import type { RiskConfig } from "@matchledger/common";
+import { serializeRiskState } from "@matchledger/common";
+import { recoverRiskPartition } from "@matchledger/risk";
 
 export interface SystemRoutesDeps {
   executor: SqlExecutor;
@@ -22,6 +26,12 @@ export interface SystemRoutesDeps {
   isDemo?: boolean;
   instruments?: Array<{ symbol: string; tick?: string; lot?: string; spec?: any }>;
   simulatorState?: { current: SimulatorDriverState | null };
+  /**
+   * Needed for a real replay on /system/verify-replay for risk-partition
+   * streams (risk-snapshot-{partition}). Without it, that route falls back
+   * to a checksum-only self-consistency check instead of an actual replay.
+   */
+  riskConfig?: RiskConfig;
 }
 
 export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRoutesDeps): Promise<void> {
@@ -62,6 +72,11 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
         const projectionsEqualRisk = await checkProjectionsEqualRisk(deps.executor);
 
         const valid = noNegativeAvailable && ledgerZeroSum && positionsZeroSum && projectionsEqualRisk;
+
+        setInvariantOk("no_negative_available", noNegativeAvailable);
+        setInvariantOk("ledger_zero_sum", ledgerZeroSum);
+        setInvariantOk("positions_zero_sum", positionsZeroSum);
+        setInvariantOk("projections_equal_risk", projectionsEqualRisk);
 
         return reply.code(200).send({
           valid,
@@ -309,11 +324,38 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
 
         const snapshotRow = snapshotResult.rows[0] as any;
         const snapshotSeq = snapshotRow.last_seq;
-        const snapshotState = snapshotRow.state_json;
         const storedChecksum = snapshotRow.checksum;
 
-        // Compute the canonical checksum of the stored snapshot
-        const snapshotStateJson = JSON.stringify(snapshotState);
+        const riskPartitionMatch = /^risk-snapshot-(\d+)$/.exec(streamId);
+        if (riskPartitionMatch && deps.riskConfig) {
+          // Real replay: a fresh RiskCore, built from scratch by replaying the
+          // risk journal's own commands (starting from the newest still-valid
+          // snapshot candidate, or genesis if none validates), independent of
+          // whatever is currently cached in any running process.
+          const partition = Number(riskPartitionMatch[1]);
+          const recovered = await recoverRiskPartition({
+            sql: deps.executor as unknown as Parameters<typeof recoverRiskPartition>[0]["sql"],
+            partition,
+            config: deps.riskConfig,
+          });
+          const freshChecksum = createHash("sha256").update(serializeRiskState(recovered.core.exportState())).digest("hex");
+
+          return reply.code(200).send({
+            streamId,
+            upToSeq: recovered.lastSeq,
+            equal: freshChecksum === storedChecksum,
+            checksum: freshChecksum,
+          });
+        }
+
+        // No real replay is wired for this stream type (no riskConfig, or a
+        // stream other than a risk partition — the matching-engine book
+        // snapshot path has no production writer at all, so there is
+        // nothing to replay it against). Fall back to a self-consistency
+        // check: does the stored checksum match the stored state it claims
+        // to describe. Weaker than a real replay, but still catches raw
+        // tampering of either field.
+        const snapshotStateJson = JSON.stringify(snapshotRow.state_json);
         const expectedChecksum = createHash("sha256").update(snapshotStateJson).digest("hex");
         const checksumMatch = expectedChecksum === storedChecksum;
 

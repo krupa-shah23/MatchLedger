@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import React from "react";
 import { render, screen, act, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter } from "react-router-dom";
 import { AuthProvider } from "../auth/AuthProvider.js";
 import { TradingPage } from "./Trading.js";
 import type { SocketLike } from "../ws/useSocket.js";

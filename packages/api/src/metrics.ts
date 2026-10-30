@@ -65,16 +65,11 @@ export function setDedupeSetSize(size: number): void {
 }
 
 /**
- * Update invariant gauges (ledger zero-sum, journal monotonic).
+ * Update an invariant check result (ml_invariant_ok{check}), 1=pass, 0=fail.
  */
-export function setInvariantLedgerZeroSum(isZero: boolean): void {
-  const gauge = getOrCreateGauge('ml_invariant_ledger_zero_sum');
-  gauge.set({}, isZero ? 1 : 0);
-}
-
-export function setInvariantJournalMonotonic(isMonotonic: boolean): void {
-  const gauge = getOrCreateGauge('ml_invariant_journal_monotonic');
-  gauge.set({}, isMonotonic ? 1 : 0);
+export function setInvariantOk(check: string, isOk: boolean): void {
+  const gauge = getOrCreateGauge('ml_invariant_ok', { labelNames: ['check'] });
+  gauge.set({ check }, isOk ? 1 : 0);
 }
 
 export { startMetricsServer } from '@matchledger/telemetry';

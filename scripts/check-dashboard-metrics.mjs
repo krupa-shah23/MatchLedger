@@ -49,7 +49,9 @@ try {
         // Extract metric names from Prometheus expr (simple extraction)
         const metricMatches = target.expr.matchAll(/\b(ml_[a-zA-Z_]+)\b/g);
         for (const match of metricMatches) {
-          const metricName = match[1];
+          // Prometheus auto-generates _bucket/_sum/_count series for histograms
+          // and _sum/_count for summaries; the catalogue stores the base name.
+          const metricName = match[1].replace(/_(bucket|sum|count)$/, '');
           if (!catalogueKeys.has(metricName)) {
             missingMetrics.push({
               dashboard: dashboardFile,

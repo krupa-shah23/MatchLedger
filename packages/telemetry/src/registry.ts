@@ -171,15 +171,11 @@ export const METRICS_CATALOGUE: Record<string, MetricDefinition> = {
   },
 
   // Invariants
-  "ml_invariant_ledger_zero_sum": {
-    name: "ml_invariant_ledger_zero_sum",
+  "ml_invariant_ok": {
+    name: "ml_invariant_ok",
     type: "gauge",
-    help: "Ledger zero-sum invariant (1=ok, 0=violated)",
-  },
-  "ml_invariant_journal_monotonic": {
-    name: "ml_invariant_journal_monotonic",
-    type: "gauge",
-    help: "Journal monotonic seq invariant (1=ok, 0=violated)",
+    help: "Invariant check result (1=pass, 0=fail), updated by the invariants job",
+    labelNames: ["check"],
   },
 };
 
@@ -191,11 +187,42 @@ export function validateMetricName(name: string): void {
   }
 }
 
+// Label cardinality must stay bounded (partition, symbol, type, reason,
+// stage, kind, topic, check, outcome, an HTTP route template, ...). These
+// names carry unbounded per-entity cardinality and/or leak identifying or
+// free-text data into a metric series, so a helper given one throws at
+// startup instead of silently creating an unbounded/leaky time series.
+const FORBIDDEN_LABEL_NAMES = new Set([
+  "accountId",
+  "account_id",
+  "orderId",
+  "order_id",
+  "clientOrderId",
+  "client_order_id",
+  "userId",
+  "user_id",
+  "path",
+  "url",
+  "message",
+  "error",
+  "errorMessage",
+  "error_message",
+]);
+
+export function validateLabelNames(labelNames: string[] | undefined): void {
+  for (const label of labelNames ?? []) {
+    if (FORBIDDEN_LABEL_NAMES.has(label)) {
+      throw new Error(`Forbidden metric label name: ${label} (unbounded cardinality or identifying data)`);
+    }
+  }
+}
+
 export function getOrCreateCounter(
   name: string,
   opts: { help?: string; labelNames?: string[] } = {}
 ) {
   validateMetricName(name);
+  validateLabelNames(opts.labelNames);
   if (!metrics.has(name)) {
     try {
       const metric = new Counter({
@@ -226,6 +253,7 @@ export function getOrCreateHistogram(
   } = {}
 ) {
   validateMetricName(name);
+  validateLabelNames(opts.labelNames);
   if (!metrics.has(name)) {
     try {
       const metric = new Histogram({
@@ -253,6 +281,7 @@ export function getOrCreateGauge(
   opts: { help?: string; labelNames?: string[] } = {}
 ) {
   validateMetricName(name);
+  validateLabelNames(opts.labelNames);
   if (!metrics.has(name)) {
     try {
       const metric = new Gauge({

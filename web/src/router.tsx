@@ -3,7 +3,7 @@
  * server's ENDPOINT_ROLES is what actually refuses a write either way.
  */
 import React from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { PAGE_ROLES } from "@matchledger/common";
 import { useAuth } from "./auth/AuthProvider.js";
 import { RequireRole, NotAvailable } from "./auth/guards.js";

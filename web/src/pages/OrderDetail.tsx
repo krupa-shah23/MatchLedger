@@ -3,7 +3,7 @@
  * snapshot and plain-English sentence for a rejection. Tests: UP9, UP10.
  */
 import React from "react";
-import { useParams } from "react-router";
+import { useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider.js";
 import { ApiError } from "../api/client.js";
 import { LifecycleStrip } from "../components/LifecycleStrip.js";

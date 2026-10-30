@@ -372,3 +372,71 @@ describe("Verify Replay (SY1, SY2)", () => {
     expect(body.checksum).not.toBe(storedChecksum);
   });
 });
+
+describe("Verify Replay: real risk-partition replay (SY1, SY2)", () => {
+  // These exercise the risk-snapshot-{partition} branch, which calls the
+  // real recoverRiskPartition (not a mock of it): a fresh RiskCore replayed
+  // from the risk journal, independent of whatever any process currently
+  // believes the state is.
+  const riskConfig = { instruments: new Map() };
+
+  async function buildAppWithRiskConfig(): Promise<{ app: FastifyInstance; mockExecutor: any }> {
+    const mockExecutor: any = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const app = Fastify({ logger: false });
+    const deps: SystemRoutesDeps = {
+      executor: mockExecutor,
+      facade: {} as any,
+      riskConfig: riskConfig as any,
+    };
+    await registerSystemRoutes(app, deps);
+    return { app, mockExecutor };
+  }
+
+  it("SY1: real replay of an empty risk partition journal lands on genesis state and matches a healthy stored checksum", async () => {
+    const { RiskCore } = await import("@matchledger/risk");
+    const { serializeRiskState } = await import("@matchledger/common");
+    const genesisChecksum = createHash("sha256")
+      .update(serializeRiskState(new RiskCore(riskConfig as any).exportState()))
+      .digest("hex");
+
+    const { app, mockExecutor } = await buildAppWithRiskConfig();
+    // Every query recoverRiskPartition issues (lastCommandSeq, listCandidates,
+    // readCommands) returns { rows: [] } via the default mock, so it falls
+    // back to a fresh RiskCore at seq 0 — this one call is the only one that
+    // needs a specific row, for the route's own "latest stored snapshot" fetch.
+    mockExecutor.query.mockResolvedValueOnce({
+      rows: [{ last_seq: 0, state_json: {}, checksum: genesisChecksum }],
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/system/verify-replay",
+      payload: { streamId: "risk-snapshot-0" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.streamId).toBe("risk-snapshot-0");
+    expect(body.upToSeq).toBe(0);
+    expect(body.equal).toBe(true);
+    expect(body.checksum).toBe(genesisChecksum);
+  });
+
+  it("SY2: real replay detects a stored checksum that doesn't match the independently-replayed state", async () => {
+    const { app, mockExecutor } = await buildAppWithRiskConfig();
+    mockExecutor.query.mockResolvedValueOnce({
+      rows: [{ last_seq: 0, state_json: {}, checksum: "corrupted-does-not-match-any-real-state" }],
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/system/verify-replay",
+      payload: { streamId: "risk-snapshot-0" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.equal).toBe(false);
+    expect(body.checksum).not.toBe("corrupted-does-not-match-any-real-state");
+  });
+});

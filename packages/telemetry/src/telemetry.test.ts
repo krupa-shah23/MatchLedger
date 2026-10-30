@@ -6,6 +6,8 @@ import { describe, it, expect } from "vitest";
 import {
   METRICS_CATALOGUE,
   validateMetricName,
+  validateLabelNames,
+  getOrCreateCounter,
 } from "./index.js";
 
 describe("Telemetry Registry (TL1-TL4)", () => {
@@ -26,6 +28,17 @@ describe("Telemetry Registry (TL1-TL4)", () => {
   it("TL3: Metric creation validates ml_ prefix requirement", () => {
     expect(() => validateMetricName("ml_valid_metric")).not.toThrow();
     expect(() => validateMetricName("invalid_metric")).toThrow();
+  });
+
+  it("TL2b: A helper given a forbidden label name (accountId) throws at startup", () => {
+    expect(() => validateLabelNames(["accountId"])).toThrow(/forbidden/i);
+    expect(() => validateLabelNames(["account_id"])).toThrow(/forbidden/i);
+    expect(() => validateLabelNames(["order_id", "symbol"])).toThrow(/forbidden/i);
+    expect(() => validateLabelNames(["shard_id", "symbol"])).not.toThrow();
+
+    expect(() =>
+      getOrCreateCounter("ml_test_forbidden_label_total", { labelNames: ["accountId"] })
+    ).toThrow(/forbidden/i);
   });
 
   it("TL4: Catalogue defines correct metric types and labels", () => {

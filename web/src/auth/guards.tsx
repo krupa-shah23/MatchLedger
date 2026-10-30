@@ -1,5 +1,5 @@
 import React from "react";
-import { Navigate, useLocation } from "react-router";
+import { Navigate, useLocation } from "react-router-dom";
 import { canAccessPage, canWritePage, type Role } from "@matchledger/common";
 import { useAuth } from "./AuthProvider.js";
 

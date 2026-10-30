@@ -4,7 +4,7 @@
  * client-side shortcut. Test: UP1.
  */
 import React, { useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider.js";
 
 const DEMO_ROLES = ["TRADER", "RISK", "OPS", "ADMIN"] as const;

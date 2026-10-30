@@ -330,12 +330,12 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, ml_shard_journal_append_seconds_bucket)",
+          "expr": "histogram_quantile(0.99, ml_shard_append_duration_ms_bucket)",
           "refId": "A",
           "legendFormat": "Append p99"
         },
         {
-          "expr": "histogram_quantile(0.99, ml_shard_apply_seconds_bucket)",
+          "expr": "histogram_quantile(0.99, ml_shard_apply_duration_ms_bucket)",
           "refId": "B",
           "legendFormat": "Apply p99"
         }
@@ -418,7 +418,7 @@
           "legendFormat": "Depth"
         },
         {
-          "expr": "rate(ml_shard_queue_full_total[1m])",
+          "expr": "rate(ml_shard_queue_full[1m])",
           "refId": "B",
           "legendFormat": "FULL rate"
         }
@@ -573,7 +573,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "increase(ml_shard_ownership_changes_total[5m])",
+          "expr": "increase(ml_shard_ownership_changes[5m])",
           "refId": "A"
         }
       ],
@@ -650,7 +650,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "ml_projector_lag_seq",
+          "expr": "ml_projector_lag_ms",
           "refId": "A"
         }
       ],
@@ -722,24 +722,14 @@
       "pluginVersion": "8.0.0"
     },
     {
-      "title": "WebSocket connections, conflations, slow closes",
+      "title": "WebSocket connections",
       "type": "timeseries",
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "ml_ws_connections",
+          "expr": "ml_websocket_connections",
           "refId": "A",
           "legendFormat": "Connections"
-        },
-        {
-          "expr": "rate(ml_ws_conflations_total[1m])",
-          "refId": "B",
-          "legendFormat": "Conflations"
-        },
-        {
-          "expr": "rate(ml_ws_slow_closes_total[1m])",
-          "refId": "C",
-          "legendFormat": "Slow closes"
         }
       ],
       "gridPos": {
@@ -816,7 +806,8 @@
       "targets": [
         {
           "expr": "ml_invariant_ok",
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "{{check}}"
         }
       ],
       "gridPos": {
@@ -892,12 +883,12 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "ml_recovery_seconds",
+          "expr": "ml_recovery_duration_ms",
           "refId": "A",
           "legendFormat": "Duration"
         },
         {
-          "expr": "ml_recovery_tail_records",
+          "expr": "ml_recovery_tail_length",
           "refId": "B",
           "legendFormat": "Tail length"
         }

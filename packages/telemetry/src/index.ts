@@ -5,6 +5,7 @@ export {
   getOrCreateGauge,
   getRegistry,
   validateMetricName,
+  validateLabelNames,
   type MetricDefinition,
   type MetricType,
 } from "./registry.js";
