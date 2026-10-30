@@ -26,27 +26,24 @@ export interface Message {
  * Wraps @confluentinc/kafka-javascript producer with init, send to explicit partition,
  * commit, abort, and fenced-error detection.
  */
-type KafkaProducer = any;
-type KafkaInstance = any;
-
 export class TransactionalProducer {
-  private producer: KafkaProducer | null = null;
-  private kafka: KafkaInstance | null = null;
+  private producer: KafkaJS.Producer | null = null;
+  private kafka: KafkaJS.Kafka | null = null;
 
   constructor(private config: TransactionalProducerConfig) {}
 
   async init(): Promise<void> {
-    this.kafka = new (Kafka as any)({
+    this.kafka = new Kafka({
       kafkaJS: { brokers: this.config.brokers },
     });
 
-    this.producer = (this.kafka as any).producer({
+    this.producer = this.kafka.producer({
       "transactional.id": this.config.transactionalId,
       "enable.idempotence": true,
       kafkaJS: { acks: this.config.acks ?? -1 },
     });
 
-    await (this.producer as any).connect();
+    await this.producer.connect();
   }
 
   async sendBatch(topic: string, messages: readonly Message[]): Promise<void> {
@@ -54,7 +51,7 @@ export class TransactionalProducer {
       throw new Error("Producer not initialized");
     }
 
-    const tx = await (this.producer as any).transaction();
+    const tx = await this.producer.transaction();
     try {
       await tx.send({
         topic,

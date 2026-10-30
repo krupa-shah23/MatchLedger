@@ -16,26 +16,23 @@ export interface ConsumerMessage {
   value: Buffer;
 }
 
-type KafkaConsumer = any; // Kafka consumer type from @confluentinc/kafka-javascript
-type KafkaClient = any; // Kafka client type from @confluentinc/kafka-javascript
-
 /**
  * Partition consumer wrapper (Kafka client names per docs/spike-4.md)
  * Wraps @confluentinc/kafka-javascript consumer with assign, seek, pause, resume, callbacks.
  */
 export class PartitionConsumer {
-  private consumer: KafkaConsumer | null = null;
-  private kafka: KafkaClient | null = null;
+  private consumer: KafkaJS.Consumer | null = null;
+  private kafka: KafkaJS.Kafka | null = null;
   private running = false;
 
   constructor(private config: PartitionConsumerConfig) {}
 
   async init(): Promise<void> {
-    this.kafka = new (Kafka as any)({
+    this.kafka = new Kafka({
       kafkaJS: { brokers: this.config.brokers },
     });
 
-    this.consumer = (this.kafka as any).consumer({
+    this.consumer = this.kafka.consumer({
       "group.protocol": "classic",
       "enable.auto.commit": false,
       "isolation.level": "read_committed",
@@ -47,7 +44,7 @@ export class PartitionConsumer {
       },
     });
 
-    await (this.consumer as any).connect();
+    await this.consumer.connect();
   }
 
   async assign(topic: string): Promise<void> {
@@ -55,7 +52,8 @@ export class PartitionConsumer {
       throw new Error("Consumer not initialized");
     }
 
-    await this.consumer.subscribe({ topic, fromBeginning: false });
+    // fromBeginning is set at consumer construction time (kafkaJS.fromBeginning)
+    await this.consumer.subscribe({ topic });
   }
 
   async seek(topic: string, partition: number, offset: bigint): Promise<void> {
@@ -64,7 +62,7 @@ export class PartitionConsumer {
     }
 
     // KafkaJS seek API expects offset as a string
-    await this.consumer.seek({ topic, partition, offset: offset.toString() });
+    this.consumer.seek({ topic, partition, offset: offset.toString() });
   }
 
   async pause(partitions: Array<{ topic: string; partition: number }>): Promise<void> {
@@ -72,7 +70,7 @@ export class PartitionConsumer {
       throw new Error("Consumer not initialized");
     }
 
-    await this.consumer.pause(partitions);
+    this.consumer.pause(groupPartitionsByTopic(partitions));
   }
 
   async resume(partitions: Array<{ topic: string; partition: number }>): Promise<void> {
@@ -80,7 +78,7 @@ export class PartitionConsumer {
       throw new Error("Consumer not initialized");
     }
 
-    await this.consumer.resume(partitions);
+    this.consumer.resume(groupPartitionsByTopic(partitions));
   }
 
   async run(
@@ -94,20 +92,15 @@ export class PartitionConsumer {
     this.running = true;
 
     try {
-      interface MessageParams {
-        topic: string;
-        partition: number;
-        message: { value: Buffer; key: Buffer | null };
-      }
-      await (this.consumer as any).run({
-        eachMessage: async (params: any) => {
-          const { topic, partition, message } = params;
+      await this.consumer.run({
+        eachMessage: async (payload: KafkaJS.EachMessagePayload) => {
+          const { topic, partition, message } = payload;
           const msg: ConsumerMessage = {
             topic,
             partition,
-            offset: BigInt((message as any).offset),
-            key: (message as any).key ? (message as any).key.toString() : null,
-            value: (message as any).value as Buffer,
+            offset: BigInt(message.offset),
+            key: message.key ? message.key.toString() : null,
+            value: message.value as Buffer,
           };
 
           try {
@@ -135,4 +128,19 @@ export class PartitionConsumer {
   isRunning(): boolean {
     return this.running;
   }
+}
+
+function groupPartitionsByTopic(
+  partitions: Array<{ topic: string; partition: number }>
+): Array<{ topic: string; partitions: number[] }> {
+  const byTopic = new Map<string, number[]>();
+  for (const { topic, partition } of partitions) {
+    const existing = byTopic.get(topic);
+    if (existing) {
+      existing.push(partition);
+    } else {
+      byTopic.set(topic, [partition]);
+    }
+  }
+  return Array.from(byTopic, ([topic, topicPartitions]) => ({ topic, partitions: topicPartitions }));
 }

@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { SqlExecutor } from "@matchledger/projections";
+import { deserializeRiskState } from "@matchledger/common";
 import type { RuntimeFacade } from "../orders/submit.js";
 import type { SimulatorDriverState, Scheduler, SubmitPort } from "@matchledger/simulator";
 import {
@@ -29,24 +30,45 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
     "/system/invariants",
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        // Check for negative available balances (basic invariant)
-        const balanceResult = await deps.executor.query(
-          `SELECT COUNT(*) as negative_count FROM account_balances WHERE available < 0`,
+        const negativeCashResult = await deps.executor.query(
+          `SELECT COUNT(*) as negative_count FROM balances_view WHERE (cash - held_cash) < 0`,
           []
         );
-        const noNegativeAvailable = (balanceResult.rows[0] as any)?.negative_count === 0;
+        const negativeCashCount = toCount((negativeCashResult.rows[0] as { negative_count?: string | number } | undefined)?.negative_count);
 
-        // For now, assume other invariants are valid (ledger, positions, projections)
-        // These require deep knowledge of the core business logic and would be implemented
-        // as part of a complete audit system
-        const valid = noNegativeAvailable;
+        const negativeSharesResult = await deps.executor.query(
+          `SELECT COUNT(*) as negative_count FROM positions_view WHERE (quantity - held_shares) < 0`,
+          []
+        );
+        const negativeSharesCount = toCount((negativeSharesResult.rows[0] as { negative_count?: string | number } | undefined)?.negative_count);
+
+        const noNegativeAvailable = negativeCashCount === 0 && negativeSharesCount === 0;
+
+        // Double-entry ledger: every asset's postings must net to zero across all accounts.
+        const unbalancedLedgerAssets = await deps.executor.query(
+          `SELECT asset FROM ledger_entries GROUP BY asset HAVING SUM(amount) <> 0`,
+          []
+        );
+        const ledgerZeroSum = unbalancedLedgerAssets.rows.length === 0;
+
+        // Shares are conserved by the matching engine: every symbol's net position
+        // across all accounts must be zero (no shares created or destroyed by trading).
+        const unbalancedSymbols = await deps.executor.query(
+          `SELECT symbol FROM positions_view GROUP BY symbol HAVING SUM(quantity) <> 0`,
+          []
+        );
+        const positionsZeroSum = unbalancedSymbols.rows.length === 0;
+
+        const projectionsEqualRisk = await checkProjectionsEqualRisk(deps.executor);
+
+        const valid = noNegativeAvailable && ledgerZeroSum && positionsZeroSum && projectionsEqualRisk;
 
         return reply.code(200).send({
           valid,
-          ledgerZeroSum: true,
-          positionsZeroSum: true,
+          ledgerZeroSum,
+          positionsZeroSum,
           noNegativeAvailable,
-          projectionsEqualRisk: true,
+          projectionsEqualRisk,
         });
       } catch (err) {
         return reply.code(500).type("application/problem+json").send({
@@ -472,4 +494,86 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
       }
     });
   }
+}
+
+function toCount(value: string | number | undefined): number {
+  return value === undefined ? 0 : Number(value);
+}
+
+/**
+ * Compares the DB projections (balances_view/positions_view) against the latest
+ * persisted risk-partition snapshots. Each account lives in exactly one risk
+ * partition, so aggregating every partition's latest snapshot covers all accounts.
+ */
+async function checkProjectionsEqualRisk(executor: SqlExecutor): Promise<boolean> {
+  const streamsResult = await executor.query(
+    `SELECT DISTINCT stream_id FROM snapshots WHERE stream_id LIKE 'risk-snapshot-%'`,
+    []
+  );
+  const streamIds = (streamsResult.rows as Array<{ stream_id: string }>).map((row) => row.stream_id);
+
+  // No persisted risk snapshots (e.g. a fresh deployment or a unit-test harness
+  // without a risk journal): there is nothing to compare against, so this
+  // invariant cannot be violated.
+  if (streamIds.length === 0) {
+    return true;
+  }
+
+  const riskCash = new Map<string, { cash: bigint; heldCash: bigint }>();
+  const riskPositions = new Map<string, Map<string, { quantity: bigint; heldShares: bigint }>>();
+
+  for (const streamId of streamIds) {
+    const snapshotResult = await executor.query(
+      `SELECT state_json::text as state_text FROM snapshots WHERE stream_id = $1 ORDER BY last_seq DESC LIMIT 1`,
+      [streamId]
+    );
+    const row = snapshotResult.rows[0] as { state_text: string } | undefined;
+    if (!row) continue;
+
+    const state = deserializeRiskState(row.state_text);
+    for (const account of state.accounts) {
+      riskCash.set(account.accountId, { cash: account.cash, heldCash: account.heldCash });
+      const bySymbol = new Map<string, { quantity: bigint; heldShares: bigint }>();
+      for (const position of account.positions) {
+        bySymbol.set(position.symbol, { quantity: position.quantity, heldShares: position.heldShares });
+      }
+      riskPositions.set(account.accountId, bySymbol);
+    }
+  }
+
+  const balancesResult = await executor.query(`SELECT account_id, cash, held_cash FROM balances_view`, []);
+  const dbCash = new Map<string, { cash: bigint; heldCash: bigint }>();
+  for (const row of balancesResult.rows as Array<{ account_id: string; cash: string | number; held_cash: string | number }>) {
+    dbCash.set(row.account_id, { cash: BigInt(row.cash), heldCash: BigInt(row.held_cash) });
+  }
+
+  const positionsResult = await executor.query(`SELECT account_id, symbol, quantity, held_shares FROM positions_view`, []);
+  const dbPositions = new Map<string, Map<string, { quantity: bigint; heldShares: bigint }>>();
+  for (const row of positionsResult.rows as Array<{ account_id: string; symbol: string; quantity: string | number; held_shares: string | number }>) {
+    const bySymbol = dbPositions.get(row.account_id) ?? new Map<string, { quantity: bigint; heldShares: bigint }>();
+    bySymbol.set(row.symbol, { quantity: BigInt(row.quantity), heldShares: BigInt(row.held_shares) });
+    dbPositions.set(row.account_id, bySymbol);
+  }
+
+  const accountIds = new Set<string>([...riskCash.keys(), ...dbCash.keys()]);
+  for (const accountId of accountIds) {
+    const risk = riskCash.get(accountId) ?? { cash: 0n, heldCash: 0n };
+    const db = dbCash.get(accountId) ?? { cash: 0n, heldCash: 0n };
+    if (risk.cash !== db.cash || risk.heldCash !== db.heldCash) {
+      return false;
+    }
+
+    const riskBySymbol = riskPositions.get(accountId) ?? new Map<string, { quantity: bigint; heldShares: bigint }>();
+    const dbBySymbol = dbPositions.get(accountId) ?? new Map<string, { quantity: bigint; heldShares: bigint }>();
+    const symbols = new Set<string>([...riskBySymbol.keys(), ...dbBySymbol.keys()]);
+    for (const symbol of symbols) {
+      const riskPos = riskBySymbol.get(symbol) ?? { quantity: 0n, heldShares: 0n };
+      const dbPos = dbBySymbol.get(symbol) ?? { quantity: 0n, heldShares: 0n };
+      if (riskPos.quantity !== dbPos.quantity || riskPos.heldShares !== dbPos.heldShares) {
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
