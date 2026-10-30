@@ -13,7 +13,9 @@ import { republish } from "./republish.js";
 import type { Pool } from "pg";
 import type { ConsumerMessage } from "@matchledger/transport";
 
-const HEARTBEAT_MS = parseInt(process.env.HEARTBEAT_MS ?? "5000", 10); // Configurable via HEARTBEAT_MS env var
+// Default when config.heartbeatMs isn't set; the real value comes from the
+// validated HEARTBEAT_MS entry in main.ts's zod config schema, not env directly.
+const DEFAULT_HEARTBEAT_MS = 5000;
 
 export type Scheduler = (fn: () => void, intervalMs: number) => () => void;
 
@@ -137,7 +139,7 @@ export class ShardHost {
       metrics.leaseEpoch.set({ shard_id: this.config.shardId }, Number(epoch));
 
       // Start heartbeat writer
-      const heartbeatMs = this.config.heartbeatMs ?? HEARTBEAT_MS;
+      const heartbeatMs = this.config.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
       const scheduler = this.config.scheduler ?? ((fn, intervalMs) => {
         const id = setInterval(fn, intervalMs);
         return () => clearInterval(id);

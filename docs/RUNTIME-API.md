@@ -124,3 +124,10 @@ All use `payload_json` paths (real, queryable):
 | `/system/shards` | `GET` | Shard status and lease information | `{ shards: [{ leaseId, owner, epoch, isStale, lastSeq, ... }] }` |
 | `/system/recovery` | `GET` | Recovery operation history | `{ recoveries: [{ leaseId, durationMs, snapshotSeq, tailLength, ... }] }` |
 | `/system/metrics/summary` | `GET` | Aggregated metrics from Prometheus | `{ available, commandsPerSec, latencyMs: { p50, p95, p99 }, ... }` |
+
+## Internal Risk Modules (no HTTP surface)
+
+| Module | Purpose |
+|---|---|
+| `packages/risk/src/dedupe-bounds.ts` | Bounds the risk journal's dedupe set: live order ids are kept forever, decided ids are kept for `DEDUPE_WINDOW_SEQ` (default in `@matchledger/common`'s `DEFAULT_DEDUPE_WINDOW_SEQ`), older decided ids are evicted on snapshot. Not an API facade; internal to risk-partition recovery/snapshotting. |
+| `packages/risk/src/orders-submitted-consumer.ts` | Consumes `orders.submitted` messages and journals them through `FencedPgJournal` (lease id `risk-<partition>`), storing the consumer offset in the same transaction as the journal write. Not an API facade; internal transport-to-journal wiring for a risk partition. |

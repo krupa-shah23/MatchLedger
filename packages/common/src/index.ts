@@ -9,7 +9,7 @@ export { formatMinor, parseDecimalToMinor } from "./api/money-format.js";
 export * as ZodSchemas from "./api/schemas.js";
 export type { AfterBatchContext, BookPort, JournalReader, RecoveredState, SnapshotCandidate, SnapshotRecord, SnapshotStore } from "./recovery-types.js";
 export type { Clock, EventSink, JournalAppender, ShardOutput, StampedCommand } from "./shard-ports.js";
-export { MAX_AMOUNT } from "./risk-types.js";
+export { MAX_AMOUNT, DEFAULT_DEDUPE_WINDOW_SEQ } from "./risk-types.js";
 export type {
   AccountSnapshot,
   InstrumentRiskConfig,
@@ -42,5 +42,5 @@ export { serializeRiskState, deserializeRiskState } from "./codec/risk-state.js"
 export { CodecError } from "./codec/codec-error.js";
 export { CURRENT_VERSION, UnknownSchemaVersionError, registerUpcaster, getUpcaster } from "./codec/versioning.js";
 export * from "./ui-schemas.js";
-export { PAGE_ROLES, canAccessPage, canWritePage } from "./ui-config.js";
+export { PAGE_ROLES, canAccessPage, canWritePage, PAGE_WRITE_ENDPOINTS, findPageRoleDrift } from "./ui-config.js";
 export type { PageRoleEntry, Role } from "./ui-config.js";

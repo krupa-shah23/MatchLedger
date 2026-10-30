@@ -7,6 +7,11 @@
 
 export const MAX_AMOUNT = 2n ** 63n - 1n;
 
+// Single source of truth for the DEDUPE_WINDOW_SEQ default. Both the risk
+// package's snapshot upcaster and the shard process's validated config
+// import this instead of each repeating the literal.
+export const DEFAULT_DEDUPE_WINDOW_SEQ = 100000;
+
 export type RiskSide = "BUY" | "SELL";
 export type RiskTimeInForce = "GTC" | "IOC";
 export type OrderKind = "LIMIT" | "MARKET";

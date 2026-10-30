@@ -5,6 +5,8 @@
  * Record window floor in snapshot for recovery.
  */
 
+import { DEFAULT_DEDUPE_WINDOW_SEQ } from "@matchledger/common";
+
 export interface DedupeBounds {
   windowFloor: number; // Seq from last snapshot; ids below this were evicted
   windowSeq: number; // DEDUPE_WINDOW_SEQ config (e.g., 100,000)
@@ -65,7 +67,7 @@ export function upcasterV1toV2(oldSnapshot: Record<string, unknown>): Record<str
     ...oldSnapshot,
     dedupeBounds: {
       windowFloor: 0, // Fresh snapshot assumes floor at 0
-      windowSeq: 100000, // Default DEDUPE_WINDOW_SEQ
+      windowSeq: DEFAULT_DEDUPE_WINDOW_SEQ,
     },
   };
 }

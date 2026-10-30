@@ -1,23 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
+import { findPageRoleDrift } from "./ui-config.js";
+import { ENDPOINT_ROLES } from "./api/roles.js";
 
 describe("Schemas", () => {
   // ZS6: PAGE_ROLES visibility and writability constraints
-  it("ZS6: PAGE_ROLES consistent with ENDPOINT_ROLES", () => {
-    const pageRoles = {
-      "/": ["TRADER", "ADMIN", "RISK_OFFICER", "OPS_ANALYST"],
-      "/trading": ["TRADER"],
-      "/portfolio": ["TRADER", "ADMIN"],
-      "/risk": ["RISK_OFFICER", "ADMIN"],
-      "/recon": ["OPS_ANALYST", "ADMIN"],
-      "/system": ["ADMIN"],
-    };
-
-    // Verify writable is subset of visible
-    for (const [page, visibleRoles] of Object.entries(pageRoles)) {
-      expect(visibleRoles.length).toBeGreaterThan(0);
-      expect(Array.isArray(visibleRoles)).toBe(true);
-    }
+  it("ZS6: PAGE_ROLES.writable agrees with the real ENDPOINT_ROLES for every page", () => {
+    const drift = findPageRoleDrift(ENDPOINT_ROLES);
+    expect(drift).toEqual([]);
   });
 
   // ZS7: Zod schemas with round-trip and field validation

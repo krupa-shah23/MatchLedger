@@ -32,7 +32,13 @@ export interface SystemRoutesDeps {
    * to a checksum-only self-consistency check instead of an actual replay.
    */
   riskConfig?: RiskConfig;
+  /** Same HEARTBEAT_MS a shard process is configured with; the stale-shard
+   * threshold on /system/shards is 3 intervals of this, not a fixed literal. */
+  heartbeatMs?: number;
 }
+
+const DEFAULT_HEARTBEAT_MS = 5000;
+const STALE_INTERVALS = 3;
 
 export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRoutesDeps): Promise<void> {
   // GET /system/invariants - check system invariants
@@ -138,6 +144,7 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
     "/system/shards",
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
+        const staleThresholdSeconds = (STALE_INTERVALS * (deps.heartbeatMs ?? DEFAULT_HEARTBEAT_MS)) / 1000;
         const result = await deps.executor.query(
           `SELECT
             l.lease_id,
@@ -150,7 +157,7 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
             COALESCE(MAX(s.last_seq), 0) AS snapshot_seq,
             COALESCE(MAX(j.seq), 0) AS journal_seq,
             (
-              SELECT (now() - h.last_heartbeat_at) > INTERVAL '15 seconds'
+              SELECT (now() - h.last_heartbeat_at) > make_interval(secs => $1)
               FROM shard_heartbeats h2
               WHERE h2.lease_id = l.lease_id
             )::boolean AS is_stale
@@ -160,7 +167,7 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
           LEFT JOIN journal j ON j.stream_id = ANY(h.owned_symbols) AND j.record_type = 'EVENT'
           GROUP BY l.lease_id, l.owner, l.epoch, l.acquired_at, h.last_heartbeat_at, h.last_seq, h.owned_symbols
           ORDER BY l.lease_id ASC`,
-          []
+          [staleThresholdSeconds]
         );
 
         return reply.code(200).send({
@@ -414,8 +421,9 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
     });
 
     // POST /system/simulator/start - start the simulator
-    app.post("/system/simulator/start", async (request: FastifyRequest, reply: FastifyReply) => {
+    app.post<{ Body?: { seed?: number } }>("/system/simulator/start", async (request: FastifyRequest, reply: FastifyReply) => {
       try {
+        const requestedSeed = (request.body as { seed?: number } | undefined)?.seed;
         let state = deps.simulatorState!.current;
 
         // If already running, return success
@@ -465,7 +473,7 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
           };
 
           state = await createSimulatorDriver({
-            seed: Date.now(),
+            seed: requestedSeed ?? Date.now(),
             symbols: instrumentMap.size > 0 ? Array.from(instrumentMap.keys()) : ["AAPL"],
             ratePerSec: 10,
             scenario: "steady",

@@ -7,6 +7,7 @@
  */
 
 import { z, ZodError } from "zod";
+import { DEFAULT_DEDUPE_WINDOW_SEQ } from "@matchledger/common";
 import { createPool } from "@matchledger/journal";
 import type { Pool } from "pg";
 import { PartitionConsumer, checkTopics, type ConsumerMessage } from "@matchledger/transport";
@@ -28,7 +29,8 @@ const ConfigSchema = z.object({
   TXN_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
   QUEUE_CAPACITY: z.coerce.number().int().positive().default(10000),
   MAX_BATCH: z.coerce.number().int().positive().default(1000),
-  DEDUPE_WINDOW_SEQ: z.coerce.number().int().positive().default(100000),
+  HEARTBEAT_MS: z.coerce.number().int().positive().default(5000),
+  DEDUPE_WINDOW_SEQ: z.coerce.number().int().positive().default(DEFAULT_DEDUPE_WINDOW_SEQ),
   SNAPSHOT_EVERY: z.coerce.number().int().positive().default(10000),
   SHUTDOWN_GRACE_MS: z.coerce.number().int().positive().default(30000),
   PROFILE: z.enum(["demo", "prod"]).default("prod"),
@@ -111,6 +113,7 @@ async function main(): Promise<void> {
         shardId: config.SHARD_ID,
         runnerFactory: null as unknown, // Would be created with engine core
         recoverSymbol: null as unknown, // Would be created with engine core
+        heartbeatMs: config.HEARTBEAT_MS,
       } as never);
 
       // Subscribe to partitions (rebalance callbacks)
