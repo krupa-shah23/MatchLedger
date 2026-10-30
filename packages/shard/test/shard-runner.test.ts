@@ -32,7 +32,10 @@ function commandId(command: ReturnType<typeof place>): string {
   return command.kind === "TICK" ? "TICK" : command.orderId;
 }
 
-describe.skipIf((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.RUN_WEEK4 !== "1")("ShardRunner", () => {
+describe.skipIf(
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.RUN_CONTAINERS !== "1" &&
+    (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.RUN_INTEGRATION !== "1"
+)("ShardRunner", () => {
   it("SH1 stamps clamped timestamps and per-symbol sequences", async () => {
     const { runner, journal, sink } = makeRunner({ clock: new FakeClock([1000, 1000, 990, 1005]) });
     runner.tryEnqueue("ACME", place("a1"));

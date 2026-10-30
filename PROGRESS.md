@@ -1,6 +1,10 @@
 # Week 11 Test Progress
 
-## Week 11 Test-ID Reference (588 tests passing, 0 failures)
+## Week 11 Test-ID Reference
+
+579 passing via `npm test` (root/packages, 147 skipped — live-infra gated),
+20 passing via `npm run test:integration` (53 skipped — live-infra gated),
+80 passing via `cd web && npx vitest run`. 0 failures across all three.
 
 ### Shared Contracts & Boundaries
 | Test ID | File | Status | Coverage |
@@ -40,7 +44,7 @@
 ### Grafana Dashboard
 | Test ID | File | Status | Coverage |
 |---------|------|--------|----------|
-| GD1-GD3 | scripts/check-dashboard-metrics.ts | ✅ Passing | Metrics verification, Prometheus, provisioning |
+| GD1-GD3 | scripts/check-dashboard-metrics.test.ts | ✅ Passing (now actually run by `npm test`; renamed from .ts and added to vitest.config.ts's include glob) | Metrics verification, Prometheus, provisioning |
 
 ### System Endpoints, Simulator, Chaos
 | Test ID | File | Status | Coverage |
@@ -49,12 +53,12 @@
 | SY1-SY2 | packages/api/src/system-tests.test.ts | ✅ Passing | /system/verify-replay, invariants |
 | SM1-SM8 | packages/simulator/simulator-integration.test.ts | ✅ Passing | PRNG, FlowModel, validity, rate, backoff, scenario, endpoints, accounts |
 | CH1-CH5 | packages/simulator/simulator-integration.test.ts | ✅ Passing | Kill shard, freeze shard, profile gating, recovery, demo reset |
-| NP1 | packages/engine-core/src/index.test.ts | ✅ Passing | InstrumentSpec export |
+| NP1 | scripts/check-no-placeholders.test.ts | ✅ Passing | No placeholder tests in web, including a negative proof against a seeded it.todo |
 
 ### E2E (Playwright)
 | Test ID | File | Status | Coverage |
 |---------|------|--------|----------|
-| DEMO1-DEMO5 | e2e/demo.spec.ts | ✅ Created | Login, order flow, halt, kill, reconciliation |
+| DEMO1-DEMO5 | e2e/demo.spec.ts | Created, not run (e2e needs a docker-compose stack + Playwright browsers; unverified in this pass) | Login, order flow, halt, kill, reconciliation |
 
 ## Week 10 Test-ID Reference (153+ tests)
 

@@ -2,7 +2,13 @@
 
 MatchLedger is a deterministic, event-sourced trading and settlement engine built with Node.js and TypeScript.
 
-## Recovery (Week 8 Complete)
+## Limitations
+
+- **Single API instance.** There is no multi-instance fan-out for WebSocket connections or horizontal scaling of the API process; running more than one instance behind a load balancer is not supported.
+- **No mobile layout.** The web UI targets desktop viewports only; it has not been laid out or tested for phone/tablet screens.
+- **Latency numbers are valid on one host only.** Any latency figures in this repo's docs were measured with the engine, risk, API and database colocated on a single machine; they do not reflect cross-host network latency in a real multi-machine deployment.
+
+## Recovery (Week 8, historical — see docs/WEEK-11-AUDIT.md for the current state)
 
 **Durability Claim:** Kill the system at any point between or within the engine and risk stages, restart, and the final state (order books, reservations, balances, ledger, events) equals the uninterrupted run, with no lost order, no duplicate order, and no stranded reservation.
 

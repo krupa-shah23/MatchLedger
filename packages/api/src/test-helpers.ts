@@ -18,10 +18,22 @@ export class MockSqlExecutor implements SqlExecutor {
     order_requests: [],
     orders_view: [],
     balances_view: [],
+    users: [],
   };
   private transactionDepth = 0;
 
   async query(sql: string, params: unknown[]): Promise<{ rows: unknown[] }> {
+    // INSERT INTO users - simulates the real UNIQUE(username) constraint so
+    // tests can exercise the 409-on-duplicate-username path for real.
+    if (sql.includes("INSERT INTO users")) {
+      const [, username] = params as [string, string, string, string];
+      if ((this.tables.users as any[]).some((u) => u.username === username)) {
+        throw new Error('duplicate key value violates unique constraint "users_username_key" (UNIQUE)');
+      }
+      (this.tables.users as any[]).push({ username });
+      return { rows: [] };
+    }
+
     // INSERT INTO order_requests
     if (sql.includes("INSERT INTO order_requests")) {
       const [accountId, clientOrderId, payloadHash, orderId] = params as [

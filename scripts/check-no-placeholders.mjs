@@ -83,7 +83,13 @@ function findTsFiles() {
   }
 }
 
-const files = findTsFiles();
+// This checker's own meta-test (scripts/check-no-placeholders.test.ts)
+// legitimately writes "it.todo" etc. as literal text — in its own assertions
+// and in a seeded fixture file it creates to prove the checker catches a
+// real violation — so it is excluded from the scan rather than flagged.
+const SELF_EXCLUDED_FILES = new Set(["scripts/check-no-placeholders.test.ts"]);
+
+const files = findTsFiles().filter((f) => !SELF_EXCLUDED_FILES.has(f));
 const violations = [];
 
 for (const file of files) {
