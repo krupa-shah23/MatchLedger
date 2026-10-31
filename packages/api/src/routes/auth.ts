@@ -60,7 +60,7 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: AuthRoutesD
 
         // Get accounts for this user
         const accounts = await getUserAccounts(deps.executor, user.user_id);
-        const accountIds = accounts.map((a: any) => a.account_id);
+        const accountIds = accounts;
 
         // Sign token with auth_time
         const authTime = Math.floor(Date.now() / 1000);
@@ -199,7 +199,7 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: AuthRoutesD
         }
 
         const accounts = await getUserAccounts(deps.executor, token.sub);
-        const accountIds = accounts.map((a: any) => a.account_id);
+        const accountIds = accounts;
 
         return reply.code(200).send({
           userId: user.user_id,

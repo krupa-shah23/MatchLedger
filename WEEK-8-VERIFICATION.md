@@ -1,5 +1,7 @@
 # Week 8 Final Verification
 
+> Historical verification claim, not a retained runner log. The archived commit's 20-run flake claim was not reproduced: a new run failed at iteration 5/20 with a WebSocket handshake failure. See `README.md` and `PROGRESS.md` for the reproduction details.
+
 ## ✅ Engine-core Unchanged
 
 ```bash

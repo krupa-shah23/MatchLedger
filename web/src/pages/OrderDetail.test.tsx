@@ -49,7 +49,7 @@ describe("UP: Order Detail Page", () => {
             type: "LIMIT",
             quantity: "100",
             filledQty: "0",
-            price: "150000000",
+            price: "1500000.00",
             status: "ACCEPTED",
             createdAt: new Date().toISOString(),
           }),
@@ -74,7 +74,7 @@ describe("UP: Order Detail Page", () => {
           return new Response(
             JSON.stringify([
               { seq: 1, ts: new Date().toISOString(), type: "PlaceOrder", payload: {} },
-              { seq: 2, ts: new Date().toISOString(), type: "OrderRejected", payload: { needed: "10125", available: "9800" } },
+              { seq: 2, ts: new Date().toISOString(), type: "OrderRejected", payload: { needed: "101.25", available: "98.00" } },
             ]),
             { status: 200 }
           );
@@ -87,7 +87,7 @@ describe("UP: Order Detail Page", () => {
             type: "LIMIT",
             quantity: "1",
             filledQty: "0",
-            price: "10125",
+            price: "101.25",
             status: "REJECTED",
             terminalReason: "INSUFFICIENT_BALANCE",
             createdAt: new Date().toISOString(),
@@ -100,7 +100,7 @@ describe("UP: Order Detail Page", () => {
     renderOrderDetail("ord-2");
 
     await waitFor(() => expect(screen.getByText(/Rejected: needed/)).toBeInTheDocument());
-    expect(screen.getByText("Rejected: needed $101.25, available $98.00")).toBeInTheDocument();
+    expect(screen.getByText("Rejected: needed ₹101.25, available ₹98.00")).toBeInTheDocument();
   });
 
   it("a 404 from the server renders a not-found page, not a crash", async () => {

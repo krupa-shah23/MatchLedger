@@ -100,6 +100,43 @@ describe("Simulator (SM1-SM6)", () => {
     }
   });
 
+  it("SM3b: FlowModel clamps mid-price at the instrument's bounds (tight range exercises the clamp)", () => {
+    // SM3's spec (maxPrice=500, 50 ticks, +/-3 per tick) can never drift far
+    // enough from mid=250 to reach the [0,500] boundary even without
+    // clamping, so it can't actually prove clampTicks works. A tight
+    // spec here (maxPrice=6, mid=3) guarantees the +/-3-per-tick random
+    // walk hits the boundary within a handful of ticks.
+    const spec: InstrumentSpec = {
+      symbol: "TIGHT",
+      tickSize: 1n,
+      lotSize: 1n,
+      maxQuantity: 100000n,
+      maxPrice: 6n,
+    };
+
+    const model = createFlowModel(42, spec, "steady");
+    let sawBoundary = false;
+
+    for (let tick = 0; tick < 30; tick++) {
+      const { orders, newState } = flowModelNextTick(model, tick, 0);
+
+      for (const order of orders) {
+        if (order.type === "LIMIT" && order.price !== null) {
+          const price = Number(order.price);
+          expect(price).toBeGreaterThanOrEqual(0);
+          expect(price).toBeLessThanOrEqual(Number(spec.maxPrice));
+          if (price === 0 || price === Number(spec.maxPrice)) sawBoundary = true;
+        }
+      }
+
+      Object.assign(model, newState);
+    }
+
+    // If this never hits the boundary, the test isn't actually exercising
+    // the clamp and would pass vacuously even without it.
+    expect(sawBoundary).toBe(true);
+  });
+
   it("SM4: Driver rate - correct number of submits per tick", async () => {
     const spec: InstrumentSpec = {
       symbol: "TSLA",
@@ -241,5 +278,85 @@ describe("Simulator (SM1-SM6)", () => {
 
     // Should see at least one breaker sweep in 100 ticks (interval is 50)
     expect(sweepCount).toBeGreaterThan(0);
+  });
+
+  it("SM7: ticksPerSec is validated and rejects non-positive values", async () => {
+    const spec: InstrumentSpec = {
+      symbol: "IBM",
+      tickSize: 1n,
+      lotSize: 10n,
+      maxQuantity: 100000n,
+      maxPrice: 300n,
+    };
+
+    await expect(
+      createSimulatorDriver({
+        seed: 1,
+        symbols: ["IBM"],
+        ratePerSec: 10,
+        ticksPerSec: 0,
+        scenario: "steady",
+        scheduler: () => () => {},
+        submitPort: { submitOrder: async () => "ACCEPTED" },
+        instruments: new Map([["IBM", spec]]),
+      })
+    ).rejects.toThrow("ticksPerSec must be a positive integer");
+  });
+
+  it("SM8: Backoff jitter is deterministic for a given seed, not Math.random", async () => {
+    const spec: InstrumentSpec = {
+      symbol: "ORCL",
+      tickSize: 1n,
+      lotSize: 10n,
+      maxQuantity: 100000n,
+      maxPrice: 300n,
+    };
+
+    const delaysBySeed = async (seed: number) => {
+      const delays: number[] = [];
+      const realSetTimeout = global.setTimeout;
+      vi.stubGlobal("setTimeout", ((fn: () => void, ms?: number) => {
+        delays.push(ms ?? 0);
+        return realSetTimeout(fn, 0);
+      }) as typeof setTimeout);
+
+      let submitCount = 0;
+      const submitPort: SubmitPort = {
+        submitOrder: async () => {
+          submitCount++;
+          return submitCount === 1 ? "FULL" : "ACCEPTED";
+        },
+      };
+
+      let tickFn: (() => Promise<void>) | null = null;
+      const scheduler: Scheduler = (fn) => {
+        tickFn = fn;
+        return () => {};
+      };
+
+      let state = await createSimulatorDriver({
+        seed,
+        symbols: ["ORCL"],
+        ratePerSec: 10,
+        ticksPerSec: 10,
+        scenario: "steady",
+        scheduler,
+        submitPort,
+        instruments: new Map([["ORCL", spec]]),
+      });
+      state = await startSimulator(state);
+      if (tickFn) await (tickFn as () => Promise<void>)();
+      await stopSimulator(state);
+      vi.unstubAllGlobals();
+      return delays;
+    };
+
+    const run1 = await delaysBySeed(7);
+    const run2 = await delaysBySeed(7);
+    const run3 = await delaysBySeed(8);
+
+    expect(run1.length).toBeGreaterThan(0);
+    expect(run1).toEqual(run2);
+    expect(run1).not.toEqual(run3);
   });
 });

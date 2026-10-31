@@ -11,6 +11,7 @@ export type { AccountState, ReserveRequest, ReserveResult, RiskHooks } from "./t
 export { RiskStage } from "./stage.js";
 export { LeakSweeper } from "./sweeper.js";
 export { RiskStamper } from "./stamper.js";
+export { PgRiskJournal } from "./persistence/pg-risk-journal.js";
 export { InMemoryRiskJournal } from "./in-memory-risk-journal.js";
 export * from "./core/index.js";
 export { recoverRiskPartition } from "./recovery/recover-risk-partition.js";

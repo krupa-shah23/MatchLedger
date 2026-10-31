@@ -1,10 +1,10 @@
-CREATE TABLE balances_view (
+CREATE TABLE IF NOT EXISTS balances_view (
  account_id text PRIMARY KEY,
  cash bigint NOT NULL DEFAULT 0,
  held_cash bigint NOT NULL DEFAULT 0
 );
 
-CREATE TABLE positions_view (
+CREATE TABLE IF NOT EXISTS positions_view (
  account_id text NOT NULL,
  symbol text NOT NULL,
  quantity bigint NOT NULL DEFAULT 0,
@@ -14,7 +14,7 @@ CREATE TABLE positions_view (
  PRIMARY KEY (account_id, symbol)
 );
 
-CREATE TABLE reservations_view (
+CREATE TABLE IF NOT EXISTS reservations_view (
  order_id text PRIMARY KEY,
  account_id text NOT NULL,
  symbol text NOT NULL,
@@ -29,9 +29,9 @@ CREATE TABLE reservations_view (
  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX reservations_view_account ON reservations_view (account_id, status);
+CREATE INDEX IF NOT EXISTS reservations_view_account ON reservations_view (account_id, status);
 
-CREATE TABLE rejections_view (
+CREATE TABLE IF NOT EXISTS rejections_view (
  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
  source text NOT NULL CHECK (source IN ('RISK','MATCHER')),
  order_id text NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE rejections_view (
  UNIQUE (source, order_id)
 );
 
-CREATE TABLE breaker_view (
+CREATE TABLE IF NOT EXISTS breaker_view (
  symbol text PRIMARY KEY,
  state text NOT NULL CHECK (state IN ('CLOSED','OPEN','HALF_OPEN')),
  trip_reason text,

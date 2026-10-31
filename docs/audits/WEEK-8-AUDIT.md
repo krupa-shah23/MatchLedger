@@ -1,5 +1,7 @@
 # Week 8 Audit Report
 
+> Earlier checkpoint audit, not the final Week 8 state. This snapshot predates commit `a54ace6`, which later added the persistence and recovery implementation. Its “no Week 8 tests” statement describes that earlier checkpoint only.
+
 ## VERDICT
 
 **Is Week 8 complete? NO**

@@ -28,7 +28,7 @@ function renderReconPage() {
   );
 }
 
-describe("UP: Reconciliation (P6)", () => {
+describe("UP: Reconciliation", () => {
   beforeEach(() => {
     sessionStorage.clear();
     vi.clearAllMocks();
@@ -50,11 +50,11 @@ describe("UP: Reconciliation (P6)", () => {
           {
             breakId: "break-1",
             accountId: "acc1",
-            asset: "USD",
-            expected: "100000",
-            actual: "99000",
+            asset: "CASH",
+            expected: "1000.00",
+            actual: "990.00",
             status: "OPEN",
-            auditTrail: [{ ts: Date.now(), action: "found", user: "system" }],
+            auditTrail: [{ id: 1, changedAt: Date.now(), oldStatus: "OPEN", newStatus: "OPEN", reason: "Found", changedBy: "system" }],
           },
         ],
       }),
@@ -63,7 +63,7 @@ describe("UP: Reconciliation (P6)", () => {
     renderReconPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Reconciliation (P6)")).toBeInTheDocument();
+      expect(screen.getByText("Reconciliation")).toBeInTheDocument();
     });
 
     // Check statement upload
@@ -79,29 +79,21 @@ describe("UP: Reconciliation (P6)", () => {
     expect(screen.getByText("Breaks (1)")).toBeInTheDocument();
     expect(screen.getByText("break-1")).toBeInTheDocument();
     expect(screen.getByText("acc1")).toBeInTheDocument();
-    expect(screen.getByText("USD")).toBeInTheDocument();
+    expect(screen.getByText("CASH")).toBeInTheDocument();
   });
 
   it("UP14: Break detail with reason-required resolve and audit trail", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        runs: [],
-        breaks: [
-          {
-            breakId: "break-1",
-            accountId: "acc1",
-            asset: "USD",
-            expected: "100000",
-            actual: "99000",
-            status: "OPEN",
-            auditTrail: [
-              { ts: Date.now() - 60000, action: "found", user: "system" },
-              { ts: Date.now(), action: "reviewed", user: "ops1" },
-            ],
-          },
-        ],
-      }),
+    let isResolved = false;
+    mockFetch.mockImplementation(async (input: string, init?: RequestInit) => {
+      if (input.includes("/audit")) return new Response(JSON.stringify({ audit: [
+        { id: 1, changedAt: Date.now() - 60000, oldStatus: "OPEN", newStatus: "OPEN", reason: "Found", changedBy: "system" },
+        { id: 2, changedAt: Date.now(), oldStatus: "OPEN", newStatus: "INVESTIGATING", reason: "Reviewed", changedBy: "ops1" },
+        ...(isResolved ? [{ id: 3, changedAt: Date.now(), oldStatus: "INVESTIGATING", newStatus: "RESOLVED", reason: "Verified statement correction", changedBy: "ops1" }] : []),
+      ] }), { status: 200 });
+      if (init?.method === "POST") { isResolved = true; return new Response(JSON.stringify({ breakId: "break-1" }), { status: 202 }); }
+      return new Response(JSON.stringify(input.includes("/runs") ? { runs: [] } : { breaks: [{
+        breakId: "break-1", accountId: "acc1", asset: "CASH", expected: "1000.00", actual: "990.00", status: isResolved ? "RESOLVED" : "OPEN",
+      }] }), { status: 200 });
     });
 
     renderReconPage();
@@ -121,8 +113,8 @@ describe("UP: Reconciliation (P6)", () => {
 
     // Check audit trail
     expect(screen.getByText("Audit Trail")).toBeInTheDocument();
-    expect(screen.getByText(/found/)).toBeInTheDocument();
-    expect(screen.getByText(/reviewed/)).toBeInTheDocument();
+    expect(screen.getByText(/Found/)).toBeInTheDocument();
+    expect(screen.getByText(/Reviewed/)).toBeInTheDocument();
 
     // Check mandatory reason requirement
     expect(screen.getByPlaceholderText(/Why is this break being resolved/)).toBeInTheDocument();
@@ -131,6 +123,10 @@ describe("UP: Reconciliation (P6)", () => {
     const resolveButtonsAfterOpen = screen.getAllByText("Resolve");
     const submitResolveBtn = resolveButtonsAfterOpen[resolveButtonsAfterOpen.length - 1];
     expect(submitResolveBtn).toBeDisabled();
+    await userEvent.type(screen.getByLabelText(/Resolution Reason/), "Verified statement correction");
+    await userEvent.click(submitResolveBtn!);
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining("/resolve"), expect.objectContaining({ method: "POST" })));
+    await waitFor(() => expect(screen.getByText("RESOLVED")).toBeInTheDocument());
   });
 
   it("UP14: Show 400, 409, 413 errors inline for statement upload", async () => {

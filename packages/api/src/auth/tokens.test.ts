@@ -35,13 +35,8 @@ describe("AU: JWT Tokens", () => {
   });
 
   it("AU3: Expired token is rejected", async () => {
-    const token = await signToken(config, "user-123", "TRADER");
-
-    // Simulate token expiration by checking it with a config that expects it to be old
-    // In a real test, we'd mock the time or use a very short TTL
-    // For now, we just verify the token can be created and verified
-    const claims = await verifyToken(config, token);
-    expect(claims.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    const token = await signToken({ ...config, ttlSeconds: -60 }, "user-123", "TRADER");
+    await expect(verifyToken(config, token)).rejects.toThrow(/exp.*claim timestamp check failed/i);
   });
 
   it("AU3: Missing or malformed token is rejected", async () => {

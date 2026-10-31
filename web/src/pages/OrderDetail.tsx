@@ -6,8 +6,9 @@ import React from "react";
 import { useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider.js";
 import { ApiError } from "../api/client.js";
+import { PageHeading } from "../components/Ui.js";
 import { LifecycleStrip } from "../components/LifecycleStrip.js";
-import { formatMoney } from "../utils/money.js";
+import { displayMoney as formatMoney } from "../utils/display-money.js";
 import type { Order, OrderStatus } from "../lib/lifecycle.js";
 
 interface OrderDetailData extends Order {
@@ -66,17 +67,17 @@ export function OrderDetailPage() {
   }, [orderId, client]);
 
   if (!orderId) {
-    return <div style={{ padding: 20 }}>No order specified.</div>;
+    return <div className="page"><div className="empty-state">No order specified.</div></div>;
   }
 
   if (isLoading) {
-    return <div style={{ padding: 20 }}>Loading order...</div>;
+    return <div className="loading-state" role="status"><span className="spinner" />Loading order...</div>;
   }
 
   if (notFound) {
     return (
-      <div style={{ padding: 20 }}>
-        <h1>Order Not Found</h1>
+      <div className="page">
+        <PageHeading eyebrow="ORDER DETAILS" title="Order Not Found" description="This order could not be loaded." />
         <p>Order {orderId} does not exist or you do not have access to it.</p>
       </div>
     );
@@ -84,8 +85,8 @@ export function OrderDetailPage() {
 
   if (error || !order) {
     return (
-      <div style={{ padding: 20 }}>
-        <p style={{ color: "red" }}>{error ?? "Failed to load order"}</p>
+      <div className="page">
+        <p role="alert" className="notice notice-error">{error ?? "Failed to load order"}</p>
       </div>
     );
   }
@@ -95,68 +96,39 @@ export function OrderDetailPage() {
   const isRejected: boolean = order.status === ("REJECTED" as OrderStatus);
 
   return (
-    <div style={{ padding: 20, maxWidth: 800 }}>
-      <h1>Order {orderId.substring(0, 8)}...</h1>
-
-      <div style={{ marginBottom: 20 }}>
-        <LifecycleStrip order={order} />
-      </div>
-
+    <div className="page">
+      <PageHeading eyebrow="ORDER DETAILS" title={`Order ${orderId.substring(0, 8)}...`} description="Follow this order from submission to its final outcome." actions={<LifecycleStrip order={order} />} />
+      <p className="account-reference mono">{orderId}</p>
       {isRejected && rejectionPayload && (
-        <div style={{ backgroundColor: "#ffcccc", padding: 15, borderRadius: 4, marginBottom: 20 }}>
+        <div className="notice notice-error">
           Rejected: needed {formatMoney(rejectionPayload.needed ?? "0")}, available {formatMoney(rejectionPayload.available ?? "0")}
         </div>
       )}
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 15, marginBottom: 20 }}>
-        <div>
-          <label>Symbol:</label>
-          <div style={{ fontSize: 16, fontWeight: "bold" }}>{order.symbol}</div>
+      <section className="panel">
+        <h2>Order overview</h2>
+        <div className="detail-grid">
+          <div><label>Symbol</label><div><strong>{order.symbol}</strong></div></div>
+          <div><label>Side</label><div><span className={`badge ${order.side === "BUY" ? "badge-good" : "badge-bad"}`}>{order.side}</span></div></div>
+          <div><label>Type</label><div>{order.type}</div></div>
+          <div><label>Quantity</label><div>{order.quantity}</div></div>
+          <div><label>Price</label><div>{order.price ? formatMoney(order.price) : "—"}</div></div>
+          <div><label>Filled</label><div>{order.filledQty}</div></div>
         </div>
-        <div>
-          <label>Side:</label>
-          <div style={{ fontSize: 16, fontWeight: "bold" }}>{order.side}</div>
-        </div>
-        <div>
-          <label>Type:</label>
-          <div>{order.type}</div>
-        </div>
-        <div>
-          <label>Quantity:</label>
-          <div>{order.quantity}</div>
-        </div>
-        <div>
-          <label>Price:</label>
-          <div>{order.price ? formatMoney(order.price) : "—"}</div>
-        </div>
-        <div>
-          <label>Filled:</label>
-          <div>{order.filledQty}</div>
-        </div>
-      </div>
-
-      <div>
-        <h3>Timeline</h3>
-        <div style={{ border: "1px solid #ddd", borderRadius: 4 }}>
-          {events.length === 0 ? (
-            <p style={{ padding: 15 }}>No events</p>
-          ) : (
-            events.map((event, i) => (
-              <div key={i} style={{ borderBottom: i < events.length - 1 ? "1px solid #eee" : "none", padding: 15 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                  <div>
-                    <strong>#{event.seq}</strong> {event.type}
-                  </div>
-                  <div style={{ fontSize: 12, color: "#666" }}>{new Date(event.ts).toLocaleTimeString()}</div>
-                </div>
-                <div style={{ fontSize: 12, backgroundColor: "#f9f9f9", padding: 10, borderRadius: 3 }}>
-                  <code>{JSON.stringify(event.payload, null, 2)}</code>
-                </div>
+      </section>
+      <section className="panel">
+        <div className="panel-heading"><h2>Timeline</h2><span className="panel-note">Recorded order events</span></div>
+        {events.length === 0 ? <div className="empty-state">No events</div> : (
+          <div className="timeline">{events.map((event, i) => (
+            <div key={i} className="timeline-event">
+              <div className="timeline-event-heading">
+                <div><strong className="badge badge-neutral">#{event.seq}</strong> <span>{event.type}</span></div>
+                <time dateTime={event.ts}>{new Date(event.ts).toLocaleString()}</time>
               </div>
-            ))
-          )}
-        </div>
-      </div>
+              <pre className="event-payload">{JSON.stringify(event.payload, null, 2)}</pre>
+            </div>
+          ))}</div>
+        )}
+      </section>
     </div>
   );
 }

@@ -38,7 +38,7 @@ export class FencedPgJournal implements JournalAppender {
       streamIds.push(item.symbol);
       seqs.push(item.seq);
       tss.push(item.ts);
-      payloads.push(JSON.stringify(item.command));
+      payloads.push(JSON.stringify(item.command, (_, v: unknown) => typeof v === "bigint" ? v.toString() : v));
     }
 
     // Use a CTE with FOR SHARE to enforce fencing
@@ -48,7 +48,7 @@ export class FencedPgJournal implements JournalAppender {
       )
       INSERT INTO journal (stream_id, seq, record_type, idx, schema_version, ts, writer_epoch, payload_json)
       SELECT u.stream_id, u.seq, 'COMMAND'::text, 0, 1, u.ts, $2, u.payload::jsonb
-      FROM unnest($3::text[], $4::integer[], $5::integer[], $6::text[])
+      FROM unnest($3::text[], $4::integer[], $5::bigint[], $6::text[])
         AS u(stream_id, seq, ts, payload)
       CROSS JOIN (SELECT epoch FROM lease)
       WHERE epoch = $2
@@ -91,7 +91,7 @@ export class FencedPgJournal implements JournalAppender {
         seqs.push(output.seq);
         idxs.push(i);
         tss.push(output.ts);
-        payloads.push(JSON.stringify(output.events[i]));
+        payloads.push(JSON.stringify(output.events[i], (_, v: unknown) => typeof v === "bigint" ? v.toString() : v));
       }
     }
 
@@ -103,7 +103,7 @@ export class FencedPgJournal implements JournalAppender {
       )
       INSERT INTO journal (stream_id, seq, record_type, idx, schema_version, ts, writer_epoch, payload_json)
       SELECT u.stream_id, u.seq, 'EVENT'::text, u.idx, 1, u.ts, $2, u.payload::jsonb
-      FROM unnest($3::text[], $4::integer[], $5::integer[], $6::integer[], $7::text[])
+      FROM unnest($3::text[], $4::integer[], $5::bigint[], $6::bigint[], $7::text[])
         AS u(stream_id, seq, idx, ts, payload)
       CROSS JOIN (SELECT epoch FROM lease)
       WHERE epoch = $2

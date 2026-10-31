@@ -18,7 +18,7 @@ const config: BreakerConfig = {
 
 const scenario1 = [100n, 101n, 100n, 102n, 100n, 108n];
 
-describe("breaker stub contract", () => {
+describe("breaker behavior contract", () => {
   it("K4: scenario 1 trips on the sixth trade", () => {
     const breaker = new Breaker(config);
     expect(() => breaker.onTrades(scenario1.slice(0, 5), 1_000)).not.toThrow();

@@ -43,6 +43,10 @@ describe("SA: Admin", () => {
     expect(createAccount.statusCode).toBe(200);
     expect(JSON.parse(createAccount.payload).accountId).toBe("acc-new");
 
+    const accounts = await app.inject({ method: "GET", url: "/admin/accounts", headers: { authorization: `Bearer ${token}` } });
+    expect(accounts.statusCode).toBe(200);
+    expect(accounts.json().accounts).toContainEqual({ id: "acc-new", name: "acc-new" });
+
     const deposit = await app.inject({
       method: "POST",
       url: "/admin/accounts/acc-new/deposit",

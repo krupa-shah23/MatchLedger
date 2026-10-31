@@ -7,3 +7,4 @@ export type { BookLike, BreakerConfigState, EnqueueResult, RunnerState, ShardExi
 export { Stamper } from "./stamper.js";
 export { systemClock } from "./system-clock.js";
 export { yieldToEventLoop } from "./yield.js";
+export { createPostgresRunner, decodeEngineCommand, journalJson } from "./postgres-runner.js";

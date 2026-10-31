@@ -4,17 +4,19 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { execSync } from "child_process";
+import { findForbiddenDependencies } from "./check-boundaries.mjs";
 
 describe("BD1: Boundary Checker", () => {
-  it("BD1: Detects seeded violations (web importing backend, telemetry importing core, simulator importing Kafka)", () => {
-    // Run the boundary checker
-    try {
-      execSync("node scripts/check-boundaries.mjs", { cwd: process.cwd() });
-      expect(true).toBe(true); // Should pass
-    } catch (error: any) {
-      // If it fails, it should be a legitimate boundary violation
-      expect(error.status).toBeGreaterThan(0);
-    }
+  it("BD1: Detects seeded web, telemetry, and simulator dependency violations", () => {
+    const violations = [
+      findForbiddenDependencies({ dependencies: { "@matchledger/api": "*" } }, ["react"], "web/package.json"),
+      findForbiddenDependencies({ dependencies: { "@matchledger/engine-core": "*" } }, ["prom-client"], "packages/telemetry/package.json"),
+      findForbiddenDependencies({ dependencies: { "@matchledger/transport": "*" } }, ["@matchledger/common", "@confluentinc/kafka-javascript"], "packages/simulator/package.json"),
+    ].flat();
+
+    expect(violations).toHaveLength(3);
+    expect(violations).toContainEqual(expect.stringContaining("web/package.json"));
+    expect(violations).toContainEqual(expect.stringContaining("packages/telemetry/package.json"));
+    expect(violations).toContainEqual(expect.stringContaining("packages/simulator/package.json"));
   });
 });

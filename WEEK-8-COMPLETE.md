@@ -1,5 +1,7 @@
 # Week 8: COMPLETE ✅
 
+> Historical completion record, not an independently archived runner log. The overall test total (317 passed / 96 skipped / 4 todo) was reproduced at commit `a54ace6` on 2026-10-31; the claimed Week 8-specific subtotal of 122 conflicts with other retained documents and remains unverified. See the provenance note in `README.md`.
+
 ## Final Test Count
 
 | Category | Tests | Status |

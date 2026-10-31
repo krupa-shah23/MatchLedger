@@ -1,7 +1,7 @@
 /**
  * Derive the visual lifecycle state of an order.
  * Returns a state suitable for rendering LifecycleStrip component.
- * Hand-written per WEEK-11.md section 4.10
+ * Pure derivation per WEEK-11.md section 4.10.
  *
  * Lifecycle stages:
  * 1. JOURNALED (202 received, not yet accepted) → spinner + "durably received, not yet accepted"
@@ -12,7 +12,8 @@
  * 6. REJECTED → "rejected: reason"
  */
 
-export const PENDING_HINT_MS = 3000; // Show hint after 3 seconds
+import { DEFAULT_PENDING_HINT_MS } from "../config-defaults.js";
+export const PENDING_HINT_MS = DEFAULT_PENDING_HINT_MS;
 
 export type OrderStatus =
   | "RECEIVED"
@@ -43,7 +44,7 @@ export type LifecycleState =
   | { stage: "cancelled"; spinner: false; text: string }
   | { stage: "rejected"; spinner: false; text: string; reason: string };
 
-export function deriveLifecycle(order: Order, now: number): LifecycleState {
+export function deriveLifecycle(order: Order, now: number, pendingHintMs = PENDING_HINT_MS): LifecycleState {
   const createdTime = new Date(order.createdAt).getTime();
   const ageMs = now - createdTime;
 
@@ -56,7 +57,7 @@ export function deriveLifecycle(order: Order, now: number): LifecycleState {
       };
 
     case "ACCEPTED":
-      const showHint = ageMs > PENDING_HINT_MS;
+      const showHint = ageMs > pendingHintMs;
       return {
         stage: "accepted",
         spinner: true,

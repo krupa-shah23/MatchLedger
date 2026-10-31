@@ -65,14 +65,14 @@ export async function getOrderTimeline(
 ): Promise<Record<string, unknown>[]> {
   // Merge risk and engine events ordered by (ts, stage_rank, seq)
   const result = await executor.query(
-    `SELECT * FROM (
-       SELECT ts, 1 as stage_rank, seq, 'RISK_COMMAND' as source FROM risk_commands WHERE order_id = $1
-       UNION ALL
-       SELECT ts, 2 as stage_rank, seq, 'RISK_EVENT' as source FROM risk_events WHERE order_id = $1
-       UNION ALL
-       SELECT ts, 3 as stage_rank, seq, 'ENGINE' as source FROM engine_events WHERE order_id = $1
-     ) timeline
-     ORDER BY ts, stage_rank, seq;`,
+    `SELECT ts, seq, idx, payload_json AS payload,
+       CASE WHEN stream_id LIKE 'risk-%' AND record_type='COMMAND' THEN 1
+            WHEN stream_id LIKE 'risk-%' THEN 2 ELSE 3 END AS stage_rank,
+       CASE WHEN stream_id LIKE 'risk-%' AND record_type='COMMAND' THEN 'RISK_COMMAND'
+            WHEN stream_id LIKE 'risk-%' THEN 'RISK_EVENT' ELSE 'ENGINE' END AS source
+     FROM journal WHERE payload_json->>'orderId'=$1
+       OR payload_json->>'makerOrderId'=$1 OR payload_json->>'takerOrderId'=$1
+     ORDER BY ts, stage_rank, seq, idx;`,
     [orderId]
   );
   return result.rows as Record<string, unknown>[];
@@ -99,7 +99,7 @@ export async function getBook(
     [symbol]
   );
 
-  return { symbol, bid, ask, seq: 0 };
+  return { symbol, bid, ask: ask.rows, seq: 0 };
 }
 
 export async function getTrades(
@@ -191,7 +191,11 @@ export async function getBreakers(
   executor: SqlExecutor
 ): Promise<Record<string, unknown>[]> {
   const result = await executor.query(
-    `SELECT * FROM breaker_view;`,
+    `SELECT b.*,
+       (SELECT COUNT(*) FROM resting_orders r WHERE r.symbol=b.symbol) AS resting_orders,
+       (SELECT COALESCE(SUM(amount_remaining),0) FROM reservations_view r
+        WHERE r.symbol=b.symbol AND r.asset='CASH' AND r.status IN ('PLACED','PARTIALLY_CONVERTED')) AS held_funds
+     FROM breaker_view b;`,
     []
   );
   return result.rows as Record<string, unknown>[];

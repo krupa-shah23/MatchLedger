@@ -12,3 +12,4 @@ export {
 
 export { startMetricsServer, type MetricsServerOptions } from "./server.js";
 export { startEventLoopSampler, type EventLoopSamplerOptions } from "./eventloop-sampler.js";
+export { startGcSampler } from "./gc-sampler.js";

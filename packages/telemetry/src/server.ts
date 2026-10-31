@@ -5,14 +5,20 @@
 
 import http from "node:http";
 import { getRegistry } from "./registry.js";
+import { startEventLoopSampler } from "./eventloop-sampler.js";
+import { startGcSampler } from "./gc-sampler.js";
 
 export interface MetricsServerOptions {
   port?: number;
+  host?: string;
 }
 
 export async function startMetricsServer(opts: MetricsServerOptions = {}): Promise<http.Server> {
-  const port = opts.port || 9090;
+  const port = opts.port ?? 9090;
   const registry = getRegistry();
+  const processLabel = process.env.SHARD_ID ?? "api";
+  const stopEventLoopSampler = startEventLoopSampler({ processLabel });
+  const stopGcSampler = startGcSampler();
 
   return new Promise((resolve, reject) => {
     const server = http.createServer(async (req, res) => {
@@ -34,11 +40,19 @@ export async function startMetricsServer(opts: MetricsServerOptions = {}): Promi
       }
     });
 
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, opts.host ?? "127.0.0.1", () => {
       console.log(`[metrics] Server listening on http://127.0.0.1:${port}`);
       resolve(server);
     });
 
-    server.on("error", reject);
+    server.on("error", (error) => {
+      stopEventLoopSampler();
+      stopGcSampler();
+      reject(error);
+    });
+    server.on("close", () => {
+      stopEventLoopSampler();
+      stopGcSampler();
+    });
   });
 }

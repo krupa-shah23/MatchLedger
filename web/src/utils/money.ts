@@ -7,11 +7,11 @@
 export { decodeMoney, encodeMoney, MAX_MONEY, MIN_MONEY } from "@matchledger/common";
 
 /**
- * Format bigint (in minor units) as USD currency string.
- * Example: 1500000n (15.00 as bigint) -> "$15.00"
+ * Format bigint (in minor units) as the demo's Indian rupee display.
+ * Values are simulation units; this is not a foreign-exchange conversion.
  */
 export function formatMoney(minorUnits: bigint | string | number | null): string {
-  if (!minorUnits) return "$0.00";
+  if (!minorUnits) return "₹0.00";
 
   let value: bigint;
   if (typeof minorUnits === "bigint") {
@@ -31,7 +31,7 @@ export function formatMoney(minorUnits: bigint | string | number | null): string
   const absDollars = absValue / 100n;
   const absCents = absValue % 100n;
 
-  return `${isNegative ? "-" : ""}$${absDollars}.${String(absCents).padStart(2, "0")}`;
+  return `${isNegative ? "-" : ""}₹${absDollars}.${String(absCents).padStart(2, "0")}`;
 }
 
 /**

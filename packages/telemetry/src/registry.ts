@@ -118,6 +118,18 @@ export const METRICS_CATALOGUE: Record<string, MetricDefinition> = {
     labelNames: ["process"],
     buckets: [1, 5, 10, 50, 100, 500],
   },
+  "ml_eventloop_delay_max_ms": {
+    name: "ml_eventloop_delay_max_ms",
+    type: "gauge",
+    help: "Maximum event-loop delay in the current sample window",
+    labelNames: ["process"],
+  },
+  "ml_gc_pause_ms": {
+    name: "ml_gc_pause_ms",
+    type: "histogram",
+    help: "Observed garbage-collection pause duration in milliseconds",
+    buckets: [1, 5, 10, 25, 50, 100, 250, 500, 1000],
+  },
 
   // Control-plane metrics
   "ml_order_lifecycle_ms": {
@@ -133,19 +145,27 @@ export const METRICS_CATALOGUE: Record<string, MetricDefinition> = {
     help: "Risk decisions (accept/reject)",
     labelNames: ["outcome"],
   },
+  "ml_risk_rejections_total": {
+    name: "ml_risk_rejections_total",
+    type: "counter",
+    help: "Risk order rejections by bounded rejection reason",
+    labelNames: ["reason"],
+  },
   "ml_consumer_lag": {
     name: "ml_consumer_lag",
     type: "gauge",
     help: "Kafka consumer lag",
     labelNames: ["topic", "partition"],
   },
-  "ml_projector_lag_ms": {
-    name: "ml_projector_lag_ms",
+  "ml_projector_lag": {
+    name: "ml_projector_lag",
     type: "gauge",
-    help: "Projector lag behind writes",
+    help: "Projector sequence lag behind writes",
   },
 
   // API metrics
+  "ml_websocket_conflations_total": { name: "ml_websocket_conflations_total", type: "counter", help: "Book messages conflated under backpressure" },
+  "ml_websocket_slow_closes_total": { name: "ml_websocket_slow_closes_total", type: "counter", help: "Slow WebSocket clients disconnected" },
   "ml_websocket_connections": {
     name: "ml_websocket_connections",
     type: "gauge",
@@ -227,8 +247,8 @@ export function getOrCreateCounter(
     try {
       const metric = new Counter({
         name,
-        help: opts.help || name,
-        labelNames: opts.labelNames,
+        help: opts.help ?? METRICS_CATALOGUE[name]?.help ?? name,
+        labelNames: opts.labelNames ?? METRICS_CATALOGUE[name]?.labelNames ?? [],
         registers: [register],
       });
       metrics.set(name, metric);
@@ -258,9 +278,9 @@ export function getOrCreateHistogram(
     try {
       const metric = new Histogram({
         name,
-        help: opts.help || name,
-        labelNames: opts.labelNames,
-        buckets: opts.buckets,
+        help: opts.help ?? METRICS_CATALOGUE[name]?.help ?? name,
+        labelNames: opts.labelNames ?? METRICS_CATALOGUE[name]?.labelNames ?? [],
+        buckets: opts.buckets ?? METRICS_CATALOGUE[name]?.buckets,
         registers: [register],
       });
       metrics.set(name, metric);
@@ -286,8 +306,8 @@ export function getOrCreateGauge(
     try {
       const metric = new Gauge({
         name,
-        help: opts.help || name,
-        labelNames: opts.labelNames,
+        help: opts.help ?? METRICS_CATALOGUE[name]?.help ?? name,
+        labelNames: opts.labelNames ?? METRICS_CATALOGUE[name]?.labelNames ?? [],
         registers: [register],
       });
       metrics.set(name, metric);

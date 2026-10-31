@@ -1,4 +1,4 @@
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
  user_id text PRIMARY KEY,
  username text NOT NULL UNIQUE,
  password_hash text NOT NULL,
@@ -7,7 +7,7 @@ CREATE TABLE users (
  created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE user_accounts (
+CREATE TABLE IF NOT EXISTS user_accounts (
  user_id text NOT NULL REFERENCES users(user_id),
  account_id text NOT NULL,
  PRIMARY KEY (user_id, account_id),

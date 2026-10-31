@@ -1,3 +1,4 @@
+import { ToastProvider } from "../components/Toast.js";
 /**
  * UP2-UP6: Trading page (ladder, tape, entry, book updates, breaker banner),
  * against the real TradingPage with a fake socket (no network).
@@ -32,7 +33,7 @@ function renderTrading(role: "TRADER" | "ADMIN" = "TRADER") {
   const sockets: FakeSocket[] = [];
   render(
     <MemoryRouter>
-      <AuthProvider>
+      <ToastProvider><AuthProvider>
         <TradingPage
           createSocket={() => {
             const s = new FakeSocket();
@@ -40,7 +41,7 @@ function renderTrading(role: "TRADER" | "ADMIN" = "TRADER") {
             return s;
           }}
         />
-      </AuthProvider>
+      </AuthProvider></ToastProvider>
     </MemoryRouter>
   );
   return sockets;
@@ -56,6 +57,7 @@ describe("UP: Trading Page", () => {
   beforeEach(() => {
     sessionStorage.clear();
     vi.restoreAllMocks();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([{ symbol: "ACME", tick: "0.01", lot: "1" }, { symbol: "BOBO", tick: "0.01", lot: "1" }]), { status: 200 })));
   });
 
   it("UP2: loads with ladder, tape, entry, open orders rendered from snapshots (empty state, not blank)", async () => {
@@ -95,8 +97,8 @@ describe("UP: Trading Page", () => {
       });
     });
 
-    expect(screen.getByText("101")).toBeInTheDocument();
-    expect(screen.getAllByText("100")[0]).toBeInTheDocument();
+    expect(screen.getByText("₹101.00")).toBeInTheDocument();
+    expect(screen.getAllByText("₹100.00")[0]).toBeInTheDocument();
   });
 
   it("UP4: user.orders snapshot renders an open order in OpenOrders with its lifecycle strip", async () => {

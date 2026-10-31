@@ -5,7 +5,7 @@
  * no enqueue after revoke, offset tickets for atomic offset tracking.
  */
 
-import { PartitionConsumer, createDeadLetterMessage, KafkaEventSink } from "@matchledger/transport";
+import { PartitionConsumer, KafkaEventSink } from "@matchledger/transport";
 import { LeaseStore, FencedPgJournal, createSqlExecutor } from "@matchledger/journal";
 import { getOrCreateCounter, getOrCreateGauge, getOrCreateHistogram } from "@matchledger/telemetry";
 import { OffsetTickets } from "./offset-tickets.js";
@@ -31,11 +31,13 @@ export interface ShardHostConfig {
   runnerFactory: (
     partition: number,
     symbols: readonly string[],
-    journal: FencedPgJournal
+    journal: FencedPgJournal,
+    sink: KafkaEventSink
   ) => ShardRunner; // Returns ShardRunner when fully implemented
-  recoverSymbol: (symbol: string, pool: Pool) => Promise<void>;
+  recoverSymbol: (symbol: string, pool: Pool) => Promise<void | { lastSeq: number; tailLength: number }>;
   scheduler?: Scheduler;
   heartbeatMs?: number;
+  deadLetter?: (msg: ConsumerMessage, error: unknown) => Promise<void>;
 }
 
 export class ShardHost {
@@ -92,13 +94,16 @@ export class ShardHost {
       const epoch = await this.config.leaseStore.acquire(leaseId, this.config.shardId);
 
       // Step 2: Init transactional producer (fences any older producer with same transactional.id)
-      const sink = new KafkaEventSink(this.config.brokers, "engine.events");
+      const sink = new KafkaEventSink(this.config.brokers, "engine.events", `matching-${leaseId}`);
       await sink.init();
 
       // Step 3: Recover snapshot + tail replay for each symbol
       const recoveryStart = Date.now();
+      let recoveredSeq = 0;
+      let replayed = 0;
       for (const symbol of symbols) {
-        await this.config.recoverSymbol(symbol, this.config.pool);
+        const result = await this.config.recoverSymbol(symbol, this.config.pool);
+        if (result) { recoveredSeq = Math.max(recoveredSeq, result.lastSeq); replayed += result.tailLength; }
       }
 
       // Step 4: Republish events with seq > published_through
@@ -109,7 +114,7 @@ export class ShardHost {
       const journal = new FencedPgJournal(sql, leaseId, epoch);
 
       // Step 5: Build ShardRunner, start, start TickInjector
-      const runner = this.config.runnerFactory(partition, symbols, journal) as { start: () => void };
+      const runner = this.config.runnerFactory(partition, symbols, journal, sink) as { start: () => void };
       runner.start();
 
       // Step 6: Read next_offset from consumer_offsets, seek, resume consuming
@@ -157,10 +162,12 @@ export class ShardHost {
         revoked: false,
         ownedSymbols,
         leaseId,
-        lastSeq: 0,
+        lastSeq: recoveredSeq,
         stopHeartbeat,
         recoveryStart,
       });
+      await this.writeHeartbeat(leaseId);
+      await this.writeRecoveryLog(leaseId, 0, replayed);
     } catch (error) {
       // Fencing or fatal error: exit
       throw error;
@@ -187,16 +194,15 @@ export class ShardHost {
       await this.config.consumer.pause([{ topic: "orders.accepted", partition }]);
 
       // Stop runner with drain:false (discard unjournaled queue)
-      (state.runner as { stop: () => void }).stop();
-      // Note: runner.done() would block; we don't await it here
+      await (state.runner as { stop: () => Promise<void> }).stop();
 
       // Disconnect producer (stop taking writes)
       await state.sink.disconnect();
 
       // Release lease
       await this.config.pool.query(
-        "DELETE FROM shard_leases WHERE lease_id = $1",
-        [state.leaseId]
+        "UPDATE shard_leases SET owner = '' WHERE lease_id = $1 AND epoch = $2",
+        [state.leaseId, state.epoch]
       );
 
       this.partitions.delete(partition);
@@ -249,24 +255,23 @@ export class ShardHost {
     try {
       const parsed = JSON.parse(msg.value.toString()) as DecodedMessage;
       decoded = (parsed as { payload?: unknown }).payload || parsed;
+      if (!decoded || typeof decoded !== "object" ||
+          !(["PLACE", "CANCEL", "TICK"].includes(String((decoded as Record<string, unknown>).kind)) ||
+            ["OrderAccepted", "CancelOrder"].includes(String(decoded.type)))) {
+        throw new Error("Invalid matching command envelope");
+      }
     } catch (error) {
       // Undecodable: publish to dead-letter queue, advance offset
-      const dlqEntry = {
-        topic: msg.topic,
-        partition: msg.partition,
-        offset: msg.offset,
-        error: error instanceof Error ? error.message : String(error),
-        rawBytes: msg.value,
-        timestamp: Date.now(),
-      };
-      // Publish to dlq.<topic>
-      createDeadLetterMessage(dlqEntry);
+      // Only advance after a configured publisher has durably recorded the DLQ message.
+      if (!this.config.deadLetter) throw error;
+      await this.config.deadLetter(msg, error);
+      await state.journal.upsertOffset(msg.topic, partition, msg.offset);
       await this.config.consumer.seek(msg.topic, partition, msg.offset + 1n);
 
-      // Advance stored offset with offset-only fenced upsert
-      // (This is done in the actual shard implementation)
       return;
     }
+
+    if (!(decoded as Record<string, unknown>).symbol && msg.key) decoded = { ...decoded, symbol: msg.key };
 
     // tryEnqueue: if accepted, push offset ticket
     const runner = state.runner as { tryEnqueue: (msg: DecodedMessage) => string };
@@ -318,6 +323,19 @@ export class ShardHost {
     return this.partitions.get(partition)?.offsetTickets;
   }
 
+  hasPartition(partition: number): boolean { return this.partitions.has(partition); }
+
+  async verifyOwnership(): Promise<void> {
+    for (const state of this.partitions.values()) {
+      if (state.revoked) continue;
+      const result = await this.config.pool.query("SELECT owner,epoch FROM shard_leases WHERE lease_id=$1", [state.leaseId]);
+      if (!result.rows[0] || result.rows[0].owner !== this.config.shardId || BigInt(result.rows[0].epoch) !== state.epoch) {
+        throw new Error(`Lost lease ${state.leaseId}; stale shard must exit`);
+      }
+    }
+  }
+
+
   /**
    * AfterBatch callback: observe per-symbol last sequence numbers.
    */
@@ -359,7 +377,7 @@ export class ShardHost {
          last_seq = $2,
          owned_symbols = $3,
          updated_at = now()`,
-        [leaseId, state.lastSeq, JSON.stringify(Array.from(state.ownedSymbols))]
+        [leaseId, state.lastSeq, Array.from(state.ownedSymbols)]
       );
 
       const elapsed = Date.now() - before;
@@ -391,7 +409,7 @@ export class ShardHost {
           recoveryDurationMs,
           snapshotSeq,
           tailLength,
-          JSON.stringify(Array.from(state.ownedSymbols)),
+          Array.from(state.ownedSymbols),
         ]
       );
 

@@ -1,5 +1,5 @@
 -- Recovery log: track shard recovery operations for observability
-CREATE TABLE recovery_log (
+CREATE TABLE IF NOT EXISTS recovery_log (
   id bigserial PRIMARY KEY,
   lease_id text NOT NULL,
   started_at timestamptz NOT NULL,
@@ -11,5 +11,5 @@ CREATE TABLE recovery_log (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_recovery_log_lease ON recovery_log(lease_id);
-CREATE INDEX idx_recovery_log_ts ON recovery_log(completed_at);
+CREATE INDEX IF NOT EXISTS idx_recovery_log_lease ON recovery_log(lease_id);
+CREATE INDEX IF NOT EXISTS idx_recovery_log_ts ON recovery_log(completed_at);

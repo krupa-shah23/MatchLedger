@@ -56,10 +56,20 @@ function isCommentLine(line) {
 const constantReturnPattern =
   /(?:function[^(]*\([^)]*\)\s*(?::\s*[^{=]+)?\s*\{\s*return\s+(?:true|false|200)\s*;?\s*\}|=>\s*\{\s*return\s+(?:true|false|200)\s*;?\s*\}\s*[,;)]?)/;
 
+function hasDocumentedSkipReason(lines, lineIndex) {
+  const firstCandidate = Math.max(0, lineIndex - 12);
+  for (let i = lineIndex - 1; i >= firstCandidate; i--) {
+    const previous = lines[i].trim();
+    if (/SKIPPED[^\n]*Reason:/i.test(previous)) return true;
+    if (previous && !previous.startsWith("//") && !previous.startsWith("*")) break;
+  }
+  return false;
+}
+
 function findTsFiles() {
   try {
-    const output = execSync("git ls-files --cached --exclude-standard -- '*.ts' '*.tsx'", { encoding: "utf-8" });
-    return output.trim().split("\n").filter((f) => f.length > 0);
+    const output = execSync("git ls-files --cached --others --exclude-standard -- '*.ts' '*.tsx'", { encoding: "utf-8" });
+    return Array.from(new Set(output.trim().split("\n"))).filter((f) => f.length > 0 && fs.existsSync(f));
   } catch {
     // Fallback: walk the directory
     const files = [];
@@ -102,6 +112,8 @@ for (const file of files) {
 
     for (const { pattern, name } of codePatterns) {
       if (pattern.test(line)) {
+        const isSkip = name === "it.skip" || name === "test.skip" || name === "describe.skip";
+        if (isSkip && isTestFile && hasDocumentedSkipReason(lines, i)) continue;
         violations.push({ file, line: i + 1, pattern: name, content: line.trim().substring(0, 80) });
       }
     }

@@ -1,4 +1,4 @@
-CREATE TABLE published_through (
+CREATE TABLE IF NOT EXISTS published_through (
   lease_id text NOT NULL,
   symbol text NOT NULL,
   seq bigint NOT NULL CHECK (seq >= 0),

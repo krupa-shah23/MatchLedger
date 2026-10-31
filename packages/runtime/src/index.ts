@@ -1,4 +1,5 @@
 export { wireRuntime } from "./wire.js";
+export { createLiveRuntime } from "./live-runtime.js";
 export { recoverPipeline } from "./recover-pipeline.js";
 export { startControlPlaneConsumer, recoverWatermarks } from "./control-plane.js";
 export { recoverControlPlane } from "./recover-control-plane.js";

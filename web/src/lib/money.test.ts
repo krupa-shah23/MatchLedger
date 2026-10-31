@@ -64,9 +64,9 @@ describe("Money utilities", () => {
 
   // UZ2: Null renders as em dash
   it("UZ2: Null price renders as em dash", () => {
-    const formatPrice = (price: string | null) => price ? `$${price}` : "—";
+    const formatPrice = (price: string | null) => price ? `₹${price}` : "—";
     expect(formatPrice(null)).toBe("—");
-    expect(formatPrice("100.00")).toBe("$100.00");
+    expect(formatPrice("100.00")).toBe("₹100.00");
   });
 
   // UZ3: Estimate = price x quantity as bigint

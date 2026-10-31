@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 import * as jose from "jose";
 import type { SqlExecutor, RuntimeFacade } from "@matchledger/projections";
 import type { Config } from "./config.js";
+import type { RateLimiter } from "./plugins/rate-limit.js";
 import { buildApp } from "./app.js";
 
 /**
@@ -19,10 +20,57 @@ export class MockSqlExecutor implements SqlExecutor {
     orders_view: [],
     balances_view: [],
     users: [],
+    user_accounts: [],
+    recon_breaks: [],
+    recon_audit: [],
   };
   private transactionDepth = 0;
 
   async query(sql: string, params: unknown[]): Promise<{ rows: unknown[] }> {
+    if (sql.includes("SELECT status") && sql.includes("FROM recon_breaks")) {
+      const row = (this.tables.recon_breaks as any[]).find((entry) => entry.break_id === params[0]);
+      return { rows: row ? [{ status: row.status, resolved_by: row.resolved_by ?? null }] : [] };
+    }
+    if (sql.includes("UPDATE recon_breaks")) {
+      const [id, ...rest] = params as string[];
+      const row = (this.tables.recon_breaks as any[]).find((entry) => entry.break_id === id);
+      if (!row || (sql.includes("status IN") && !["OPEN", "INVESTIGATING"].includes(row.status)) || (sql.includes("status = $4") && row.status !== rest[2])) return { rows: [] };
+      if (sql.includes("status='RESOLVED'")) {
+        row.status = "RESOLVED";
+        row.reason = rest[0];
+        row.resolved_by = rest[1];
+      } else {
+        row.status = rest[0];
+        row.reason = rest[1];
+      }
+      return { rows: [{ break_id: id }] };
+    }
+    if (sql.includes("INSERT INTO recon_audit")) {
+      (this.tables.recon_audit as unknown[]).push({ params });
+      return { rows: [] };
+    }
+    if (sql.includes("SELECT account_id FROM user_accounts WHERE user_id = $1")) {
+      return { rows: (this.tables.user_accounts ?? []).filter((row: any) => row.user_id === params[0]) };
+    }
+    if (sql.includes("SELECT account_id FROM user_accounts WHERE account_id = $1")) {
+      return { rows: (this.tables.user_accounts ?? []).filter((row: any) => row.account_id === params[0]) };
+    }
+    if (sql.includes("SELECT DISTINCT account_id AS id") && sql.includes("FROM user_accounts")) {
+      const uniqueAccounts = new Set((this.tables.user_accounts ?? []).map((row: any) => row.account_id));
+      return { rows: [...uniqueAccounts].sort().map((accountId) => ({ id: accountId, name: accountId })) };
+    }
+    if (sql.includes("INSERT INTO user_accounts")) {
+      const [userId, accountId] = params as [string, string];
+      const links = this.tables.user_accounts ?? (this.tables.user_accounts = []);
+      if ((links as any[]).some((row) => row.account_id === accountId)) {
+        throw new Error('duplicate key value violates unique constraint "user_accounts_account_id_key" (UNIQUE)');
+      }
+      (links as unknown[]).push({ user_id: userId, account_id: accountId });
+      return { rows: [] };
+    }
+    if (sql.includes("SELECT") && sql.includes("FROM order_requests WHERE order_id = $1")) {
+      return { rows: (this.tables.order_requests ?? []).filter((r: any) => r.order_id === params[0]) };
+    }
     // INSERT INTO users - simulates the real UNIQUE(username) constraint so
     // tests can exercise the 409-on-duplicate-username path for real.
     if (sql.includes("INSERT INTO users")) {
@@ -154,6 +202,7 @@ export class MockRuntimeFacade implements RuntimeFacade {
 
   async submitOrder(cmd: unknown): Promise<{ kind: "JOURNALED" | "FULL" }> {
     this.calls.push({ method: "submitOrder", args: [cmd] });
+    this.recordCommand((cmd as { orderId: string }).orderId);
     return { kind: "JOURNALED" };
   }
 
@@ -201,7 +250,7 @@ export class MockRuntimeFacade implements RuntimeFacade {
 /**
  * Build a test app with mock dependencies
  */
-export async function buildTestApp(): Promise<{
+export async function buildTestApp(options: { orderRateLimiter?: RateLimiter } = {}): Promise<{
   app: FastifyInstance;
   executor: MockSqlExecutor;
   facade: MockRuntimeFacade;
@@ -234,6 +283,7 @@ export async function buildTestApp(): Promise<{
     executor,
     facade,
     instruments,
+    orderRateLimiter: options.orderRateLimiter,
   });
 
   // For testing, inject user context directly without full middleware

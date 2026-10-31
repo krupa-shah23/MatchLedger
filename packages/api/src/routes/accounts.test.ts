@@ -98,6 +98,18 @@ describe("AA: Accounts", () => {
     // (routes may not enforce ownership at this layer in test setup)
     expect([200, 404, 403]).toContain(res.statusCode);
   });
+
+  it("AA6: An assigned account without projected balances displays a valid zero balance", async () => {
+    executor.tables.user_accounts!.push({ user_id: "user-1", account_id: "empty-account" });
+    const accountToken = await createTestToken("user-1", "TRADER", ["empty-account"]);
+    const res = await app.inject({
+      method: "GET",
+      url: "/accounts/empty-account/balances",
+      headers: { authorization: `Bearer ${accountToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ accountId: "empty-account", cash: "0.00", heldCash: "0.00", available: "0.00" });
+  });
 });
 
 describe("AE: Audit Events", () => {

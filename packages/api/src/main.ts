@@ -1,94 +1,93 @@
-/**
- * Composition root for HTTP API server
- *
- * Startup sequence:
- * 1. Load config
- * 2. Create database pool
- * 3. Run migrations
- * 4. Recover pipeline (fatal on error)
- * 5. Projector catch-up
- * 6. Start HTTP server
- * 7. Start metrics server (separate port)
- *
- * Graceful shutdown:
- * - SIGTERM: close WebSocket sockets (1001), drain projector, stop pipeline
- * - Second SIGTERM: force exit
- * - Unhandled rejection/exception: log then exit
- */
-
-import * as process from "process";
+import { fileURLToPath } from "node:url";
+import { createPool, createSqlExecutor, runMigrations } from "@matchledger/journal";
+import { createLiveRuntime } from "@matchledger/runtime";
+import { Projector, NoticeBus } from "@matchledger/projections";
+import { startMetricsServer } from "@matchledger/telemetry";
+import { stopSimulator } from "@matchledger/simulator";
+import type { SimulatorDriverState } from "@matchledger/simulator";
+import type { FastifyInstance } from "fastify";
+import type { Server } from "node:http";
 import { loadConfig } from "./config.js";
-import type { Config } from "./config.js";
+import { loadStartupConfig } from "./startup-config.js";
+import { buildApp } from "./app.js";
 
-let shutdownInitiated = false;
-
-async function main(): Promise<void> {
-  const cfg = loadConfig();
-
-  // 1. Create pool from cfg
-  // const pool = new Pool(cfg.DATABASE_URL);
-
-  // 2. Run migrations
-  // await migrate(pool, { migrationsDir: "./src/migrations" });
-
-  // 3. Recover pipeline (fatal on error)
-  // const runtime = await recoverPipeline(pool, cfg);
-  // const pipeline = runtime.pipeline;
-
-  // 4. Projector catch-up
-  // const projector = new Projector(pool, cfg);
-  // projector.start();
-  // await projector.once("ready");
-
-  // 5. Create HTTP server
-  // const app = buildApp(runtime, projector, pool, cfg);
-  // await app.listen({ port: cfg.PORT, host: "0.0.0.0" });
-  // console.log(`API server listening on port ${cfg.PORT}`);
-
-  // 6. Start metrics server (separate port)
-  // const metricsApp = buildMetricsServer(projector, pool);
-  // await metricsApp.listen({ port: cfg.METRICS_PORT, host: "0.0.0.0" });
-  // console.log(`Metrics server listening on port ${cfg.METRICS_PORT}`);
-
-  // Graceful shutdown
-  const gracefulShutdown = async (signal: string) => {
-    if (shutdownInitiated) {
-      console.error("Forcing exit");
-      process.exit(1);
+export async function startApi() {
+  const config = loadConfig();
+  const startup = loadStartupConfig();
+  if (config.PORT === config.METRICS_PORT) throw new Error("API and metrics ports must differ");
+  if (startup.SEED_DEMO === "1" && config.PROFILE !== "demo") throw new Error("SEED_DEMO requires PROFILE=demo");
+  const pool = createPool({ connectionString: config.DATABASE_URL });
+  const lock = await pool.connect();
+  let runtime: Awaited<ReturnType<typeof createLiveRuntime>> | undefined;
+  let projector: Projector | undefined;
+  let app: FastifyInstance | undefined;
+  let metrics: Server | undefined;
+  let controlProducer: { disconnect(): Promise<void> } | undefined;
+  let closing: Promise<void> | undefined;
+  const simulatorState: { current: SimulatorDriverState | null } = { current: null };
+  const close = () => closing ??= (async () => {
+    if (simulatorState.current) simulatorState.current = await stopSimulator(simulatorState.current);
+    await app?.close();
+    await controlProducer?.disconnect();
+    await runtime?.stop();
+    await projector?.stop();
+    if (metrics) await new Promise<void>((resolve, reject) => metrics!.close(err => err ? reject(err) : resolve()));
+    await lock.query("SELECT pg_advisory_unlock(713110)");
+    lock.release();
+    await pool.end();
+  })();
+  try {
+    if (!(await lock.query("SELECT pg_try_advisory_lock(713110) AS locked")).rows[0]?.locked) throw new Error("Another API/control plane already owns this database");
+    await runMigrations(pool, fileURLToPath(new URL("../../journal/migrations/", import.meta.url)));
+    const sql = createSqlExecutor(pool);
+    const instruments = new Map(startup.instruments.map(i => [i.symbol, i]));
+    runtime = await createLiveRuntime({ sql, instruments, queueCapacity: startup.QUEUE_CAPACITY,
+      maxBatch: startup.MAX_BATCH, heartbeatMs: startup.HEARTBEAT_MS, transport: startup.TRANSPORT, brokers: startup.KAFKA_BROKERS.split(","), shardPartitions: startup.SHARD_PARTITIONS,
+      onFatal: error => { console.error("Fatal runtime failure", error); process.exitCode = 1; void close().catch(console.error); },
+    });
+    if (startup.SEED_DEMO === "1") {
+      const { seedDemo } = await import("./demo/seed.js");
+      await seedDemo(sql, runtime, [...instruments.keys()]);
     }
-    shutdownInitiated = true;
-    console.log(`${signal} received, initiating graceful shutdown...`);
-
-    // close WebSocket sockets with 1001
-    // await app.close();
-
-    // drain projector
-    // await projector.stop();
-
-    // stop pipeline
-    // await pipeline.stop();
-
-    // close database pool
-    // await pool.end();
-
-    process.exit(0);
-  };
-
-  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-
-  process.on("unhandledRejection", (err) => {
-    console.error("Unhandled rejection:", err);
-    process.exit(1);
-  });
-
-  process.on("uncaughtException", (err) => {
-    console.error("Uncaught exception:", err);
-    process.exit(1);
-  });
+    if (startup.REBUILD_PROJECTIONS === "1") await sql.transaction(async tx => {
+      await tx.query("TRUNCATE orders_view,order_fills,resting_orders,trades_view,balances_view,positions_view,reservations_view,rejections_view,breaker_view,projection_checkpoints");
+    });
+    const streams = ["risk-0", ...instruments.keys()];
+    projector = new Projector({ executor: sql, noticeBus: new NoticeBus(), chunkSize: config.PROJECTOR_CHUNK,
+      pollMs: config.PROJECTOR_POLL_MS, streamIds: streams });
+    for (const stream of streams) while (await projector.runOnce(stream)) { /* catch up before serving */ }
+    await projector.start();
+    app = await buildApp({ config, executor: sql, facade: runtime, riskConfig: runtime.riskConfig,
+      heartbeatMs: startup.HEARTBEAT_MS, prometheusUrl: startup.PROMETHEUS_URL, simulatorRateCap: startup.SIMULATOR_RATE_CAP,
+      instruments: startup.instruments.map(spec => ({ symbol: spec.symbol, tick: spec.tickSize.toString(), lot: spec.lotSize.toString(), spec })), simulatorState,
+      simulatorTicksPerSec: startup.SIMULATOR_TICKS_PER_SEC,
+      commandRouter: startup.TRANSPORT === "kafka" && config.PROFILE === "demo" ? await (async () => {
+        const { TransactionalProducer } = await import("@matchledger/transport");
+        const producer = new TransactionalProducer({ brokers: startup.KAFKA_BROKERS.split(","), transactionalId: "api-demo-control" });
+        await producer.init();
+        controlProducer = producer;
+        return { producer, brokers: startup.KAFKA_BROKERS.split(","), shardPartitions: startup.SHARD_PARTITIONS };
+      })() : undefined });
+    metrics = await startMetricsServer({ port: config.METRICS_PORT, host: startup.METRICS_HOST });
+    await app.listen({ port: config.PORT, host: "0.0.0.0" });
+    console.log(`MatchLedger API ready at http://localhost:${config.PORT} (${startup.TRANSPORT}, ${config.PROFILE})`);
+    return { app, close, graceMs: startup.SHUTDOWN_GRACE_MS };
+  } catch (error) { await close(); throw error; }
 }
 
-main().catch((err) => {
-  console.error("Fatal startup error:", err);
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  startApi().then(handle => {
+    let stopping = false;
+    const shutdown = (failed = false) => {
+      if (stopping) { process.exit(1); }
+      stopping = true;
+      const timer = setTimeout(() => process.exit(1), handle.graceMs);
+      timer.unref();
+      void handle.close().then(() => { clearTimeout(timer); process.exitCode = failed ? 1 : 0; }, error => { console.error(error); process.exit(1); });
+    };
+    process.on("SIGTERM", () => shutdown());
+    process.on("SIGINT", () => shutdown());
+    process.on("unhandledRejection", error => { console.error(error); shutdown(true); });
+    process.on("uncaughtException", error => { console.error(error); shutdown(true); });
+  }).catch(error => { console.error("API startup failed", error); process.exitCode = 1; });
+}

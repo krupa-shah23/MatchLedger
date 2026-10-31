@@ -14,6 +14,8 @@ export interface ProjectorDeps {
   };
   noticeBus: NoticeBus;
   chunkSize?: number;
+  streamIds?: readonly string[];
+  pollMs?: number;
 }
 
 export class Projector {
@@ -21,6 +23,7 @@ export class Projector {
   private running = false;
   private pollTimer?: ReturnType<typeof setTimeout>;
   private chunkSize: number;
+  private polling: Promise<void> = Promise.resolve();
 
   constructor(deps: ProjectorDeps) {
     this.deps = deps;
@@ -74,6 +77,11 @@ export class Projector {
           );
           break;
 
+        case "ADD_FILL_FACTS":
+          await executor.query("UPDATE orders_view SET filled_qty=filled_qty+$2,filled_notional=filled_notional+$3,updated_at=now() WHERE order_id=$1", [m.orderId, m.quantity, m.notional]);
+          await executor.query("DELETE FROM resting_orders WHERE order_id=$1 AND remaining<=$2", [m.orderId, m.quantity]);
+          await executor.query("UPDATE resting_orders SET remaining=remaining-$2 WHERE order_id=$1 AND remaining>$2", [m.orderId, m.quantity]);
+          break;
         case "INSERT_FILL":
           await executor.query(
             `INSERT INTO order_fills (order_id, trade_id, price, quantity, role, ts)
@@ -210,7 +218,7 @@ export class Projector {
             .join(", ");
           const breakerValues = Object.values(m.data);
           await executor.query(
-            `INSERT INTO breaker_view (symbol) VALUES ($1) ON CONFLICT (symbol) DO NOTHING`,
+            `INSERT INTO breaker_view (symbol,state) VALUES ($1,'CLOSED') ON CONFLICT (symbol) DO NOTHING`,
             [m.symbol]
           );
           await executor.query(
@@ -236,12 +244,13 @@ export class Projector {
       await this.deps.executor.transaction(async (executor: any) => {
         // 1. Lock checkpoint (inside transaction)
         const checkpoint = await fetchCheckpoint(executor, projection, streamId);
-        const lockedSeq = checkpoint.last_seq;
+        const lockedSeq = Number(checkpoint.last_seq);
 
         // 2. Read chunk AFTER lock, using locked checkpoint value
         const rows = await executor.query(
-          `SELECT seq, idx, payload_json, record_type, symbol FROM journal
-           WHERE symbol = $1 AND seq > $2 AND seq <= $3
+          `SELECT seq, ts, idx, payload_json, record_type, stream_id AS symbol FROM journal
+           WHERE stream_id = $1 AND seq > $2 AND seq <= $3
+           AND seq <= (SELECT MAX(seq) FROM journal WHERE stream_id = $1 AND record_type = 'EVENT')
            ORDER BY seq, idx`,
           [streamId, lockedSeq, lockedSeq + this.chunkSize]
         );
@@ -252,21 +261,22 @@ export class Projector {
         // 3. Apply mutations from each journal record
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         for (const row of (rows.rows as any[])) {
-          maxSeq = Math.max(maxSeq, row.seq);
+          maxSeq = Math.max(maxSeq, Number(row.seq));
           const mutations =
             row.record_type === "COMMAND" || row.record_type === "EVENT"
-              ? row.symbol
+              ? !streamId.startsWith("risk")
                 ? mapEngineRecord({
                     record_type: row.record_type,
                     payload_json: row.payload_json,
                     symbol: row.symbol,
-                    seq: row.seq,
+                    seq: Number(row.seq),
                     idx: row.idx,
                   })
                 : mapRiskRecord({
                     record_type: row.record_type,
                     payload_json: row.payload_json,
-                    seq: row.seq,
+                    seq: Number(row.seq),
+                    ts: Number(row.ts),
                   })
               : [];
 
@@ -318,9 +328,9 @@ export class Projector {
     if (!this.running) return;
 
     // Poll all streams: risk partition + all engine symbols
-    const streamIds = ["risk", "AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"];
+    const streamIds = this.deps.streamIds ?? ["risk", "AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"];
 
-    (async () => {
+    this.polling = (async () => {
       for (const streamId of streamIds) {
         try {
           await this.runOnce(streamId);
@@ -332,7 +342,7 @@ export class Projector {
 
       // Reschedule poll
       if (this.running) {
-        this.pollTimer = setTimeout(() => this._poll(), this.chunkSize ? 200 : 200);
+        this.pollTimer = setTimeout(() => this._poll(), this.deps.pollMs ?? 200);
       }
     })();
   }
@@ -343,6 +353,7 @@ export class Projector {
   async stop(): Promise<void> {
     if (this.pollTimer) clearTimeout(this.pollTimer);
     this.running = false;
+    await this.polling;
 
     // Release advisory lock
     await this.deps.executor.query("SELECT pg_advisory_unlock(1);", []);
@@ -399,13 +410,13 @@ export class Projector {
                   record_type: row.record_type,
                   payload_json: row.payload_json,
                   symbol: row.symbol,
-                  seq: row.seq,
+                  seq: Number(row.seq),
                   idx: row.idx,
                 })
               : mapRiskRecord({
                   record_type: row.record_type,
                   payload_json: row.payload_json,
-                  seq: row.seq,
+                  seq: Number(row.seq),
                 })
             : [];
 

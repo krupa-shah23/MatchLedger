@@ -1,9 +1,22 @@
 /**
- * Chaos tests for sharding: R7, R8, R11
- * Verify that zombie processes exit cleanly and journal state remains consistent.
+ * Chaos tests for sharding: R7, R8, R11, R12.
+ *
+ * SCOPE CORRECTION: these previously asserted `expect(true).toBe(true)`
+ * under a describe.skipIf gate requiring three separate env flags
+ * (RUN_CONTAINERS/RUN_INTEGRATION && RUN_KAFKA_SPIKE), so they never ran
+ * even when "enabled" - they always reported green without executing
+ * anything. Genuinely exercising these scenarios means spawning two real
+ * shard processes against the real Kafka broker, freezing/stalling one,
+ * waiting for a consumer-group rebalance, and asserting journal
+ * contiguity/fencing from Postgres - that is a live multi-process run, not
+ * something a single vitest process can fake convincingly. These are
+ * tracked for execution against the real shard binaries in the
+ * live-verification pass (see chaos.test.ts in ../src for the real,
+ * passing unit tests on the guard rails these scenarios depend on:
+ * blockEventLoop's demo-only gate and waitForProcessExit's fencing wait).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "vitest";
 import { createPool } from "@matchledger/journal";
 import { freezeProcess, pauseContainer, waitForProcessExit } from "../src/chaos.js";
 
@@ -25,57 +38,37 @@ describe.skipIf(!run)("R: Chaos (Sharding)", () => {
     if (pool) await pool.end();
   });
 
-  it("R7: Freeze shard past session timeout, other takes over, resume frozen shard exits", async () => {
-    // Scenario 2 from WEEK-10.md:
-    // - Two shards running, processing symbols
-    // - Freeze shard A past session.timeout.ms
-    // - Consumer group rebalances, shard B takes all partitions
-    // - Resume shard A
-    // - Shard A's writes are rejected (fenced), it exits
-    // - Journal seq contiguous, no duplicates, no stale-epoch rows above takeover point
-
-    // This test would:
-    // 1. Start two shard processes
-    // 2. Send traffic through them
-    // 3. Freeze process A
-    // 4. Wait for rebalance
-    // 5. Verify B took over partitions
-    // 6. Resume A
-    // 7. Wait for A to exit
-    // 8. Verify journal state: contiguous seq, no duplicates, no stale epochs above new owner's first write
-
-    expect(true).toBe(true); // Placeholder: requires full harness
+  // SKIPPED (not faked). Reason: requires two real shard processes against
+  // the real Kafka broker, SIGSTOP on shard A past session.timeout.ms,
+  // waiting for the consumer-group rebalance to shard B, SIGCONT on A, and
+  // asserting from Postgres that A's post-resume writes are fenced and it
+  // exits, with journal seq contiguous and no stale-epoch rows above the
+  // takeover point. freezeProcess/waitForProcessExit in ../src/chaos.ts are
+  // real and unit-tested (chaos.test.ts); wiring them to two live shard
+  // binaries is the live-verification pass's job, not a vitest unit test.
+  it.skip("R7: Freeze shard past session timeout, other takes over, resume frozen shard exits", () => {
+    void freezeProcess; void waitForProcessExit; void pool;
   });
 
-  it("R8: Repeated rebalances under load, no double-apply or out-of-order", async () => {
-    // Scenario with rapid rebalances:
-    // - K shards processing traffic
-    // - Repeatedly restart one shard (triggers rebalance)
-    // - Verify: no command applied twice, no out-of-order
-    // - C1 (isolation), P5 (routing), P6 (ordering) still hold
+  // SKIPPED (not faked). Reason: requires K real shard processes under
+  // load with repeated process restarts to trigger rapid rebalances, then
+  // asserting from the journal that no command was applied twice and
+  // ordering held (C1/P5/P6). Needs the real multi-shard + Kafka topology.
+  it.skip("R8: Repeated rebalances under load, no double-apply or out-of-order", () => {});
 
-    expect(true).toBe(true); // Placeholder: requires full harness
+  // SKIPPED (not faked). Reason: requires a real shard process with its
+  // event loop genuinely stalled past max.poll.interval.ms (blockEventLoop
+  // in ../src/chaos.ts, already unit-tested for its demo-only guard and
+  // real blocking duration), a second real shard to take over via Kafka
+  // rebalance, and a Postgres assertion that the stalled shard's resumed
+  // writes are fenced. Needs the real multi-shard + Kafka topology.
+  it.skip("R11: Block event loop past max.poll.interval.ms, process fences and exits", () => {
+    void pauseContainer;
   });
 
-  it("R11: Block event loop past max.poll.interval.ms, process fences and exits", async () => {
-    // Scenario 4 from WEEK-10.md:
-    // - Shard processes commands
-    // - Event loop stalled longer than max.poll.interval.ms
-    // - Consumer leaves group (session timeout)
-    // - Another shard takes over
-    // - When loop unblocks, A's runner tries to append: fenced, exit
-    // - Journal assertions: seq contiguous, no duplicates, no stale-epoch rows above takeover
-
-    expect(true).toBe(true); // Placeholder: requires full harness
-  });
-
-  it("R12: SIGTERM under load, graceful shutdown, no replay anomalies", async () => {
-    // Graceful shutdown test:
-    // - Shards processing traffic
-    // - Send SIGTERM
-    // - Verify: consumption stops, runners drain, leases released, clean exit
-    // - Restart: no replay anomalies, state equals uninterrupted run
-
-    expect(true).toBe(true); // Placeholder: requires full harness
-  });
+  // SKIPPED (not faked). Reason: requires a real shard process under load,
+  // a real SIGTERM, and asserting clean drain/lease-release from Postgres,
+  // then a real restart asserting no replay anomalies vs an uninterrupted
+  // run. Needs the real shard binary, not a mocked pool.
+  it.skip("R12: SIGTERM under load, graceful shutdown, no replay anomalies", () => {});
 });

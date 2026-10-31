@@ -4,6 +4,7 @@
  */
 
 export interface MetricsQueryResult {
+  prometheusAvailable: boolean;
   commandsPerSec: number | null;
   latencyP50Ms: number | null;
   latencyP95Ms: number | null;
@@ -31,13 +32,13 @@ export async function fetchMetricsSummary(prometheusUrl: string): Promise<Metric
       eventLoopP99,
       byShardCommands,
     ] = await Promise.all([
-      queryPrometheus(prometheusUrl, 'rate(ml_shard_commands_total[1m])'),
-      queryPrometheus(prometheusUrl, 'histogram_quantile(0.50, ml_shard_append_duration_ms)'),
-      queryPrometheus(prometheusUrl, 'histogram_quantile(0.95, ml_shard_append_duration_ms)'),
-      queryPrometheus(prometheusUrl, 'histogram_quantile(0.99, ml_shard_append_duration_ms)'),
+      queryPrometheus(prometheusUrl, 'sum(rate(ml_shard_commands_total[1m]))'),
+      queryPrometheus(prometheusUrl, 'histogram_quantile(0.50, sum(rate(ml_order_lifecycle_ms_bucket[1m])) by (le))'),
+      queryPrometheus(prometheusUrl, 'histogram_quantile(0.95, sum(rate(ml_order_lifecycle_ms_bucket[1m])) by (le))'),
+      queryPrometheus(prometheusUrl, 'histogram_quantile(0.99, sum(rate(ml_order_lifecycle_ms_bucket[1m])) by (le))'),
       queryPrometheus(prometheusUrl, 'max(ml_shard_queue_depth)'),
       queryPrometheus(prometheusUrl, 'max(ml_consumer_lag)'),
-      queryPrometheus(prometheusUrl, 'histogram_quantile(0.99, ml_eventloop_delay_ms)'),
+      queryPrometheus(prometheusUrl, 'histogram_quantile(0.99, sum(rate(ml_eventloop_delay_ms_bucket[1m])) by (le))'),
       queryPrometheusRange(
         prometheusUrl,
         'rate(ml_shard_commands_total[1m])'
@@ -45,12 +46,10 @@ export async function fetchMetricsSummary(prometheusUrl: string): Promise<Metric
     ]);
 
     // Aggregate commands per second across all shards
-    const totalCommandsPerSec = Object.values(commandsPerSec as any).reduce(
-      (sum: number, val: any) => sum + (typeof val === 'number' ? val : 0),
-      0
-    );
+    const totalCommandsPerSec = commandsPerSec;
 
     return {
+      prometheusAvailable: true,
       commandsPerSec: totalCommandsPerSec,
       latencyP50Ms: latencyP50 as number | null,
       latencyP95Ms: latencyP95 as number | null,
@@ -66,6 +65,7 @@ export async function fetchMetricsSummary(prometheusUrl: string): Promise<Metric
   } catch (err) {
     // Prometheus unreachable or error - return nulls but indicate available: false
     return {
+      prometheusAvailable: false,
       commandsPerSec: null,
       latencyP50Ms: null,
       latencyP95Ms: null,
@@ -92,7 +92,7 @@ async function queryPrometheus(prometheusUrl: string, query: string): Promise<nu
 
   const data = (await response.json()) as any;
   if (data.status !== 'success' || !data.data?.result) {
-    return null;
+    throw new Error('Prometheus returned an invalid query response');
   }
 
   const result = data.data.result[0];

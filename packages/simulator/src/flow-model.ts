@@ -22,7 +22,7 @@ export interface FlowModelState {
   readonly rng: () => number;
   readonly spec: InstrumentSpec;
   readonly scenario: Scenario;
-  readonly midPriceTicks: number;
+  readonly midPriceTicks: bigint;
   readonly makerOrders: Set<string>;
   readonly ticksSinceBreakerSweep: number;
   readonly brekerSweepInterval: number;
@@ -33,8 +33,10 @@ export function createFlowModel(
   spec: InstrumentSpec,
   scenario: Scenario = "steady"
 ): FlowModelState {
-  const midPriceValue = Number(spec.maxPrice) / 2;
-  const midPriceTicks = midPriceValue / Number(spec.tickSize);
+  if (spec.tickSize <= 0n || spec.lotSize <= 0n || spec.maxPrice < spec.tickSize || spec.maxQuantity < spec.lotSize) {
+    throw new Error("Instrument must support at least one positive tick and lot");
+  }
+  const midPriceTicks = spec.maxPrice / spec.tickSize / 2n;
 
   return {
     rng: mulberry32(seed),
@@ -56,33 +58,36 @@ export function flowModelNextTick(
   let counter = orderIdCounter;
 
   // Random-walk mid price (±1 to 3 ticks), bounded by 0 and max price
-  const priceMove = randomInt(state.rng, -3, 3);
-  const maxPriceTicks = Number(state.spec.maxPrice) / Number(state.spec.tickSize);
-  const newMidPriceTicks = Math.max(
-    0,
-    Math.min(maxPriceTicks, state.midPriceTicks + priceMove)
-  );
+  const priceMove = BigInt(randomInt(state.rng, -3, 3));
+  const maxPriceTicks = state.spec.maxPrice / state.spec.tickSize;
+  const clampTicks = (value: bigint) => value < 1n ? 1n : value > maxPriceTicks ? maxPriceTicks : value;
+  const newMidPriceTicks = clampTicks(state.midPriceTicks + priceMove);
 
   // Maker orders: place at mid ± offset
   const makerSide = randomChoice(state.rng, ["BUY", "SELL"] as const);
-  const makerOffset = randomInt(state.rng, 1, 5);
+  const makerOffset = BigInt(randomInt(state.rng, 1, 5));
   const makerPrice =
     makerSide === "BUY"
       ? newMidPriceTicks - makerOffset
       : newMidPriceTicks + makerOffset;
 
   // Maker quantity: geometric distribution starting at 1 lot
-  const lotSize = Number(state.spec.lotSize);
+  const lotSize = state.spec.lotSize;
+  const maxLots = state.spec.maxQuantity / lotSize;
+  const quantity = (lots: number) => {
+    const count = BigInt(Math.max(1, lots));
+    return (count > maxLots ? maxLots : count) * lotSize;
+  };
   const geometricTrials = randomGeometric(state.rng, 0.6); // Expected ~1.67 lots
-  const makerQty = Math.max(1, geometricTrials) * lotSize;
+  const makerQty = quantity(geometricTrials);
 
   const makerId = `sim-maker-${counter++}`;
   orders.push({
     symbol: state.spec.symbol,
     side: makerSide,
     type: "LIMIT",
-    quantity: BigInt(makerQty),
-    price: BigInt(Math.floor(makerPrice) * Number(state.spec.tickSize)),
+    quantity: makerQty,
+    price: clampTicks(makerPrice) * state.spec.tickSize,
     clientOrderId: makerId,
   });
   state.makerOrders.add(makerId);
@@ -91,13 +96,13 @@ export function flowModelNextTick(
   if (state.rng() < 0.4) {
     const takerSide = makerSide === "BUY" ? "SELL" : "BUY";
     randomInt(state.rng, 1, 3); // Taker offset for price
-    const takerQty = Math.max(1, randomGeometric(state.rng, 0.5)) * lotSize;
+    const takerQty = quantity(randomGeometric(state.rng, 0.5));
 
     orders.push({
       symbol: state.spec.symbol,
       side: takerSide,
       type: "MARKET",
-      quantity: BigInt(takerQty),
+      quantity: takerQty,
       price: null,
       clientOrderId: `sim-taker-${counter++}`,
     });
@@ -112,7 +117,7 @@ export function flowModelNextTick(
       state.makerOrders.delete(toCancel);
       orders.push({
         symbol: state.spec.symbol,
-        side: "BUY", // dummy, cancel doesn't use side but use for compatibility
+        side: "BUY", // Required by the shared order shape; cancel ignores the side.
         type: "LIMIT",
         quantity: 0n,
         price: null,
@@ -125,13 +130,13 @@ export function flowModelNextTick(
   let ticksSinceSweep = state.ticksSinceBreakerSweep + 1;
   if (state.scenario === "breaker-demo" && ticksSinceSweep >= state.brekerSweepInterval) {
     const sweepSide = randomChoice(state.rng, ["BUY", "SELL"] as const);
-    const sweepQty = Math.max(1, randomGeometric(state.rng, 0.3)) * 5 * lotSize; // 5-10x normal size
+    const sweepQty = quantity(Math.max(1, randomGeometric(state.rng, 0.3)) * 5);
 
     orders.push({
       symbol: state.spec.symbol,
       side: sweepSide,
       type: "MARKET",
-      quantity: BigInt(sweepQty),
+      quantity: sweepQty,
       price: null,
       clientOrderId: `sim-breaker-sweep-${counter++}`,
     });

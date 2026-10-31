@@ -28,6 +28,7 @@ export async function recoverRiskPartition(args: {
   partition: number;
   config: RiskConfig;
   chunkSize?: number;
+  upToSeq?: number;
 }): Promise<RecoverRiskPartitionResult> {
   const { sql, partition, config } = args;
   const chunkSize = args.chunkSize ?? 1000;
@@ -35,7 +36,8 @@ export async function recoverRiskPartition(args: {
   const journal = await PgRiskJournal.create(sql, { partition, writerEpoch: 1n });
   const snapshotStore = new RiskSnapshotStore(sql);
 
-  const maxSeq = await journal.lastCommandSeq();
+  const journalMax = await journal.lastCommandSeq();
+  const maxSeq = args.upToSeq === undefined ? journalMax : Math.min(journalMax, args.upToSeq);
   const invalidSnapshots: { lastSeq: number; reason: string }[] = [];
 
   let core: RiskCore | undefined;
@@ -72,7 +74,7 @@ export async function recoverRiskPartition(args: {
 
   let cursor = fromSeq;
   for (;;) {
-    const batch = await journal.readCommands(cursor, chunkSize);
+    const batch = (await journal.readCommands(cursor, chunkSize)).filter(command => command.seq <= maxSeq);
     if (batch.length === 0) break;
 
     const firstSeq = batch[0]!.seq;

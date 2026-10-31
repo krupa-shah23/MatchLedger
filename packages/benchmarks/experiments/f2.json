@@ -1,0 +1,26 @@
+{
+  "experiment": "f2",
+  "seed": 12012,
+  "warmupMs": 30000,
+  "measureMs": 60000,
+  "repetitions": 3,
+  "apiRateLimit": {
+    "RATE_LIMIT_ORDERS_PER_SEC": 40,
+    "RATE_LIMIT_BURST": 80
+  },
+  "rateStepsOrdersPerSecond": [5, 10, 20, 40, 60],
+  "cpuSets": {
+    "postgres": "1",
+    "kafka": "0",
+    "api": "3",
+    "shard": "4",
+    "generator": "2"
+  },
+  "cpuLimits": {
+    "postgres": 1,
+    "kafka": 1,
+    "api": 1,
+    "shard": 1,
+    "generator": 1
+  }
+}

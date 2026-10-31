@@ -1,49 +1,53 @@
 /**
  * Transport mode parity test (SP1).
- * Run the same test in both inproc and kafka modes.
- * Verify behavior is identical (byte-for-byte equivalent outputs).
+ *
+ * IMPORTANT SCOPE CORRECTION: this file previously asserted end-to-end
+ * TRANSPORT=inproc/kafka parity via `expect(true).toBe(true)` placeholders.
+ * That claim cannot be verified at this level: createEventSink/configFromEnv
+ * in ./transport-flag.ts are dead code - createLiveRuntime (live-runtime.ts)
+ * never calls them, and the shard process (packages/shard/src/main.ts) has
+ * its own independent Kafka wiring that also never calls them. The real
+ * system is two separate binaries (API hardcoded to TRANSPORT=inproc, shard
+ * hardcoded to TRANSPORT=kafka), not one composition root switchable by a
+ * flag. True cross-process parity requires running both real binaries
+ * against the same seeded order flow and diffing journals - that is a live
+ * integration check, not a unit test, and is tracked separately (see the
+ * live-verification pass for genuine SP1 parity across both transports).
+ *
+ * What *is* real and testable here: this module's own config parsing and
+ * its claim not to import the Kafka client in inproc mode.
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import { configFromEnv, createEventSink } from "./transport-flag.js";
 
 describe("SP: System Parity (TRANSPORT modes)", () => {
-  it("SP1: inproc and kafka modes produce identical results on same flow", async () => {
-    // This test verifies that TRANSPORT=inproc and TRANSPORT=kafka
-    // produce byte-for-byte identical results on the same seeded flow.
-    //
-    // Test harness would:
-    // 1. Run scenario S with TRANSPORT=inproc
-    // 2. Record outputs: order journals, event journals, books, watermarks
-    // 3. Run same scenario S with TRANSPORT=kafka
-    // 4. Compare all outputs - should be identical
-    //
-    // This proves:
-    // - Kafka is a transport layer only (doesn't change business logic)
-    // - Both modes handle ordering, deduping, crash recovery identically
-    // - inproc behavior unchanged from Week 9
+  // SKIPPED (not faked). Reason: verifying that the API's inproc
+  // composition (createLiveRuntime) and the shard's kafka composition
+  // produce identical journal/order outcomes for the same seeded flow
+  // requires starting both real binaries and diffing Postgres state - see
+  // the live-verification task for the genuine multi-process run and
+  // recorded evidence.
+  it.skip("SP1: cross-process inproc/kafka journal parity - requires live multi-process harness, not a unit test", () => {});
 
-    // Placeholder: requires full scenario harness
-    expect(true).toBe(true);
+  it("SP1b: inproc branch contains no reference to the Kafka client, statically", async () => {
+    // Static module-graph check on the real source: the kafka import must
+    // appear only inside the `mode === "kafka"` branch, never at module
+    // top-level and never inside the inproc branch - so loading this module
+    // and calling createEventSink({mode:"inproc"}) can never pull in Kafka.
+    const source = readFileSync(fileURLToPath(new URL("./transport-flag.ts", import.meta.url)), "utf8");
+    const [, , afterInprocBranch] = source.split(/mode === "inproc"|mode === "kafka"/);
+    expect(source).not.toMatch(/^import .*@matchledger\/transport/m);
+    expect(afterInprocBranch ?? "").toContain("@matchledger/transport");
+
+    const sink = await createEventSink({ mode: "inproc" });
+    expect(sink).toBeDefined();
+    await sink.publish([]);
   });
 
-  it("SP1b: inproc mode does not import Kafka client", () => {
-    // Verify that inproc composition never imports @confluentinc/kafka-javascript
-    // This is a static check - in real code, we'd verify module graph
-
-    const config = configFromEnv();
-    expect(config.mode).toBeDefined();
-
-    // inproc mode should work without Kafka available
-    if (config.mode === "inproc") {
-      // No Kafka-specific config needed
-      expect(config.kafkaBrokers).toBeUndefined();
-    }
-  });
-
-  it("SP1c: TRANSPORT env var selects composition", () => {
-    // Test that TRANSPORT=inproc and TRANSPORT=kafka are both recognized
-
+  it("SP1c: TRANSPORT env var selects composition and rejects invalid values", () => {
     process.env.TRANSPORT = "inproc";
     const inprocConfig = configFromEnv();
     expect(inprocConfig.mode).toBe("inproc");
@@ -55,17 +59,12 @@ describe("SP: System Parity (TRANSPORT modes)", () => {
     process.env.TRANSPORT = "invalid";
     expect(() => configFromEnv()).toThrow("Invalid TRANSPORT=invalid");
 
-    // Reset
     delete process.env.TRANSPORT;
   });
 
-  it("SP1d: Week 9 suite passes in both modes", async () => {
-    // This would run the full Week 9 test suite twice:
-    // npm test -- --project inproc
-    // npm test -- --project kafka
-    // Both should pass completely
-
-    // Placeholder: requires CI setup
-    expect(true).toBe(true);
-  });
+  // SKIPPED (not faked). Reason: this asserts the full Week 9 vitest suite
+  // passes twice (once per TRANSPORT value) under a CI matrix; a single
+  // test file cannot re-invoke the whole suite meaningfully. Tracked as a
+  // CI configuration task, not unit-test coverage.
+  it.skip("SP1d: Week 9 suite passes under both TRANSPORT values - requires CI matrix, not a unit test", () => {});
 });

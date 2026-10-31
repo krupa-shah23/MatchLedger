@@ -3,9 +3,10 @@
  * OA1-OA15, P30: Complete order submission and management lifecycle
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildTestApp, MockSqlExecutor, MockRuntimeFacade, createTestToken } from "../test-helpers.js";
+import { RateLimiter } from "../plugins/rate-limit.js";
 
 describe("OA: Orders API", () => {
   let app: FastifyInstance;
@@ -201,8 +202,7 @@ describe("OA: Orders API", () => {
   });
 
   it("OA6: Scenario 4 queue full returns 503 with Retry-After", async () => {
-    // When internal queue is full, return 503 (not 202)
-    // For now just verify we can submit (queue not full in test)
+    vi.spyOn(facade, "submitOrder").mockResolvedValueOnce({ kind: "FULL" });
     const res = await app.inject({
       method: "POST",
       url: "/orders",
@@ -217,7 +217,35 @@ describe("OA: Orders API", () => {
         price: "100.00",
       },
     });
-    expect(res.statusCode).toBe(202);
+    expect(res.statusCode).toBe(503);
+    expect(res.headers["retry-after"]).toBe("1");
+  });
+
+  it("RL-int: POST /orders applies the configured per-account token bucket", async () => {
+    const limited = await buildTestApp({ orderRateLimiter: new RateLimiter({ tokensPerSecond: 1, burstSize: 1, now: () => 0 }) });
+    limited.executor.tables.user_accounts!.push({ user_id: "limited-user", account_id: "limited-account" });
+    const limitedToken = await createTestToken("limited-user", "TRADER", ["limited-account"]);
+    const payload = (clientOrderId: string) => ({
+      clientOrderId,
+      symbol: "ACME",
+      side: "BUY",
+      type: "LIMIT",
+      timeInForce: "GTC",
+      quantity: "1",
+      price: "1.00",
+    });
+    try {
+      const accepted = await limited.app.inject({ method: "POST", url: "/orders", headers: { authorization: `Bearer ${limitedToken}` }, payload: payload("rate-1") });
+      const limitedResponse = await limited.app.inject({ method: "POST", url: "/orders", headers: { authorization: `Bearer ${limitedToken}` }, payload: payload("rate-2") });
+      expect(accepted.statusCode).toBe(202);
+      expect(limitedResponse.statusCode).toBe(429);
+      expect(limitedResponse.headers["retry-after"]).toBe("1");
+      expect(limitedResponse.json().code).toBe("rate_limited");
+    } finally {
+      await limited.app.close();
+      limited.executor.reset();
+      limited.facade.reset();
+    }
   });
 
   it("OA7: Crash between register and submit", async () => {
@@ -392,44 +420,18 @@ describe("OA: Orders API", () => {
   });
 
   it("OA10b: Failed single-flight execution frees the key", async () => {
-    // Single-flight should only coalesce while waiting for same key
-    // If execution fails, next call with same key should retry independently
-
-    // For now, just verify we can make multiple calls with same clientOrderId
-    // after first succeeds
-    const payload = {
-      clientOrderId: "free-key-test",
-      symbol: "ACME",
-      side: "BUY",
-      type: "LIMIT",
-      timeInForce: "GTC",
-      quantity: "5",
-      price: "100.00",
-    };
-
-    const res1 = await app.inject({
-      method: "POST",
-      url: "/orders",
-      headers: { authorization: `Bearer ${token}` },
-      payload,
-    });
-    expect(res1.statusCode).toBe(202);
-
-    facade.reset();
-
-    // Second call should run independently (not coalesced from first)
-    const res2 = await app.inject({
-      method: "POST",
-      url: "/orders",
-      headers: { authorization: `Bearer ${token}` },
-      payload,
-    });
-    expect(res2.statusCode).toBe(202);
-
-    // Both should have same orderId due to database deduplication
-    const orderId1 = JSON.parse(res1.payload).orderId;
-    const orderId2 = JSON.parse(res2.payload).orderId;
-    expect(orderId1).toBe(orderId2);
+    const submit = vi.spyOn(facade, "submitOrder");
+    submit.mockRejectedValueOnce(new Error("journal unavailable"));
+    const payload = { clientOrderId: "free-key-test", symbol: "ACME", side: "BUY",
+      type: "LIMIT", timeInForce: "GTC", quantity: "5", price: "100.00" };
+    const request = { method: "POST" as const, url: "/orders",
+      headers: { authorization: `Bearer ${token}` }, payload };
+    const failed = await app.inject(request);
+    expect(failed.statusCode).toBe(500);
+    const retry = await app.inject(request);
+    expect(retry.statusCode).toBe(202);
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(submit.mock.calls[1]?.[0]).toMatchObject({ orderId: retry.json().orderId });
   });
 
   it("OA11: Cancel owner 202 non-owner 404 terminal 409 race decided by engine", async () => {
@@ -593,9 +595,20 @@ describe("OA: Orders API", () => {
   });
 
   it("OA14: GET /orders/{id} right after 202 synthesizes RECEIVED", async () => {
-    // For now, order must be in projection to be queried
-    // Full implementation would synthesize from order_requests
-    expect(true).toBe(true);
+    const submitted = await app.inject({ method: "POST", url: "/orders",
+      headers: { authorization: `Bearer ${token}` }, payload: {
+        clientOrderId: "pending-order", symbol: "ACME", side: "BUY", type: "LIMIT",
+        timeInForce: "GTC", quantity: "5", price: "100.00" } });
+    expect(submitted.statusCode).toBe(202);
+    const id = submitted.json().orderId;
+    const pending = await app.inject({ method: "GET", url: `/orders/${id}`,
+      headers: { authorization: `Bearer ${token}` } });
+    expect(pending.statusCode).toBe(200);
+    expect(pending.json()).toMatchObject({ orderId: id, status: "RECEIVED" });
+    const outsider = await createTestToken("other", "TRADER", ["acc-other"]);
+    const hidden = await app.inject({ method: "GET", url: `/orders/${id}`,
+      headers: { authorization: `Bearer ${outsider}` } });
+    expect(hidden.statusCode).toBe(404);
   });
 
   it("OA15: Amend route 404 not in OpenAPI", async () => {

@@ -61,6 +61,19 @@ describe("UA: API client", () => {
     expect(calls[0]!.headers.Authorization).toBe("Bearer secret-token");
   });
 
+  it("UA5: sends bodyless DELETE without an invalid empty JSON content type", async () => {
+    let requestInit: RequestInit | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+      requestInit = init;
+      return new Response(JSON.stringify({ accepted: true }), { status: 202 });
+    }));
+    const client = new ApiClient({ baseUrl: "/api/v1", getToken: () => "t" });
+    await client.delete("/orders/order-1");
+    expect(requestInit?.method).toBe("DELETE");
+    expect(requestInit?.body).toBeUndefined();
+    expect((requestInit?.headers as Record<string, string>)?.["Content-Type"]).toBeUndefined();
+  });
+
   it("UA2: a 401 triggers exactly one refresh, then retries once", async () => {
     let call = 0;
     vi.stubGlobal(

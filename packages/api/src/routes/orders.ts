@@ -5,7 +5,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { submitOrderDurably } from "../orders/submit.js";
+import { submitOrderDurably, OrderQueueFullError } from "../orders/submit.js";
 import type { SqlExecutor } from "../orders/submit.js";
 import type { RuntimeFacade } from "../orders/submit.js";
 import { getOrder, listOrders, getOrderTimeline, deriveOrderStatus } from "@matchledger/projections";
@@ -122,6 +122,11 @@ export async function registerOrderRoutes(app: FastifyInstance, deps: OrderRoute
           status: "RECEIVED",
         });
       } catch (err: any) {
+        if (err instanceof OrderQueueFullError) {
+          return reply.header("Retry-After", "1").status(503).send({
+            status: 503, code: "queue_full", detail: "Queue full; nothing was submitted. Retry with the same clientOrderId.",
+          });
+        }
         if (err instanceof z.ZodError) {
           return reply.status(400).type("application/problem+json").send({
             type: "about:blank#validation_failed",
@@ -172,8 +177,16 @@ export async function registerOrderRoutes(app: FastifyInstance, deps: OrderRoute
       const order = await getOrder(deps.executor, params.id as any);
 
       if (!order) {
-        // Try to synthesize RECEIVED from order_requests if command was journaled
-        // For now, return 404
+        const pending = await deps.executor.query(
+          "SELECT order_id, account_id, client_order_id, created_at FROM order_requests WHERE order_id = $1",
+          [params.id]
+        );
+        const registered = pending.rows[0] as { order_id: string; account_id: string; client_order_id: string; created_at: string } | undefined;
+        if (registered && (user.role !== "TRADER" || user.accountIds.includes(registered.account_id)) &&
+            await deps.facade.hasSubmitCommand(registered.order_id)) {
+          return reply.code(200).send({ orderId: registered.order_id, accountId: registered.account_id,
+            clientOrderId: registered.client_order_id, createdAt: registered.created_at, status: "RECEIVED" });
+        }
         return reply.status(404).type("application/problem+json").send({
           type: "about:blank#not_found",
           title: "Not found",
@@ -390,6 +403,14 @@ export async function registerOrderRoutes(app: FastifyInstance, deps: OrderRoute
     "/orders/:id/events",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const params = request.params as any;
+      const user = (request as FastifyRequest & { user?: { role: string; accountIds: string[] } }).user;
+      if (!user) return reply.code(401).send({ status: 401, code: "unauthenticated" });
+      if (user.role === "TRADER") {
+        const owner = await deps.executor.query("SELECT account_id FROM order_requests WHERE order_id=$1 UNION SELECT account_id FROM order_owners WHERE order_id=$1", [params.id]);
+        if (!owner.rows.some(row => user.accountIds.includes((row as { account_id: string }).account_id))) {
+          return reply.code(404).send({ status: 404, code: "not_found" });
+        }
+      }
       const timeline = await getOrderTimeline(deps.executor, params.id);
 
       if (timeline.length === 0) {
@@ -406,12 +427,17 @@ export async function registerOrderRoutes(app: FastifyInstance, deps: OrderRoute
 
       return reply.code(200).send(
         timeline.map((evt: any) => ({
-          ts: evt.ts,
+          ts: new Date(Number(evt.ts)).toISOString(),
+          type: evt.payload?.type ?? evt.payload?.kind ?? evt.source,
           stageRank: evt.stage_rank,
           seq: evt.seq,
           idx: evt.idx,
           source: evt.source,
-          payload: evt.payload ? JSON.stringify(evt.payload) : "{}",
+          payload: evt.payload?.type === "OrderRejected" ? {
+            ...evt.payload,
+            needed: evt.payload.required == null ? undefined : formatMinor(BigInt(evt.payload.required), 2),
+            available: evt.payload.snapshot?.availableCash == null ? undefined : formatMinor(BigInt(evt.payload.snapshot.availableCash), 2),
+          } : evt.payload ?? {},
         }))
       );
     }

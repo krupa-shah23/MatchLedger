@@ -100,7 +100,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "ml_eventloop_delay_ms",
+          "expr": "histogram_quantile(0.99, sum(rate(ml_eventloop_delay_ms_bucket[1m])) by (le, process))",
           "refId": "A"
         }
       ],
@@ -254,8 +254,16 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "ml_order_lifecycle_ms",
+          "expr": "histogram_quantile(0.5, sum(rate(ml_order_lifecycle_ms_bucket[1m])) by (le))",
           "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ml_order_lifecycle_ms_bucket[1m])) by (le))",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(ml_order_lifecycle_ms_bucket[1m])) by (le))",
+          "refId": "C"
         }
       ],
       "title": "Order lifecycle latency p50, p95, p99",
@@ -330,14 +338,12 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, ml_shard_append_duration_ms_bucket)",
-          "refId": "A",
-          "legendFormat": "Append p99"
+          "expr": "histogram_quantile(0.99, sum(rate(ml_shard_append_duration_ms_bucket[1m])) by (le))",
+          "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.99, ml_shard_apply_duration_ms_bucket)",
-          "refId": "B",
-          "legendFormat": "Apply p99"
+          "expr": "histogram_quantile(0.99, sum(rate(ml_shard_apply_duration_ms_bucket[1m])) by (le))",
+          "refId": "B"
         }
       ],
       "gridPos": {
@@ -650,7 +656,7 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "ml_projector_lag_ms",
+          "expr": "ml_projector_lag",
           "refId": "A"
         }
       ],
@@ -722,14 +728,21 @@
       "pluginVersion": "8.0.0"
     },
     {
-      "title": "WebSocket connections",
+      "title": "WebSocket connections, conflations, slow closes",
       "type": "timeseries",
       "datasource": "Prometheus",
       "targets": [
         {
           "expr": "ml_websocket_connections",
-          "refId": "A",
-          "legendFormat": "Connections"
+          "refId": "A"
+        },
+        {
+          "expr": "rate(ml_websocket_conflations_total[1m])",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(ml_websocket_slow_closes_total[1m])",
+          "refId": "C"
         }
       ],
       "gridPos": {

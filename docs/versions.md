@@ -1,5 +1,7 @@
 # Version verification
 
+This file mixes dated historical environment snapshots with the current dependency-pin check near the end. Historical command outputs are not all retained; do not treat those snapshots as current verification.
+
 ## Week 9 Pinned Dependencies (Day 0-1)
 
 Verified peer dependencies:
@@ -33,7 +35,7 @@ Applied to `packages/projections/src/order-facts.ts` and `mappers.ts` via eslint
 
 npm view before pinning: TypeScript 7.0.2 (no peers), Vitest 5.0.3 (Vite 6–8 / Node 24), fast-check 4.10.2 (no peers). Required-range pins: TypeScript 6.0.3, Vitest 4.1.11, fast-check 4.10.2.
 
-## Installed top-level snapshot
+## Installed top-level snapshot (historical Windows environment)
 
 ```text
 matchledger@0.1.0 D:\College\Projects - Resume\sde
@@ -74,8 +76,8 @@ matchledger@0.1.0 D:\College\Projects - Resume\sde
 ├── typescript@6.0.3
 └── vitest@4.1.11
 ```
-## Step 3 infrastructure
-- Compose pins: postgres:18, redis:8, apache/kafka:4.2.2, prom/prometheus:v3.11.2, grafana/grafana:13.1.3. Docker CLI is unavailable on this host, so pull/up/health and PostgreSQL integration remain pending.
+## Step 3 infrastructure (historical checkpoint)
+- The earlier checkpoint listed major-only PostgreSQL and Redis image tags and said Docker was unavailable at that time. Current `docker-compose.yml` pins `postgres:18.6`, `redis:8.8.4`, `apache/kafka:4.2.2`, `prom/prometheus:v3.11.2`, and `grafana/grafana:13.1.3`; current daemon health was not verified in this continuation.
 - Kafka client 1.10.1: dynamic import succeeded on this host without compilation. npm reported its install script pending approval, but the prebuilt import loads.
 - Spike 1: tinybench hello benchmark added and invoked through @matchledger/benchmarks bench.
 - Spike 7 partial: money codec and fast-check JSON property P10 pass; PostgreSQL int8 parser and integration helper added, execution pending Docker.
@@ -226,3 +228,30 @@ workspace is pinned to exact version `6.2.1`.
   - code: `-152`
   - message: `Local: Purged in queue`
 - Decision / deviation: no blueprint conflict was observed. The installed client uses KafkaJS-compatible names in the `kafkaJS` config block, but the underlying consumer rebalance hook is the librdkafka callback name `rebalance_cb`, and the producer-fencing error arrives as `KafkaJSError` with code `-152`.
+
+
+## Live composition completion — 2026-10-31
+
+No new external library was introduced. API composition now directly declares the
+existing local `@matchledger/transport` workspace (0.1.0); its Kafka client remains
+pinned to `@confluentinc/kafka-javascript` 1.10.0. The fail-stop watchdog uses Node's
+built-in worker_threads module. Dockerfile.shard pins its Node 24 Alpine base by
+digest `sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85`.
+Prometheus v3.11.2 and Grafana 13.1.3 pins are unchanged.
+
+## Dependency pin follow-up — 2026-10-31
+
+Current exact pins after the advisory review: Fastify `5.12.7`, Vitest `4.1.12`, happy-dom `21.0.4`, TypeScript `6.0.3` in both root and web, and Zod `4.6.7` in common and shard. `npm ci` reproduced the lockfile. The old Windows installed-tree snapshot above remains historical evidence only and was not reproduced on this host.
+
+`npm audit` now reports 10 moderate findings and no high or critical findings. The remaining findings are in the ESLint / typescript-eslint / minimatch development-tool dependency chain. npm's suggested remediation downgrades `typescript-eslint` to `8.14.0` or ESLint to `4.0.0`, which is incompatible with the configured ESLint 10 flat config; `npm audit fix` reports it would require `--force`. No forced downgrade or major break was applied. Fastify, Vitest, happy-dom, and fast-uri received compatible fixes. Zod in `packages/shard` was upgraded from 3 to 4 to match the already-used common-package version and clear the high advisory; its build and tests pass.
+
+## Week 12 deployment image pins — 2026-10-31
+
+- Caddy `2.10.2-alpine`, pinned in `deploy/Dockerfile.proxy` to digest `sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d`; pulled and validated against `deploy/Caddyfile` with `caddy validate`.
+- Node `24-alpine`, pinned by digest `sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85` in both new deployment build stages.
+- The benchmark result schema uses the already-pinned Zod `4.6.7`, now declared directly by `@matchledger/benchmarks`; no new external package was added for the runner or renderers.
+
+## Week 12 load-generator dependency — 2026-10-31
+
+- `@matchledger/simulator` now directly pins `@confluentinc/kafka-javascript` `1.10.0` for the isolated `src/load` Kafka generator. This is the exact client version recorded and API-checked in Spike 4; the root lockfile was updated with `npm install --package-lock-only --ignore-scripts --offline --workspace @matchledger/simulator`.
+- The load script uses the official `grafana/k6:1.7.0` image. `docker pull grafana/k6:1.7.0` resolved the versioned tag to digest `sha256:ae824aa6906ce242156163462367cbcba7065efc2d365969ae41b282f1acc9f5`; the five-second, one-arrival-per-second dry run passed with the `http_req_failed` and `dropped_iterations` thresholds green.

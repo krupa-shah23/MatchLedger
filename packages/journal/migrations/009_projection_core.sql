@@ -1,4 +1,4 @@
-CREATE TABLE projection_checkpoints (
+CREATE TABLE IF NOT EXISTS projection_checkpoints (
  projection text NOT NULL,
  stream_id text NOT NULL,
  last_seq bigint NOT NULL CHECK (last_seq >= 0),
@@ -6,7 +6,7 @@ CREATE TABLE projection_checkpoints (
  PRIMARY KEY (projection, stream_id)
 );
 
-CREATE TABLE orders_view (
+CREATE TABLE IF NOT EXISTS orders_view (
  order_id text PRIMARY KEY,
  account_id text NOT NULL,
  client_order_id text,
@@ -29,10 +29,10 @@ CREATE TABLE orders_view (
  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX orders_view_account ON orders_view (account_id, created_at DESC, order_id);
-CREATE INDEX orders_view_symbol_status ON orders_view (symbol, terminal);
+CREATE INDEX IF NOT EXISTS orders_view_account ON orders_view (account_id, created_at DESC, order_id);
+CREATE INDEX IF NOT EXISTS orders_view_symbol_status ON orders_view (symbol, terminal);
 
-CREATE TABLE order_fills (
+CREATE TABLE IF NOT EXISTS order_fills (
  order_id text NOT NULL,
  trade_id text NOT NULL,
  price bigint NOT NULL,
@@ -42,7 +42,7 @@ CREATE TABLE order_fills (
  PRIMARY KEY (order_id, trade_id)
 );
 
-CREATE TABLE resting_orders (
+CREATE TABLE IF NOT EXISTS resting_orders (
  symbol text NOT NULL,
  order_id text NOT NULL,
  side text NOT NULL,
@@ -51,9 +51,9 @@ CREATE TABLE resting_orders (
  PRIMARY KEY (symbol, order_id)
 );
 
-CREATE INDEX resting_orders_level ON resting_orders (symbol, side, price);
+CREATE INDEX IF NOT EXISTS resting_orders_level ON resting_orders (symbol, side, price);
 
-CREATE TABLE trades_view (
+CREATE TABLE IF NOT EXISTS trades_view (
  symbol text NOT NULL,
  engine_seq bigint NOT NULL,
  idx integer NOT NULL,

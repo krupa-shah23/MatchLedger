@@ -12,7 +12,7 @@
     "@matchledger/journal": "file:../journal",
     "@matchledger/telemetry": "file:../telemetry",
     "@matchledger/transport": "file:../transport",
-    "zod": "^3.23.8"
+    "zod": "4.6.7"
   },
   "scripts": {
     "spike:kafka": "node --experimental-strip-types src/spike4.ts"

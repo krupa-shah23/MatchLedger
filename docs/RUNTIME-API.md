@@ -1,4 +1,6 @@
-# Runtime Facade API (Week 9 Inventory)
+# Runtime Facade API (Week 9 Inventory; historical)
+
+The missing-method table in this opening inventory describes the Week 9 checkpoint only. It is superseded by the runnable Week 11 composition documented below; do not treat those rows as current API status.
 
 ## Current Public Methods
 
@@ -131,3 +133,80 @@ All use `payload_json` paths (real, queryable):
 |---|---|
 | `packages/risk/src/dedupe-bounds.ts` | Bounds the risk journal's dedupe set: live order ids are kept forever, decided ids are kept for `DEDUPE_WINDOW_SEQ` (default in `@matchledger/common`'s `DEFAULT_DEDUPE_WINDOW_SEQ`), older decided ids are evicted on snapshot. Not an API facade; internal to risk-partition recovery/snapshotting. |
 | `packages/risk/src/orders-submitted-consumer.ts` | Consumes `orders.submitted` messages and journals them through `FencedPgJournal` (lease id `risk-<partition>`), storing the consumer offset in the same transaction as the journal write. Not an API facade; internal transport-to-journal wiring for a risk partition. |
+
+
+## Runnable startup composition (2026-10-31)
+
+- `packages/api/src/main.ts::startApi()` loads validated HTTP/startup config,
+  holds the control-plane advisory lock on a dedicated connection, runs journal
+  migrations, creates the live runtime, optionally seeds the demo profile, catches
+  up and starts the real projector, starts HTTP and the separate metrics listener,
+  and returns `{ app, close, graceMs }`. Shutdown stops simulator production,
+  closes HTTP/WebSocket connections, drains the runtime and projector, closes
+  metrics, releases the advisory lock, and closes the pool. The CLI handles
+  SIGTERM/SIGINT, a second signal, fatal exceptions, and the grace deadline.
+- `@matchledger/runtime::createLiveRuntime({ sql, instruments, queueCapacity,
+  maxBatch, heartbeatMs, transport?, brokers?, shardPartitions?, onFatal })` returns the existing API facade methods
+  (`submitOrder`, `hasSubmitCommand`, `cancelOrder`, `haltSymbol`, `resumeSymbol`,
+  `deposit`, `riskView`, `internalTrades`) plus `riskConfig` and `stop()`.
+  It composes the real risk recovery/core/journal, matching runner, event router,
+  and durable ledger. A FULL result does not become a 202. Engine events missing
+  after a command-only crash are regenerated; stored events are checked against
+  replay, and deposit ledger writes catch up idempotently. In inproc mode it owns matching. In Kafka mode it publishes accepted commands
+  to orders.accepted, consumes engine.events, validates outputs against the
+  database journal, and routes real risk notices and ledger postings. Both modes
+  recover risk and router state and write control-plane recovery_log rows.
+- `@matchledger/shard::createPostgresRunner(...)` acquires a real lease, recovers
+  matching engines from the real command journal, validates/regenerates outputs,
+  and returns `{ runner, epoch, heartbeat, sequences, books }`. It uses the
+  existing ShardRunner loop unchanged. `decodeEngineCommand` and `journalJson`
+  adapt persisted engine commands and bigint JSON at the I/O boundary.
+- `@matchledger/risk::PgRiskJournal` is exported for composition; its append and
+  recovery contracts are unchanged.
+- `packages/shard/src/main.ts::startShard()` composes real leases, recovery,
+  matching runner factories, Kafka sinks, offsets, heartbeats and recovery logs.
+  It observes actual consumer assignments and revokes/drains runners on ownership
+  changes. Invalid historical messages are published to `dlq.orders.accepted`
+  before their offset advances. `scripts/create-topics.mjs` creates that topic.
+- `PartitionConsumer.assignments()` exposes the client's current topic/partition
+  assignment to startup lifecycle wiring. `KafkaEventSink` accepts an optional
+  stable per-lease transactional id to fence old partition owners.
+- Simulator submission goes through authenticated `POST /orders` via
+  Fastify injection, including its body validation, account lookup, RBAC,
+  idempotency registration, durability and FULL/503 handling. The demo-profile
+  simulator principal/account is seeded with the other demo users. Generated
+  prices are converted to decimal strings before entering the HTTP contract.
+- WebSocket subscriptions poll authenticated read endpoints for full snapshots;
+  private order snapshots use the subscribing token's account scope. Snapshots
+  have a per-connection epoch and increasing sequence. This is bounded polling,
+  not a claim of an event-notice fan-out implementation.
+
+
+### Live completion additions (2026-10-31)
+
+- API startup validates TRANSPORT=inproc|kafka, KAFKA_BROKERS,
+  SHARD_PARTITIONS, METRICS_HOST and REBUILD_PROJECTIONS. The last flag is an
+  explicit, ownership-locked rebuild of derived tables from preserved journals.
+- `recoverRiskPartition({ ..., upToSeq? })` supports bounded independent replay.
+  Verify-replay ignores stored snapshot candidates during the scratch replay and
+  verifies both the canonical stored payload and its comparison checksum.
+- `PartitionConsumer` accepts validated startup session/poll timeouts,
+  fromBeginning and an onAssignmentLost callback. Shards fail-stop on lost
+  assignments or stale leases. A worker-thread watchdog stops the entire shard
+  when its event loop exceeds the configured poll interval, including native
+  heartbeats that a timer on the blocked loop cannot stop.
+- Demo shards subscribe to control.commands for KillShard and bounded FreezeShard;
+  production shards do not register this consumer. The Kafka demo API owns and
+  closes its control producer.
+- `/orders/{id}/events` reads the journal, returns ISO timestamps, typed payloads
+  and normalized rejection display amounts. Reconciliation sorts by real columns;
+  JSONB rejection snapshots are accepted without parsing an object as JSON text.
+- Migration startup serializes on a schema-scoped advisory lock. The three known
+  Week 11 renames are adopted only when their checksums match existing history;
+  modified migrations still fail. No historical migration SQL was rewritten.
+
+`GET /system/shards` also returns `chaosEnabled`, true only when the demo control producer is wired. P7 uses this capability and routes chaos by an actual owned symbol rather than a lease-id suffix; inproc mode keeps simulator controls but hides unsupported shard chaos actions.
+
+## Verification limits — 2026-10-31
+
+Current results and the assertion-aware ID/skip inventories are linked from PROGRESS.md. Projector lag is recorded in journal sequence units as `ml_projector_lag` in both the API helper and telemetry catalogue; it is not a duration metric. `VITE_POLL_INTERVAL_MS` is validated by the browser config module and defaults to 5000 ms. Hand-authorship of `stream-state.ts` cannot be certified: the reducer was AI-written during this conversation.

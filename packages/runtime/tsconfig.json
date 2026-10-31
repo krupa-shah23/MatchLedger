@@ -19,6 +19,15 @@
     },
     {
       "path": "../engine-core"
+    },
+    {
+      "path": "../shard"
+    },
+    {
+      "path": "../ledger"
+    },
+    {
+      "path": "../transport"
     }
   ],
   "extends": "../../tsconfig.base.json"

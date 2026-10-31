@@ -3,9 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./load/accounts": "./dist/load/accounts.js",
+    "./load/kafka-producer": "./dist/load/kafka-producer.js"
+  },
   "types": "./dist/index.d.ts",
   "dependencies": {
+    "@confluentinc/kafka-javascript": "1.10.0",
     "@matchledger/common": "file:../common"
   }
 }

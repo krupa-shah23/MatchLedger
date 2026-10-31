@@ -81,6 +81,10 @@ function waitForAuthAck(ws: WebSocket): Promise<{ op: string; status: string }> 
 }
 
 describe("Spike 5: Fastify, JWT, WebSocket auth", () => {
+  it("requires an explicit JWT secret of at least 32 bytes", async () => {
+    await expect(buildServer({ jwtSecret: "short" })).rejects.toThrow("JWT_SECRET must be provided and at least 32 bytes");
+  });
+
   let app: Awaited<ReturnType<typeof buildServer>>;
   let address: string;
   const sockets = new Set<WebSocket>();

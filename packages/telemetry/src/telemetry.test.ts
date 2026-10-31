@@ -11,11 +11,21 @@ import {
 } from "./index.js";
 
 describe("Telemetry Registry (TL1-TL4)", () => {
+  it("constructs live shard counters from catalogue defaults without explicit options", async () => {
+    const metric = getOrCreateCounter("ml_shard_commands_total");
+    metric.inc({ shard_id: "registry-test", symbol: "ACME" });
+    const sample = await metric.get();
+    expect(sample.values).toEqual(expect.arrayContaining([expect.objectContaining({ value: 1,
+      labels: { shard_id: "registry-test", symbol: "ACME" } })]));
+  });
   it("TL1: Catalogue is comprehensive (20+ metrics)", () => {
     const names = Object.keys(METRICS_CATALOGUE);
     expect(names.length).toBeGreaterThanOrEqual(20);
     expect(names).toContain("ml_shard_commands_total");
     expect(names).toContain("ml_eventloop_delay_ms");
+    expect(names).toContain("ml_eventloop_delay_max_ms");
+    expect(names).toContain("ml_gc_pause_ms");
+    expect(names).toContain("ml_risk_rejections_total");
     expect(names).toContain("ml_breaker_state");
   });
 

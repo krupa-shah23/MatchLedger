@@ -10,6 +10,7 @@ export type Mutation =
   | { type: "INSERT_RESTING"; symbol: string; orderId: string; data: Record<string, unknown> }
   | { type: "UPDATE_RESTING_REMAINING"; symbol: string; orderId: string; remaining: bigint }
   | { type: "DELETE_RESTING"; symbol: string; orderId: string }
+  | { type: "ADD_FILL_FACTS"; orderId: string; quantity: bigint; notional: bigint }
   | { type: "INSERT_TRADE"; symbol: string; engineSeq: number; idx: number; data: Record<string, unknown> }
   | { type: "UPDATE_BALANCES"; accountId: string; data: Record<string, unknown> }
   | { type: "UPDATE_POSITION"; accountId: string; symbol: string; data: Record<string, unknown> }
@@ -24,7 +25,7 @@ export type Mutation =
  * Failure to handle a new type causes compile error.
  */
 export function mapRiskRecord(
-  record: { record_type: string; payload_json: unknown; seq: number }
+  record: { record_type: string; payload_json: unknown; seq: number; ts?: number }
 ): Mutation[] {
   const payload = record.payload_json as Record<string, unknown> | { type: string };
   const mutations: Mutation[] = [];
@@ -111,7 +112,7 @@ export function mapRiskRecord(
         mutations.push({
           type: "UPDATE_BALANCES",
           accountId: e.accountId,
-          data: { held_cash: e.asset === "USD" ? e.amount : 0n, held_shares: e.asset !== "USD" ? e.amount : 0n },
+          data: { held_cash: e.asset === "CASH" || e.asset === "USD" ? e.amount : 0n },
         });
         break;
       }
@@ -183,19 +184,27 @@ export function mapRiskRecord(
         break;
       }
       case "FundsDeposited": {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const e = evt as any;
-        mutations.push({
-          type: "UPDATE_BALANCES",
-          accountId: e.accountId,
-          data: { cash: e.asset === "USD" ? e.amount : 0n },
-        });
+        const e = evt as { type: string; accountId: string; asset: string; amount: bigint };
+        if (e.asset === "CASH" || e.asset === "USD") mutations.push({ type: "UPDATE_BALANCES", accountId: e.accountId, data: { cash: e.amount } });
+        else if (e.asset.startsWith("SHARES:")) mutations.push({ type: "UPDATE_POSITION", accountId: e.accountId, symbol: e.asset.slice(7), data: { quantity: e.amount } });
         break;
       }
-      case "AccountOpened":
+      case "AccountOpened": {
+        const e = evt as { type: string; accountId: string };
+        mutations.push({ type: "UPDATE_BALANCES", accountId: e.accountId, data: { cash: 0n } });
+        break;
+      }
       case "AccountAdjusted":
       case "AdjustmentRejected":
-      case "SymbolStatusChanged":
+        break;
+      case "SymbolStatusChanged": {
+        const e = evt as Record<string, unknown>;
+        mutations.push({ type: "UPDATE_BREAKER", symbol: String(e.symbol), data: {
+          state: e.status === "HALTED" ? "OPEN" : "HALF_OPEN", trip_reason: e.reason ?? null,
+          state_since_ts: record.ts ?? record.seq, incident_start_ts: record.ts ?? record.seq,
+        } });
+        break;
+      }
       case "HaltTimeoutCancelled":
       case "SweepCandidates":
       case "DuplicateIgnored":
@@ -241,6 +250,7 @@ export function mapEngineRecord(
   } else if (record.record_type === "EVENT") {
     const evt = payload as { type: string };
     switch (evt.type) {
+      case "ORDER_RESTED":
       case "OrderRested": {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
@@ -251,11 +261,13 @@ export function mapEngineRecord(
           data: {
             side: e.side,
             price: e.price,
-            remaining: e.quantity,
+            remaining: e.remaining ?? e.quantity,
           },
         });
+        mutations.push({ type: "UPDATE_ORDER", orderId: e.orderId, data: { rested: true } });
         break;
       }
+      case "TRADE_EXECUTED":
       case "TradeExecuted": {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
@@ -294,8 +306,11 @@ export function mapEngineRecord(
             ts: record.seq,
           },
         });
-        // Absolute value from event
-        mutations.push({
+        for (const orderId of [e.takerOrderId, e.makerOrderId]) {
+          mutations.push({ type: "ADD_FILL_FACTS", orderId, quantity: BigInt(e.quantity), notional: BigInt(e.price) * BigInt(e.quantity) });
+        }
+        // Some engine versions don't carry makerRemaining. SQL computes it from fills.
+        if (e.makerRemaining !== undefined) mutations.push({
           type: "UPDATE_RESTING_REMAINING",
           symbol: record.symbol,
           orderId: e.makerOrderId,
@@ -303,6 +318,7 @@ export function mapEngineRecord(
         });
         break;
       }
+      case "ORDER_CANCELLED":
       case "OrderCancelled": {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;
@@ -321,6 +337,7 @@ export function mapEngineRecord(
         });
         break;
       }
+      case "ORDER_REJECTED":
       case "OrderRejected": {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const e = evt as any;

@@ -20,30 +20,30 @@
 
 ---
 
-### 3. Breaker Countdown Clock (maxHaltDuration = 5 min)
-**Decision:** UI shows incident countdown with progress bar; auto-resume eligible after duration expires.
+### 3. Breaker Incident Clock
+**Decision:** UI shows elapsed incident duration from the incident timestamp. It does not invent a five-minute expiry; recovery behavior remains governed by the engine's `BreakerConfig.maxHaltDurationMs`.
 
-**Rationale:** Humans don't trust automatic recovery without visibility. Visual clock gives confidence that system will self-heal if condition passes. 300s window balances safety (long enough for investigation) vs. market availability (short enough to resume trading).
+**Rationale:** An elapsed clock reports observed state without suggesting an automatic recovery deadline that the API does not provide. The UI polling interval is centrally configured through `VITE_POLL_INTERVAL_MS` with a validated default.
 
-**Trade-off:** Can't extend halt without manual action; system remains halted until operator resumes even if condition cleared.
+**Trade-off:** Operators see duration rather than predicted time-to-recovery.
 
 ---
 
 ### 4. Resume Shows HALF_OPEN State
 **Decision:** Resume endpoint returns immediately; UI shows "→ HALF_OPEN" to warn operator of increased monitoring during recovery.
 
-**Rationale:** HALF_OPEN indicates elevated scrutiny: fewer concurrent orders, tighter risk checks. Signals to traders that market is healing, not fully healthy. Prevents flood of orders before risk limits recalibrate.
+**Rationale:** HALF_OPEN is the current projection/UI label for a resumed symbol. Separate tighter concurrency/risk behavior is UNVERIFIED; the label alone does not establish it. Signals to traders that market is healing, not fully healthy. Prevents flood of orders before risk limits recalibrate.
 
 **Trade-off:** Requires operator understanding of breaker state machine; could be automated in full system.
 
 ---
 
 ### 5. Statement Upload as Multipart (Not Streaming)
-**Decision:** POST /recon/runs accepts multipart/form-data files up to 50MB; duplicate detection via SHA256 file hash.
+**Decision:** POST /recon/runs accepts multipart/form-data files up to 20 MiB; duplicate detection via SHA256 file hash.
 
-**Rationale:** Simple HTTP form (no special encoding); reusable across browsers. Duplicate check prevents double-processing of same statement file. SHA256 deterministic and fast for 50MB limit.
+**Rationale:** Simple HTTP form (no special encoding); reusable across browsers. Duplicate check prevents double-processing of same statement file. SHA256 deterministic and fast for the configured upload bound.
 
-**Trade-off:** 50MB in-memory buffering is OK for daily statements; streaming would be needed for continuous ingest.
+**Trade-off:** 20 MiB bounded buffering is OK for daily statements; streaming would be needed for continuous ingest.
 
 ---
 
@@ -70,7 +70,7 @@
 
 **Rationale:** 30s threshold catches hung shards (heartbeat interval is 5s; 6 missed = 30s stale). Queue depth predicts backpressure. Last seq vs snapshot seq shows how much tail to replay on recovery.
 
-**Trade-off:** Fixed 30s threshold doesn't adapt to network latency; could be configurable in future.
+**Trade-off:** The stale interval follows HEARTBEAT_MS; endpoint behavior is covered by HT3-live.
 
 ---
 
@@ -97,7 +97,7 @@
 
 **Rationale:** Reuses existing ordering guarantees (same Kafka partition processes all shard-0 commands in order). Shard host subscribes to control.commands and handles Kill/Freeze events.
 
-**Trade-off:** Latency up to partition lag (~1ms); immediate local effects not possible.
+**Trade-off:** Delivery latency is UNVERIFIED; no millisecond bound is claimed. Separate Kafka topics do not establish ordering between orders and control messages.
 
 ---
 
@@ -131,16 +131,16 @@
 ### 15. Rejections Feed: Per-Symbol Resting Orders & Held Funds
 **Decision:** Risk console shows aggregate counts (resting orders, held cash) grouped by symbol under breaker.
 
-**Rationale:** Tells risk officer how much capital is stuck per symbol; informs halt scope decisions. Computed from rejection snapshots.
+**Rationale:** Tells risk officer how much capital is stuck per symbol; informs halt scope decisions. Computed from resting_orders and active CASH reservations in getBreakers (packages/projections/src/queries.ts), not rejection snapshots.
 
-**Trade-off:** Approximate (based on latest rejection data, not real-time balance); exact figures require querying risk service.
+**Trade-off:** These values follow projection progress; they can lag journal/risk state.
 
 ---
 
 ### 16. Error Display: 400, 409, 413 Inline
 **Decision:** Statement upload shows error messages inline above form (no modal, no toast).
 
-**Rationale:** Stays in same context; user can correct and retry immediately. 409 (duplicate) and 413 (file too large) messages guide remediation.
+**Rationale:** Stays in same context; user can correct and retry immediately. Identical statement content is idempotently accepted with 202; 413 reports the size bound. This is implemented in packages/api/src/routes/recon.ts.
 
 **Trade-off:** Multiple sequential uploads show only latest error; history not visible.
 
@@ -199,10 +199,10 @@ These are not "undone" but "not part of scope" (Week 11 focuses on system monito
 
 ---
 
-## Test Flake Results
+## Test Flake Results — 2026-10-31
 
-**Flake Gate (20 consecutive runs):** ✅ PASS
-- No flake detected
-- Timing variance < 2% between runs
-- No race conditions in polling logic
-- Fixed sleep elimination successful
+The latest Week 11 flake gate completed 20/20 iterations green across root unit, web unit, and integration targets (see [PROGRESS.md](../PROGRESS.md)). Integration reported 73 skipped tests per iteration, so those cases were not exercised by the gate. The prior “<2%” timing-variance and “no race conditions” claims have no retained run artifact and remain unverified; they are not claimed here.
+
+## Verification provenance
+
+Entries 1–18 exist, but this document records decisions, not blanket proof of their implementation. Current gate results and unresolved findings are linked from PROGRESS.md. The stream-state reducer was AI-written during this conversation; hand-authorship cannot be certified. A human must still watch the browser demo.

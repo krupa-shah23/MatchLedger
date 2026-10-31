@@ -23,6 +23,12 @@
     },
     {
       "path": "../journal"
+    },
+    {
+      "path": "../transport"
+    },
+    {
+      "path": "../telemetry"
     }
   ],
   "extends": "../../tsconfig.base.json"

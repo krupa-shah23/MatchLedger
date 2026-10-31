@@ -39,8 +39,3 @@ export const cancel = (orderId: string, ts = 0n) => ({
 export const expectInvariants = (engine: Engine): void => {
   expect(engine.checkInvariants(), engine.checkInvariants().join("; ")).toEqual([]);
 };
-
-export const expectStub = (engine: Engine, command: PlaceOrder): void => {
-  expect(() => engine.apply(command)).toThrow("IOC matching is not implemented");
-  expectInvariants(engine);
-};

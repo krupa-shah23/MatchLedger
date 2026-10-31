@@ -28,6 +28,10 @@ interface OrderRequest {
   order_id: string;
 }
 
+export class OrderQueueFullError extends Error {
+  constructor() { super("Order queue full"); }
+}
+
 const singleFlight = new SingleFlight<{ orderId: string; journaled: boolean }>();
 
 /**
@@ -51,7 +55,7 @@ export async function submitOrderDurably(
     const result = await executor.query(
       `INSERT INTO order_requests (account_id, client_order_id, payload_hash, order_id)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (account_id, client_order_id) DO UPDATE SET payload_hash = $3
+       ON CONFLICT (account_id, client_order_id) DO UPDATE SET payload_hash = order_requests.payload_hash
        RETURNING order_id, payload_hash;`,
       [accountId, clientOrderId, payloadHash, orderId]
     );
@@ -76,7 +80,9 @@ export async function submitOrderDurably(
 
     // Step 3: Submit to runtime (awaits journal append)
     try {
-      await facade.submitOrder(submitCommand);
+      const command = { ...(submitCommand as Record<string, unknown>), orderId: storedOrderId };
+      const submitted = await facade.submitOrder(command);
+      if (submitted.kind === "FULL") throw new OrderQueueFullError();
       return { orderId: storedOrderId, journaled: true };
     } catch (err) {
       // Journal append failed: single-flight entry removed on error

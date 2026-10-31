@@ -11,24 +11,46 @@ export interface AccountsRoutesDeps {
   executor: SqlExecutor;
 }
 
+function requireAccountAccess(request: FastifyRequest, reply: FastifyReply, accountId: string): boolean {
+  const user = (request as FastifyRequest & { user?: { role: string; accountIds?: string[] } }).user;
+  if (!user || (user.role === "TRADER" && !user.accountIds?.includes(accountId))) {
+    void reply.status(user ? 404 : 401).type("application/problem+json").send({
+      type: user ? "about:blank#not_found" : "about:blank#unauthenticated",
+      title: user ? "Not found" : "Unauthenticated",
+      status: user ? 404 : 401,
+      code: user ? "not_found" : "unauthenticated",
+      detail: user ? "Account not found" : "Authentication required",
+      instance: request.url,
+      requestId: request.id,
+    });
+    return false;
+  }
+  return true;
+}
+
 export async function registerAccountRoutes(app: FastifyInstance, deps: AccountsRoutesDeps): Promise<void> {
   // GET /accounts/{id}/balances - total, held, available
   app.get<{ Params: { id: string } }>(
     "/accounts/:id/balances",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const params = request.params as any;
-      const balances = await getBalances(deps.executor, params.id);
+      if (!requireAccountAccess(request, reply, params.id)) return;
+      let balances = await getBalances(deps.executor, params.id);
 
       if (!balances) {
-        return reply.status(404).type("application/problem+json").send({
-          type: "about:blank#not_found",
-          title: "Not found",
-          status: 404,
-          code: "not_found",
-          detail: "Account not found",
-          instance: `/accounts/${params.id}/balances`,
-          requestId: request.id,
-        });
+        const exists = await deps.executor.query("SELECT account_id FROM user_accounts WHERE account_id = $1", [params.id]);
+        if (!exists.rows.length) {
+          return reply.status(404).type("application/problem+json").send({
+            type: "about:blank#not_found",
+            title: "Not found",
+            status: 404,
+            code: "not_found",
+            detail: "Account not found",
+            instance: `/accounts/${params.id}/balances`,
+            requestId: request.id,
+          });
+        }
+        balances = { cash: 0n, held_cash: 0n };
       }
 
       const cash = BigInt((balances as any).cash || 0);
@@ -47,6 +69,7 @@ export async function registerAccountRoutes(app: FastifyInstance, deps: Accounts
     "/accounts/:id/positions",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const params = request.params as any;
+      if (!requireAccountAccess(request, reply, params.id)) return;
       const positions = await getPositions(deps.executor, params.id);
       return reply.code(200).send(
         positions.map((p: any) => ({
@@ -65,6 +88,7 @@ export async function registerAccountRoutes(app: FastifyInstance, deps: Accounts
     "/accounts/:id/pnl",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const params = request.params as any;
+      if (!requireAccountAccess(request, reply, params.id)) return;
       const pnl = await getPnl(deps.executor, params.id);
       return reply.code(200).send(
         pnl.map((p: any) => ({
@@ -82,6 +106,7 @@ export async function registerAccountRoutes(app: FastifyInstance, deps: Accounts
     "/accounts/:id/reservations",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const params = request.params as any;
+      if (!requireAccountAccess(request, reply, params.id)) return;
       const reservations = await getReservations(deps.executor, params.id);
       return reply.code(200).send(
         reservations.map((r: any) => ({
@@ -101,6 +126,7 @@ export async function registerAccountRoutes(app: FastifyInstance, deps: Accounts
     "/accounts/:id/ledger",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const params = request.params as any;
+      if (!requireAccountAccess(request, reply, params.id)) return;
       const query = request.query as any;
       const limit = Math.min(Math.max(parseInt(query.limit || "100"), 1), 1000);
       const ledger = await getLedger(deps.executor, params.id, limit);

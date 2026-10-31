@@ -6,33 +6,38 @@ const allowed = new Map([
   ["common", ["@matchledger/engine-core", "zod"]],
   ["journal", ["@matchledger/engine-core", "@matchledger/common", "pg"]],
   ["telemetry", ["@matchledger/common", "prom-client"]],
-  ["simulator", ["@matchledger/common"]],
+  ["simulator", ["@matchledger/common", "@confluentinc/kafka-javascript"]],
   ["transport", ["@matchledger/common", "@matchledger/journal", "@confluentinc/kafka-javascript"]],
   ["shard", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/journal", "@matchledger/transport", "@matchledger/telemetry", "@confluentinc/kafka-javascript", "zod"]],
   ["risk", ["@matchledger/common"]],
   ["ledger", ["@matchledger/common"]],
   ["recon", ["@matchledger/common", "@matchledger/journal"]],
   ["projections", ["@matchledger/common", "pg", "redis", "@confluentinc/kafka-javascript"]],
-  ["api", ["@matchledger/common", "@matchledger/journal", "@matchledger/projections", "@matchledger/risk", "@matchledger/recon", "@matchledger/telemetry", "@matchledger/simulator", "fastify", "@fastify/multipart", "@fastify/websocket", "jose", "prom-client", "ws"]],
-  ["runtime", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/journal", "@matchledger/transport", "@matchledger/shard", "@matchledger/risk", "@matchledger/recon", "@matchledger/ledger", "@confluentinc/kafka-javascript"]],
-  ["simulator", ["@matchledger/common", "@confluentinc/kafka-javascript"]],
-  ["benchmarks", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/shard", "@matchledger/risk", "tinybench"]],
+  ["api", ["@matchledger/transport", "@matchledger/runtime", "@matchledger/common", "@matchledger/journal", "@matchledger/projections", "@matchledger/risk", "@matchledger/recon", "@matchledger/telemetry", "@matchledger/simulator", "fastify", "@fastify/multipart", "@fastify/websocket", "jose", "prom-client", "ws"]],
+  ["runtime", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/journal", "@matchledger/transport", "@matchledger/shard", "@matchledger/risk", "@matchledger/recon", "@matchledger/ledger", "@matchledger/telemetry", "@confluentinc/kafka-javascript"]],
+  ["benchmarks", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/shard", "@matchledger/risk", "tinybench", "zod"]],
   ["system-tests", ["@matchledger/engine-core", "@matchledger/common", "@matchledger/shard", "@matchledger/risk", "@matchledger/ledger", "@matchledger/journal", "@matchledger/recon"]],
   ["web", ["@matchledger/common", "react", "react-dom", "react-router-dom", "@tanstack/react-query"]],
 ]);
+
+export function findForbiddenDependencies(packageJson, allowedNames, packagePath) {
+  const errors = [];
+  for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
+    for (const name of Object.keys(packageJson[field] ?? {})) {
+      if (field !== "devDependencies" && !allowedNames.includes(name)) {
+        errors.push(`${packagePath}: ${field}.${name} is forbidden (allowed: ${allowedNames.join(", ") || "none"})`);
+      }
+    }
+  }
+  return errors;
+}
 
 const errors = [];
 
 for (const [dir, names] of allowed) {
   const path = dir === "web" ? "web/package.json" : `packages/${dir}/package.json`;
   const packageJson = JSON.parse(await readFile(path, "utf8"));
-  for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
-    for (const name of Object.keys(packageJson[field] ?? {})) {
-      if (field !== "devDependencies" && !names.includes(name)) {
-        errors.push(`${path}: ${field}.${name} is forbidden (allowed: ${names.join(", ") || "none"})`);
-      }
-    }
-  }
+  errors.push(...findForbiddenDependencies(packageJson, names, path));
   if (dir === "engine-core" && JSON.stringify(packageJson.dependencies ?? {}) !== "{}") {
     errors.push(`${path}: engine-core dependencies must be exactly {}`);
   }

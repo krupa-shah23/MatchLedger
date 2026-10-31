@@ -2,6 +2,8 @@
  * ShardHost metrics tests (TL5-TL6)
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import { METRICS_CATALOGUE } from "@matchledger/telemetry";
 
@@ -38,6 +40,21 @@ describe("Heartbeat Writer and Recovery Logging (HT1, RG1, RG3)", () => {
     expect(metric).toBeDefined();
     expect(metric?.type).toBe("histogram");
     expect(metric?.labelNames).toContain("shard_id");
+  });
+
+  it("HT1b: writeHeartbeat's upsert is unfenced - no WHERE clause conditions the write on last_seq", () => {
+    // Real source-level check on the actual implementation. A heartbeat is
+    // pure liveness: it must always overwrite last_heartbeat_at/last_seq,
+    // never be skipped because this write's last_seq looks "behind" some
+    // other row - that fencing belongs to the journal, not the heartbeat.
+    const source = readFileSync(fileURLToPath(new URL("./shard-host.ts", import.meta.url)), "utf8");
+    const start = source.indexOf("private async writeHeartbeat(");
+    expect(start).toBeGreaterThan(-1);
+    const body = source.slice(start, source.indexOf("\n  }\n", start));
+    const queryStart = body.indexOf("INSERT INTO shard_heartbeats");
+    const queryEnd = body.indexOf("`,", queryStart);
+    const query = body.slice(queryStart, queryEnd);
+    expect(query).not.toMatch(/WHERE/i);
   });
 
   it("RG1: Catalogue contains recovery metrics", () => {

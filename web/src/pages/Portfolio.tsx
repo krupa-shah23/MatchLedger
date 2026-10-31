@@ -4,11 +4,12 @@
  */
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthProvider.js";
-import { formatMoney } from "../utils/money.js";
+import { Icon, PageHeading } from "../components/Ui.js";
+import { displayMoney as formatMoney } from "../utils/display-money.js";
 
 interface Balances {
-  total: string;
-  held: string;
+  cash: string;
+  heldCash: string;
   available: string;
   heldBy?: Record<string, string>;
 }
@@ -16,18 +17,18 @@ interface Balances {
 interface Position {
   symbol: string;
   quantity: string;
-  avgCost: string;
+  costBasis: string;
   mark: string | null;
   unrealizedPnL: string | null;
-  realizedPnL: string;
+  realizedPnl: string;
 }
 
 interface Reservation {
-  id: string;
+  orderId: string;
   symbol: string;
   side: "BUY" | "SELL";
-  quantity: string;
-  estimate: string;
+  amountRemaining: string;
+  asset: string;
 }
 
 export function PortfolioPage() {
@@ -40,6 +41,7 @@ export function PortfolioPage() {
   const [reservations, setReservations] = useState<Reservation[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const availableAccounts = user?.accountIds.map(id => ({ id, name: id })) ?? [];
 
   useEffect(() => {
     if (!accountId) return;
@@ -71,113 +73,93 @@ export function PortfolioPage() {
     };
   }, [accountId, client]);
 
+  const heading = <PageHeading eyebrow="ACCOUNT OVERVIEW" title="Portfolio" description="Your cash, positions, and outstanding reservations in one place." />;
+
   if (needsAccountPicker && !accountId) {
     return (
-      <div style={{ padding: 20 }}>
-        <h1>Portfolio</h1>
-        <p>Pick an account to view its portfolio:</p>
-        <input
-          placeholder="Account ID"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") setAccountId((e.target as HTMLInputElement).value);
-          }}
-        />
+      <div className="page">
+        {heading}
+        <section className="panel account-picker">
+          <h2>Pick an account to view its portfolio:</h2>
+          {availableAccounts.length ? <div className="field account-list-field"><label htmlFor="portfolio-account-select">Available accounts</label><select id="portfolio-account-select" value={accountId} onChange={e => setAccountId(e.target.value)}><option value="">Choose an account</option>{availableAccounts.map(account => <option key={account.id} value={account.id}>{account.name}</option>)}</select></div> : null}
+          <form className="toolbar" onSubmit={(e) => {
+            e.preventDefault();
+            const input = e.currentTarget.elements.namedItem("accountId") as HTMLInputElement;
+            setAccountId(input.value.trim());
+          }}>
+            <label htmlFor="portfolio-account">Account ID</label>
+            <input id="portfolio-account" name="accountId" placeholder="Account ID" required />
+            <button type="submit">View portfolio <Icon name="arrow" /></button>
+          </form>
+          <p className="panel-note">{availableAccounts.length ? "Choose one of the accounts assigned to your login." : "No accounts are assigned to this login. Ask an administrator to assign one."}</p>
+        </section>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Portfolio</h1>
-
-      {needsAccountPicker && (
-        <div style={{ marginBottom: 20 }}>
-          <label>Account: </label>
-          <input value={accountId} onChange={(e) => setAccountId(e.target.value)} />
+    <div className="page">
+      {heading}
+      {needsAccountPicker ? (
+        <div className="toolbar">
+          <label htmlFor="portfolio-account-select">Available accounts:</label>
+          {availableAccounts.length > 0 ? <select id="portfolio-account-select" value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">Choose an account</option>{availableAccounts.map(account => <option key={account.id} value={account.id}>{account.name}</option>)}</select> : <span role="status">No accounts are assigned to this login.</span>}
+          <label htmlFor="portfolio-account">Account ID:</label>
+          <input id="portfolio-account" value={accountId} onChange={(e) => setAccountId(e.target.value.trim())} />
         </div>
-      )}
+      ) : <p className="account-reference">Account <span className="mono">{accountId}</span></p>}
 
-      {loading && <p>Loading portfolio...</p>}
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      {loading && <div className="loading-state" role="status"><span className="spinner" />Loading portfolio...</div>}
+      {error && <p role="alert" className="notice notice-error">{error}</p>}
 
       {!loading && !error && balances && (
         <>
-          <CashCard total={balances.total} held={balances.held} available={balances.available} />
-
+          <CashCard total={balances.cash} held={balances.heldCash} available={balances.available} />
           {balances.heldBy && Object.keys(balances.heldBy).length > 0 && (
-            <div style={{ marginBottom: 20, padding: 15, backgroundColor: "#fff3cd", borderRadius: 4 }}>
+            <section className="panel panel-warning">
               <h3>Held By Position</h3>
               {Object.entries(balances.heldBy).map(([symbol, reason]) => (
-                <div key={symbol}>
-                  <strong>{symbol}:</strong> {reason}
-                </div>
+                <p key={symbol}><strong>{symbol}:</strong> {reason}</p>
               ))}
-            </div>
+            </section>
           )}
-
-          <div style={{ marginBottom: 20 }}>
-            <h3>Positions</h3>
+          <section className="panel">
+            <div className="panel-heading"><h2>Positions</h2><span className="panel-note">Current holdings</span></div>
             {!positions || positions.length === 0 ? (
-              <p>No positions</p>
+              <div className="empty-state"><Icon name="portfolio" /><p>No positions</p><small>Positions appear here after an order is filled.</small></div>
             ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #ddd" }}>
-                    <th style={{ textAlign: "left", padding: 8 }}>Symbol</th>
-                    <th style={{ textAlign: "right", padding: 8 }}>Qty</th>
-                    <th style={{ textAlign: "right", padding: 8 }}>Avg Cost</th>
-                    <th style={{ textAlign: "right", padding: 8 }}>Mark</th>
-                    <th style={{ textAlign: "right", padding: 8 }}>Unrealized P&L</th>
-                    <th style={{ textAlign: "right", padding: 8 }}>Realized P&L</th>
+              <div className="table-scroll"><table>
+                <thead><tr><th>Symbol</th><th className="numeric">Qty</th><th className="numeric">Cost Basis</th><th className="numeric">Mark</th><th className="numeric">Unrealized P&L</th><th className="numeric">Realized P&L</th></tr></thead>
+                <tbody>{positions.map((pos) => (
+                  <tr key={pos.symbol}>
+                    <td><strong>{pos.symbol}</strong></td>
+                    <td className="numeric">{pos.quantity}</td>
+                    <td className="numeric">{formatMoney(pos.costBasis)}</td>
+                    <td className="numeric">{pos.mark ? formatMoney(pos.mark) : "—"}</td>
+                    <td className="numeric">{pos.unrealizedPnL === null ? "—" : formatMoney(pos.unrealizedPnL)}</td>
+                    <td className="numeric">{formatMoney(pos.realizedPnl)}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {positions.map((pos) => (
-                    <tr key={pos.symbol} style={{ borderBottom: "1px solid #eee" }}>
-                      <td style={{ padding: 8 }}>
-                        <strong>{pos.symbol}</strong>
-                      </td>
-                      <td style={{ padding: 8, textAlign: "right" }}>{pos.quantity}</td>
-                      <td style={{ padding: 8, textAlign: "right" }}>{formatMoney(pos.avgCost)}</td>
-                      <td style={{ padding: 8, textAlign: "right" }}>{pos.mark ? formatMoney(pos.mark) : "—"}</td>
-                      <td style={{ padding: 8, textAlign: "right" }}>
-                        {pos.unrealizedPnL === null ? "—" : formatMoney(pos.unrealizedPnL)}
-                      </td>
-                      <td style={{ padding: 8, textAlign: "right" }}>{formatMoney(pos.realizedPnL)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}</tbody>
+              </table></div>
             )}
-          </div>
-
-          {reservations && reservations.length > 0 && (
-            <div>
-              <h3>Reservations</h3>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #ddd" }}>
-                    <th style={{ textAlign: "left", padding: 8 }}>Symbol</th>
-                    <th style={{ textAlign: "left", padding: 8 }}>Side</th>
-                    <th style={{ textAlign: "right", padding: 8 }}>Qty</th>
-                    <th style={{ textAlign: "right", padding: 8 }}>Estimate</th>
+          </section>
+          <section className="panel">
+            <div className="panel-heading"><h2>Reservations</h2><span className="panel-note">Held for open orders</span></div>
+            {!reservations || reservations.length === 0 ? (
+              <div className="empty-state"><p>No reservations</p><small>Funds or assets reserved for open orders appear here.</small></div>
+            ) : (
+              <div className="table-scroll"><table>
+                <thead><tr><th>Order</th><th>Symbol</th><th>Asset</th><th className="numeric">Remaining Hold</th></tr></thead>
+                <tbody>{reservations.map((res) => (
+                  <tr key={res.orderId}>
+                    <td><a href={`/orders/${encodeURIComponent(res.orderId)}`}>{res.orderId.substring(0, 8)}...</a></td>
+                    <td>{res.symbol}</td><td><strong>{res.asset}</strong></td>
+                    <td className="numeric">{(res.asset === "CASH" || res.asset === "USD") ? formatMoney(res.amountRemaining) : res.amountRemaining}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {reservations.map((res) => (
-                    <tr key={res.id} style={{ borderBottom: "1px solid #eee" }}>
-                      <td style={{ padding: 8 }}>{res.symbol}</td>
-                      <td style={{ padding: 8 }}>
-                        <strong>{res.side}</strong>
-                      </td>
-                      <td style={{ padding: 8, textAlign: "right" }}>{res.quantity}</td>
-                      <td style={{ padding: 8, textAlign: "right" }}>{formatMoney(res.estimate)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ))}</tbody>
+              </table></div>
+            )}
+          </section>
         </>
       )}
     </div>
@@ -186,22 +168,13 @@ export function PortfolioPage() {
 
 function CashCard({ total, held, available }: { total: string; held: string; available: string }) {
   return (
-    <div style={{ border: "1px solid #ddd", padding: 20, borderRadius: 8, backgroundColor: "#f9f9f9", marginBottom: 20 }}>
-      <h3>Cash</h3>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
-        <div>
-          <div style={{ fontSize: 12, color: "#666", marginBottom: 5 }}>Total</div>
-          <div style={{ fontSize: 24, fontWeight: "bold" }}>{formatMoney(total)}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 12, color: "#666", marginBottom: 5 }}>Held</div>
-          <div style={{ fontSize: 24, fontWeight: "bold", color: "#ff9800" }}>{formatMoney(held)}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 12, color: "#666", marginBottom: 5 }}>Available</div>
-          <div style={{ fontSize: 24, fontWeight: "bold", color: "green" }}>{formatMoney(available)}</div>
-        </div>
+    <section aria-labelledby="cash-heading">
+      <h2 id="cash-heading" className="section-title">Cash</h2>
+      <div className="stat-grid">
+        <div className="metric-card"><span className="metric-label">Total</span><div className="metric-value">{formatMoney(total)}</div><p className="panel-subtitle">Account cash balance</p></div>
+        <div className="metric-card"><span className="metric-label">Held</span><div className="metric-value">{formatMoney(held)}</div><p className="panel-subtitle">Reserved for open orders</p></div>
+        <div className="metric-card accent"><span className="metric-label">Available</span><div className="metric-value">{formatMoney(available)}</div><p className="panel-subtitle">Available to trade</p></div>
       </div>
-    </div>
+    </section>
   );
 }

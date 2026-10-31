@@ -32,6 +32,7 @@ export interface ControlPlaneHandle {
  * MarketView is rebuilt by replaying engine EVENT rows.
  */
 export async function recoverControlPlane(config: RecoverControlPlaneConfig): Promise<ControlPlaneHandle> {
+  const started = Date.now();
   try {
     // Step 0: Postgres check
     await config.sql.query("SELECT 1", []);
@@ -78,7 +79,8 @@ export async function recoverControlPlane(config: RecoverControlPlaneConfig): Pr
     const entries = await ledgerStore.loadAll();
     const ledger = entries.length > 0 ? Ledger.restore(entries) : new Ledger();
 
-    // Step 6b: Final verification (placeholder)
+    await config.sql.query("INSERT INTO recovery_log (lease_id,started_at,completed_at,duration_ms,snapshot_seq,tail_length,symbols_recovered) VALUES ('control-plane',$1,now(),$2,0,$3,$4)",
+      [new Date(started), Date.now() - started, recoveredEvents, [...config.instruments.keys()]]);
 
     return {
       router,

@@ -1,4 +1,5 @@
 import { encodeMoney, decodeMoney } from "@matchledger/common";
+export { NoticeBus } from "./notices.js";
 
 export interface RedisLikeClient {
   set(key: string, value: string): Promise<unknown>;

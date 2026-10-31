@@ -38,7 +38,8 @@ export async function registerRequestContextPlugin(
   // JWT verification hook (except auth routes)
   app.addHook("onRequest", async (request: FastifyRequest, reply: FastifyReply) => {
     // Skip auth routes
-    if (request.url.startsWith("/auth/login") || request.url.startsWith("/auth/refresh")) {
+    const pathname = request.url.split("?")[0];
+    if (pathname === "/ws" || pathname === "/auth/login" || pathname === "/auth/refresh") {
       return;
     }
 
@@ -82,7 +83,7 @@ export async function registerRequestContextPlugin(
 
       // Get user's accounts
       const accounts = await getUserAccounts(executor, token.sub);
-      const accountIds = accounts.map((a: any) => a.account_id);
+      const accountIds = accounts;
 
       // Attach to request
       (request as any).user = {

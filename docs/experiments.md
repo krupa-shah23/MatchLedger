@@ -79,6 +79,15 @@ Result:
 - prototype risk logic (BUY cash only);
 - one Node process;
 - tail latency includes this machine's GC and background load.
+
+## Generated benchmark results
+
+Regenerate this block from validated result JSON with `npm --workspace @matchledger/benchmarks run render:charts` followed by `npm --workspace @matchledger/benchmarks run render:tables`.
+
+<!-- generated:benchmark-results:begin -->
+_No benchmark result files have been recorded._
+<!-- generated:benchmark-results:end -->
+
 ## E3 baseline: engine micro-benchmarks (Week 3)
 Environment: Node v24.18.0, 12 CPUs, 16.8 GB RAM, 2026-10-10, tinybench (100 ms warmup, 100 ms run), busy dev machine, commit 1c334c9 (run on a working tree with the same Week 3 content). Single run; repeat on a quiet machine before quoting.
 

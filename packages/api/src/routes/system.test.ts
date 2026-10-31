@@ -99,6 +99,22 @@ describe("System Routes (HT2, HT3, RG2)", () => {
     expect(body.shards[1].isStale).toBe(true);
   });
 
+  it("HT3b: stale threshold passed to SQL is exactly 3 heartbeat intervals, not a fixed literal", async () => {
+    const heartbeatMs = 7000;
+    const localApp = Fastify({ logger: false });
+    const localExecutor = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    await registerSystemRoutes(localApp, { executor: localExecutor as any, facade: {} as any, heartbeatMs });
+
+    await localApp.inject({ method: "GET", url: "/system/shards" });
+
+    const [, params] = localExecutor.query.mock.calls[0]!;
+    // make_interval(secs => $1) is the first bound parameter; it must equal
+    // 3 * heartbeatMs in seconds (STALE_INTERVALS=3), derived from the
+    // configured heartbeatMs, not a hardcoded literal.
+    expect(params[0]).toBe((3 * heartbeatMs) / 1000);
+    await localApp.close();
+  });
+
   it("RG2: GET /system/recovery returns recovery log with correct fields", async () => {
     const mockRecoveries = [
       {
@@ -215,6 +231,15 @@ describe("Metrics Summary (MS1-MS4)", () => {
     expect(Array.isArray(body.byShard)).toBe(true);
   });
 
+  it("MS3: Treats a healthy Prometheus server with no samples as reachable", async () => {
+    fetchSpy.mockImplementation(async () => new Response(JSON.stringify({ status: "success", data: { result: [] } }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+    const response = await app.inject({ method: "GET", url: "/system/metrics/summary" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ available: true, commandsPerSec: null });
+  });
+
   it("MS2: Returns 200 with available=false when Prometheus unreachable", async () => {
     // Mock Prometheus as unreachable
     fetchSpy.mockRejectedValue(new Error("Connection refused"));
@@ -238,7 +263,7 @@ describe("Metrics Summary (MS1-MS4)", () => {
       data: { result: [] },
     };
 
-    fetchSpy.mockResolvedValue(
+    fetchSpy.mockImplementation(async () =>
       new Response(JSON.stringify(mockResponse), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -405,7 +430,7 @@ describe("Verify Replay: real risk-partition replay (SY1, SY2)", () => {
     // back to a fresh RiskCore at seq 0 — this one call is the only one that
     // needs a specific row, for the route's own "latest stored snapshot" fetch.
     mockExecutor.query.mockResolvedValueOnce({
-      rows: [{ last_seq: 0, state_json: {}, checksum: genesisChecksum }],
+      rows: [{ last_seq: 0, state_json: JSON.parse(serializeRiskState(new RiskCore(riskConfig).exportState())), checksum: genesisChecksum }],
     });
 
     const response = await app.inject({

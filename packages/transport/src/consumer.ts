@@ -6,6 +6,10 @@ export interface PartitionConsumerConfig {
   brokers: string[];
   groupId: string;
   groupInstanceId: string;
+  sessionTimeoutMs?: number;
+  maxPollIntervalMs?: number;
+  fromBeginning?: boolean;
+  onAssignmentLost?: () => void;
 }
 
 export interface ConsumerMessage {
@@ -34,13 +38,18 @@ export class PartitionConsumer {
 
     this.consumer = this.kafka.consumer({
       "group.protocol": "classic",
+      rebalance_cb: (_error: unknown, _assignment: unknown, callbacks: { assignmentLost(): boolean }) => {
+        if (callbacks.assignmentLost()) this.config.onAssignmentLost?.();
+      },
       "enable.auto.commit": false,
       "isolation.level": "read_committed",
       "group.instance.id": this.config.groupInstanceId,
+      "session.timeout.ms": this.config.sessionTimeoutMs ?? 10000,
+      "max.poll.interval.ms": this.config.maxPollIntervalMs ?? 300000,
       kafkaJS: {
         groupId: this.config.groupId,
         autoCommit: false,
-        fromBeginning: false,
+        fromBeginning: this.config.fromBeginning ?? false,
       },
     });
 
@@ -127,6 +136,10 @@ export class PartitionConsumer {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  assignments(): Array<{ topic: string; partition: number }> {
+    return this.consumer?.assignment() ?? [];
   }
 }
 

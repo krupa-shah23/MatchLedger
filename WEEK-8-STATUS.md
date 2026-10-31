@@ -1,5 +1,7 @@
 # Week 8 Final Status
 
+> Historical status snapshot. It records a 285/92/23 test summary, which conflicts with later Week 8 records and was not reproduced as written. See the provenance note in `README.md`.
+
 ## Deliverable Completion Table
 
 | Deliverable | Tests | Verdict | Evidence |

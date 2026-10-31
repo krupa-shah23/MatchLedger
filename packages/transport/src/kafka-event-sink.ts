@@ -1,4 +1,5 @@
 import { TransactionalProducer } from "./producer.js";
+import { partitionOf } from "@matchledger/common";
 import { encodeEnvelope } from "./envelope.js";
 import type { EventSink, ShardOutput } from "@matchledger/common";
 
@@ -6,11 +7,11 @@ export class KafkaEventSink implements EventSink {
   private producer: TransactionalProducer;
   private initialized = false;
 
-  constructor(brokers: string[], topicName = "engine.events") {
+  constructor(brokers: string[], topicName = "engine.events", transactionalId?: string) {
     const shardId = process.env.SHARD_ID ?? "unknown";
     this.producer = new TransactionalProducer({
       brokers,
-      transactionalId: `shard-${shardId}`,
+      transactionalId: transactionalId ?? `shard-${shardId}`,
       acks: -1,
     });
     this.topicName = topicName;
@@ -39,7 +40,7 @@ export class KafkaEventSink implements EventSink {
         type: "ShardOutput",
         payload: event,
       }),
-      partition: Math.abs(event.symbol.charCodeAt(0) % 4), // 4 partitions per docker-compose.yml
+      partition: partitionOf(event.symbol, 4), // 4 partitions per docker-compose.yml
     }));
 
     await this.producer.sendBatch(this.topicName, messages);

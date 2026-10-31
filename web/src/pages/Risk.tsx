@@ -4,6 +4,10 @@
  */
 import React from "react";
 import { useAuth } from "../auth/AuthProvider.js";
+import { Icon, PageHeading } from "../components/Ui.js";
+import { webConfig } from "../config.js";
+import { displayMoney } from "../utils/display-money.js";
+import { useToast } from "../components/Toast.js";
 
 interface Rejection {
   rejectionId: string;
@@ -14,36 +18,37 @@ interface Rejection {
   snapshot?: { heldCash?: string };
 }
 
-interface Resting {
-  count: number;
-  held: bigint;
-}
-
 interface Breaker {
   symbol: string;
   status: string;
   incidentStartTs: string;
+  restingOrders?: number;
+  heldFunds?: string;
 }
 
 export function RiskPage() {
   const { token } = useAuth();
+  const { showToast } = useToast();
   const [breakers, setBreakers] = React.useState<Breaker[]>([]);
   const [rejections, setRejections] = React.useState<Rejection[]>([]);
-  const [resting, setResting] = React.useState<Record<string, Resting>>({});
   const [haltSymbol, setHaltSymbol] = React.useState("ACME");
   const [haltReason, setHaltReason] = React.useState("");
   const [resumeReason, setResumeReason] = React.useState("");
   const [selectedSymbol, setSelectedSymbol] = React.useState("");
   const [loading, setLoading] = React.useState(true);
-
-  const maxHaltDuration = 300000; // 5 minutes in ms
+  const [fetchError, setFetchError] = React.useState<string | null>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
+  const [actionMessage, setActionMessage] = React.useState<string | null>(null);
+  const [pendingAction, setPendingAction] = React.useState<{ symbol: string; action: "halt" | "resume" } | null>(null);
+  const pendingActionRef = React.useRef<typeof pendingAction>(null);
+  const [refreshTick, setRefreshTick] = React.useState(0);
 
   React.useEffect(() => {
     if (!token) return;
 
     const fetchData = async () => {
       try {
-        setLoading(true);
+        setFetchError(null);
         const headers = { Authorization: `Bearer ${token}` };
 
         const [breakersRes, rejectionsRes] = await Promise.all([
@@ -51,26 +56,29 @@ export function RiskPage() {
           fetch("/api/v1/risk/rejections", { headers }),
         ]);
 
+        if ([breakersRes, rejectionsRes].some(response => !response.ok)) throw new Error("Unable to load risk data");
         if (breakersRes.ok) {
           const data = await breakersRes.json();
-          setBreakers(data.breakers || []);
+          const latestBreakers = (Array.isArray(data) ? data : data.breakers || []).map((b: Breaker & { state?: string }) => ({ ...b, status: b.state ?? b.status }));
+          setBreakers(latestBreakers);
+          const pending = pendingActionRef.current;
+          const latest = pending && latestBreakers.find((breaker: Breaker) => breaker.symbol === pending.symbol);
+          const reached = latest && (pending.action === "halt" ? latest.status === "OPEN" : latest.status === "HALF_OPEN" || latest.status === "CLOSED");
+          if (pending && latest && reached) {
+            setActionMessage(`${pending.symbol} is now ${latest.status}.`);
+            pendingActionRef.current = null;
+            setPendingAction(null);
+            setSelectedSymbol("");
+          }
         }
         if (rejectionsRes.ok) {
           const data = await rejectionsRes.json();
-          setRejections(data.rejections || []);
+          setRejections(Array.isArray(data) ? data : data.rejections || []);
 
-          const restingMap: Record<string, Resting> = {};
-          (data.rejections as Rejection[] | undefined)?.forEach((rej) => {
-            const entry = restingMap[rej.symbol] ?? { count: 0, held: 0n };
-            entry.count++;
-            if (rej.snapshot?.heldCash) {
-              entry.held += BigInt(rej.snapshot.heldCash);
-            }
-            restingMap[rej.symbol] = entry;
-          });
-          setResting(restingMap);
+
         }
       } catch (err) {
+        setFetchError(err instanceof Error ? err.message : "Request failed");
         console.error("Error fetching risk data", err);
       } finally {
         setLoading(false);
@@ -80,203 +88,127 @@ export function RiskPage() {
     fetchData();
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") fetchData();
-    }, 5000);
+    }, webConfig.pollIntervalMs);
 
-    document.addEventListener("visibilitychange", fetchData);
+    const onVisible = () => { if (document.visibilityState === "visible") void fetchData(); };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(interval);
-      document.removeEventListener("visibilitychange", fetchData);
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [token]);
+  }, [token, refreshTick]);
 
-  const handleHalt = async (symbol: string) => {
-    if (!token || !haltReason.trim()) {
-      alert("Reason is required");
-      return;
-    }
+  const submitBreakerAction = async (action: "halt" | "resume", symbol: string, reason: string) => {
+    if (!token || !reason.trim()) return;
+    setActionError(null);
+    setActionMessage(null);
     try {
-      const res = await fetch(`/api/v1/risk/symbols/${symbol}/halt`, {
+      const response = await fetch(`/api/v1/risk/symbols/${encodeURIComponent(symbol)}/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ reason: haltReason }),
+        body: JSON.stringify({ reason: reason.trim() }),
       });
-      if (res.ok) {
-        setHaltReason("");
-        setSelectedSymbol("");
-      }
+      const result = await response.json().catch(() => ({})) as { detail?: string; title?: string };
+      if (!response.ok) throw new Error(result.detail ?? result.title ?? `Request failed (HTTP ${response.status})`);
+
+      pendingActionRef.current = { symbol, action };
+      setPendingAction({ symbol, action });
+      setActionMessage(`${action === "halt" ? "Halt" : "Resume"} accepted for ${symbol}; waiting for the market state update.`);
+      if (action === "halt") setHaltReason("");
+      else setResumeReason("");
+      setRefreshTick(value => value + 1);
     } catch (err) {
-      console.error("Error halting symbol", err);
+      const message = err instanceof Error ? err.message : "Request failed";
+      setActionError(`Could not ${action} ${symbol}: ${message}`);
+      showToast(`Could not ${action} ${symbol}. ${message}`, "error");
     }
+  };
+
+  const handleHalt = async (symbol: string) => {
+    await submitBreakerAction("halt", symbol, haltReason);
   };
 
   const handleResume = async (symbol: string) => {
-    if (!token || !resumeReason.trim()) {
-      alert("Reason is required");
-      return;
-    }
-    try {
-      const res = await fetch(`/api/v1/risk/symbols/${symbol}/resume`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ reason: resumeReason }),
-      });
-      if (res.ok) {
-        setResumeReason("");
-      }
-    } catch (err) {
-      console.error("Error resuming symbol", err);
-    }
+    await submitBreakerAction("resume", symbol, resumeReason);
   };
 
-  if (loading) {
-    return <div style={{ padding: 20 }}>Loading risk data...</div>;
-  }
+  if (fetchError) return <div className="page"><p role="alert" className="notice notice-error">{fetchError}</p></div>;
+  if (loading) return <div className="loading-state" role="status"><span className="spinner" />Loading risk data...</div>;
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Risk Console (P5)</h1>
-
-      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
-        <h2>Breakers</h2>
+    <div className="page">
+      <PageHeading eyebrow="MARKET SAFEGUARDS" title="Risk Console" description="Monitor circuit breakers, manage incidents, and review rejected orders." />
+      {actionError && <p role="alert" className="notice notice-error">{actionError}</p>}
+      {actionMessage && <p role="status" className="notice notice-info">{actionMessage}</p>}
+      <section className="panel">
+        <div className="panel-heading"><h2>Breakers</h2><span className="panel-note">Current market state</span></div>
         {breakers.length > 0 ? (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid #666" }}>
-                <th style={{ textAlign: "left", padding: 8 }}>Symbol</th>
-                <th style={{ textAlign: "left", padding: 8 }}>Status</th>
-                <th style={{ textAlign: "left", padding: 8 }}>Incident Time</th>
-                <th style={{ textAlign: "left", padding: 8 }}>Time Remaining</th>
-                <th style={{ textAlign: "left", padding: 8 }}>Resting Orders</th>
-                <th style={{ textAlign: "left", padding: 8 }}>Held Funds</th>
-                <th style={{ textAlign: "left", padding: 8 }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {breakers.map((breaker) => {
-                const incidentTime = new Date(breaker.incidentStartTs).getTime();
-                const timeElapsed = Date.now() - incidentTime;
-                const timeRemaining = Math.max(0, maxHaltDuration - timeElapsed);
-                const percentDone = ((timeElapsed / maxHaltDuration) * 100).toFixed(0);
-                const rLog = resting[breaker.symbol] || { count: 0, held: 0n };
+          <div className="table-scroll"><table>
+            <thead><tr><th>Symbol</th><th>Status</th><th>Incident Time</th><th>Incident Duration</th><th className="numeric">Resting Orders</th><th className="numeric">Held Funds</th><th>Action</th></tr></thead>
+            <tbody>{breakers.map((breaker) => {
+              const incidentTime = new Date(breaker.incidentStartTs).getTime();
+              const incidentDurationSeconds = Math.floor(Math.max(0, Date.now() - incidentTime) / 1000);
+              return (
+                <tr key={breaker.symbol}>
+                  <td><strong>{breaker.symbol}</strong></td>
+                  <td><span className={`badge ${breaker.status === "CLOSED" ? "badge-good" : "badge-warn"}`}>{breaker.status}</span></td>
+                  <td>{globalThis.isFinite(incidentTime) ? new Date(incidentTime).toLocaleString() : "—"}</td>
+                  <td>{globalThis.isFinite(incidentDurationSeconds) ? `${incidentDurationSeconds}s` : "—"}</td>
+                  <td className="numeric">{breaker.restingOrders ?? 0}</td>
+                  <td className="numeric">{displayMoney(breaker.heldFunds ?? "0.00")}</td>
+                  <td><button onClick={() => setSelectedSymbol(breaker.symbol)} disabled={breaker.status === "CLOSED" || pendingAction !== null}>{pendingAction?.symbol === breaker.symbol && pendingAction.action === "resume" ? "Resuming..." : "Resume"}</button></td>
+                </tr>
+              );
+            })}</tbody>
+          </table></div>
+        ) : <div className="empty-state"><Icon name="risk" /><p>No active breakers</p></div>}
+      </section>
 
-                return (
-                  <tr key={breaker.symbol} style={{ borderBottom: "1px solid #ddd" }}>
-                    <td style={{ padding: 8, fontWeight: "bold" }}>{breaker.symbol}</td>
-                    <td style={{ padding: 8, color: breaker.status === "ACTIVE" ? "red" : "orange" }}>{breaker.status}</td>
-                    <td style={{ padding: 8 }}>{new Date(breaker.incidentStartTs).toLocaleString()}</td>
-                    <td style={{ padding: 8 }}>
-                      {timeRemaining > 0 ? (
-                        <div>
-                          <progress value={percentDone} max="100" style={{ width: 100 }} />
-                          <span style={{ fontSize: "0.8em" }}>{(timeRemaining / 1000).toFixed(0)}s</span>
-                        </div>
-                      ) : (
-                        "Expired"
-                      )}
-                    </td>
-                    <td style={{ padding: 8 }}>{rLog.count}</td>
-                    <td style={{ padding: 8 }}>${(rLog.held / 100n).toString()}</td>
-                    <td style={{ padding: 8 }}>
-                      <button onClick={() => setSelectedSymbol(breaker.symbol)} style={{ padding: "5px 10px" }}>
-                        Resume
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ) : (
-          <p>No active breakers</p>
-        )}
-      </div>
-
-      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
-        <h2>Halt/Resume</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-          <div>
+      <section className="panel">
+        <div className="panel-heading"><h2>Halt/Resume</h2><span className="panel-note">A reason is required for every action</span></div>
+        <div className="split-grid">
+          <div className="form-stack">
             <h3>Halt Symbol</h3>
-            <div style={{ marginBottom: 10 }}>
-              <label>Symbol:</label>
-              <input
-                type="text"
-                value={haltSymbol}
-                onChange={(e) => setHaltSymbol(e.target.value)}
-                placeholder="AAPL"
-                style={{ width: "100%", padding: 8, marginTop: 5 }}
-              />
+            <div className="field">
+              <label htmlFor="halt-symbol">Symbol</label>
+              <input id="halt-symbol" value={haltSymbol} onChange={(e) => setHaltSymbol(e.target.value)} placeholder="AAPL" />
             </div>
-            <div style={{ marginBottom: 10 }}>
-              <label>Reason (required):</label>
-              <textarea
-                value={haltReason}
-                onChange={(e) => setHaltReason(e.target.value)}
-                placeholder="Why are you halting this symbol?"
-                style={{ width: "100%", padding: 8, marginTop: 5, height: 60 }}
-              />
+            <div className="field">
+              <label htmlFor="halt-reason">Reason (required)</label>
+              <textarea id="halt-reason" value={haltReason} onChange={(e) => setHaltReason(e.target.value)} placeholder="Why are you halting this symbol?" rows={3} />
             </div>
-            <button onClick={() => handleHalt(haltSymbol)} disabled={!haltReason.trim()} style={{ padding: "8px 16px" }}>
-              Halt
-            </button>
+            <div><button className="danger-button" onClick={() => handleHalt(haltSymbol)} disabled={!haltReason.trim() || pendingAction !== null}>{pendingAction?.symbol === haltSymbol && pendingAction.action === "halt" ? "Halting..." : "Halt"}</button></div>
           </div>
-
-          <div>
+          <div className="form-stack">
             <h3>Resume Symbol</h3>
-            {selectedSymbol && (
+            {selectedSymbol ? (
               <>
-                <p>
-                  Resuming: <strong>{selectedSymbol}</strong>
-                </p>
-                <div style={{ marginBottom: 10 }}>
-                  <label>Reason (required):</label>
-                  <textarea
-                    value={resumeReason}
-                    onChange={(e) => setResumeReason(e.target.value)}
-                    placeholder="Why are you resuming this symbol?"
-                    style={{ width: "100%", padding: 8, marginTop: 5, height: 60 }}
-                  />
+                <p className="notice notice-info">Resuming: <strong>{selectedSymbol}</strong></p>
+                <div className="field">
+                  <label htmlFor="resume-reason">Reason (required)</label>
+                  <textarea id="resume-reason" value={resumeReason} onChange={(e) => setResumeReason(e.target.value)} placeholder="Why are you resuming this symbol?" rows={3} />
                 </div>
-                <button onClick={() => handleResume(selectedSymbol)} disabled={!resumeReason.trim()} style={{ padding: "8px 16px", marginRight: 10 }}>
-                  Resume (→ HALF_OPEN)
-                </button>
-                <button onClick={() => setSelectedSymbol("")} style={{ padding: "8px 16px" }}>
-                  Cancel
-                </button>
+                <div className="form-actions">
+                  <button className="primary-button" onClick={() => handleResume(selectedSymbol)} disabled={!resumeReason.trim() || pendingAction !== null}>{pendingAction?.symbol === selectedSymbol && pendingAction.action === "resume" ? "Resuming..." : "Resume (→ HALF_OPEN)"}</button>
+                  <button onClick={() => setSelectedSymbol("")} disabled={pendingAction !== null}>Cancel</button>
+                </div>
               </>
-            )}
+            ) : <div className="empty-state"><Icon name="risk" /><p>Select a symbol to resume</p><small>Use Resume in the breakers table to review an incident.</small></div>}
           </div>
         </div>
-      </div>
+      </section>
 
-      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
-        <h2>Rejections Feed ({rejections.length})</h2>
+      <section className="panel">
+        <div className="panel-heading"><h2>Rejections Feed ({rejections.length})</h2><span className="panel-note">Latest rejected orders</span></div>
         {rejections.length > 0 ? (
-          <div style={{ maxHeight: 400, overflowY: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9em" }}>
-              <thead>
-                <tr style={{ borderBottom: "2px solid #666" }}>
-                  <th style={{ textAlign: "left", padding: 8 }}>Time</th>
-                  <th style={{ textAlign: "left", padding: 8 }}>Symbol</th>
-                  <th style={{ textAlign: "left", padding: 8 }}>Account</th>
-                  <th style={{ textAlign: "left", padding: 8 }}>Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rejections.map((rej, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid #ddd" }}>
-                    <td style={{ padding: 8 }}>{new Date(rej.ts).toLocaleTimeString()}</td>
-                    <td style={{ padding: 8 }}>{rej.symbol}</td>
-                    <td style={{ padding: 8 }}>{rej.accountId}</td>
-                    <td style={{ padding: 8, color: "red" }}>{rej.reason}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p>No rejections</p>
-        )}
-      </div>
+          <div className="table-scroll bounded-table"><table>
+            <thead><tr><th>Time</th><th>Symbol</th><th>Account</th><th>Reason</th></tr></thead>
+            <tbody>{rejections.map((rej, i) => (
+              <tr key={rej.rejectionId ?? i}><td>{new Date(rej.ts).toLocaleTimeString()}</td><td>{rej.symbol}</td><td>{rej.accountId}</td><td className="text-sell">{rej.reason}</td></tr>
+            ))}</tbody>
+          </table></div>
+        ) : <div className="empty-state"><p>No rejections</p><small>Rejected orders and their reasons appear here.</small></div>}
+      </section>
     </div>
   );
 }

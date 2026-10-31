@@ -9,6 +9,10 @@
     "@matchledger/common": "file:../common",
     "@matchledger/journal": "file:../journal",
     "@matchledger/risk": "file:../risk",
-    "@matchledger/engine-core": "file:../engine-core"
+    "@matchledger/engine-core": "file:../engine-core",
+    "@matchledger/shard": "file:../shard",
+    "@matchledger/ledger": "file:../ledger",
+    "@matchledger/transport": "file:../transport",
+    "@matchledger/telemetry": "file:../telemetry"
   }
 }

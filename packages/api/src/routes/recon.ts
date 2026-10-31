@@ -5,10 +5,14 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
+import { RecordParser, classify, type StatementRow, type InternalTradeRecord } from "@matchledger/recon";
 import { createHash } from "node:crypto";
 import type { SqlExecutor } from "@matchledger/projections";
 
+export const RECON_UPLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
+
 const StatusSchema = z.object({
+  status: z.enum(["INVESTIGATING"]),
   reason: z.string().min(1, "Reason required"),
 });
 
@@ -32,66 +36,63 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
       try {
         const parts = request.parts();
         let fileCount = 0;
-        let fileContent = Buffer.alloc(0);
+        const hash = createHash("sha256");
+        const parser = new RecordParser();
+        let bytes = 0;
         let fileName = "";
-
         for await (const part of parts) {
-          if (part.type === "file") {
-            fileCount++;
-            if (fileCount > 1) {
-              return reply.status(400).type("application/problem+json").send({
-                type: "about:blank#validation_failed",
-                title: "Validation error",
-                status: 400,
-                code: "validation_failed",
-                detail: "Only one file allowed",
-                instance: "/recon/runs",
-                requestId: request.id,
-              });
-            }
-            fileName = part.filename;
-            const chunks = [];
-            for await (const chunk of part.file) {
-              chunks.push(chunk);
-              if (Buffer.concat(chunks).length > 20 * 1024 * 1024) {
-                return reply.status(413).type("application/problem+json").send({
-                  type: "about:blank#payload_too_large",
-                  title: "Payload too large",
-                  status: 413,
-                  code: "payload_too_large",
-                  detail: "File exceeds 20 MiB limit",
-                  instance: "/recon/runs",
-                  requestId: request.id,
-                });
-              }
-            }
-            fileContent = Buffer.concat(chunks);
+          if (part.type !== "file") continue;
+          if (++fileCount > 1) return reply.status(400).send({ detail: "Only one file allowed" });
+          fileName = part.filename;
+          for await (const chunk of part.file) {
+            bytes += chunk.length;
+            if (bytes > RECON_UPLOAD_LIMIT_BYTES) return reply.status(413).send({ detail: "File exceeds 20 MiB limit" });
+            hash.update(chunk);
+            parser.push(chunk);
           }
+          if (part.file.truncated) return reply.status(413).send({ detail: "File exceeds upload limit" });
         }
-
-        if (fileCount === 0) {
-          return reply.status(400).type("application/problem+json").send({
-            type: "about:blank#validation_failed",
-            title: "Validation error",
-            status: 400,
-            code: "validation_failed",
-            detail: "File is required",
-            instance: "/recon/runs",
-            requestId: request.id,
-          });
+        if (!fileCount) return reply.status(400).send({ detail: "File is required" });
+        const rows = parser.finish();
+        const expected = ["tradeId", "symbol", "quantity", "price", "tradeTs", "settlementDate"];
+        if (parser.getErrors().length || rows[0]?.join(",") !== expected.join(",")) {
+          return reply.status(400).send({ detail: "Expected CSV header: " + expected.join(",") });
         }
-
-        // Compute file hash for idempotency
-        const fileHash = createHash("sha256").update(fileContent).digest("hex");
-
-        // Store run in durable store with file_hash, parse CSV, create breaks
-        const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        await deps.executor.query(
-          `INSERT INTO recon_runs (id, account_id, file_hash, uploaded_at, status)
-           VALUES ($1, 'default-account', $2, now(), 'PROCESSING')`,
-          [runId, fileHash]
-        );
-
+        const statements: StatementRow[] = [];
+        for (const row of rows.slice(1)) {
+          const [tradeId, symbol, quantity, price, tradeTs, settlementDate] = row;
+          if (row.length !== 6 || !tradeId || !symbol || !quantity || !/^[1-9][0-9]*$/.test(quantity) ||
+              !price || !/^\d+(\.\d{1,2})?$/.test(price) || !tradeTs || !/^\d+$/.test(tradeTs) || !settlementDate) {
+            return reply.status(400).send({ detail: "Invalid statement row" });
+          }
+          statements.push({ tradeId, symbol, quantity, price, tradeTs, settlementDate });
+        }
+        const cutoff = Date.now();
+        const internalRows = await deps.executor.query(`SELECT t.trade_id,t.symbol,t.price::text,t.quantity::text,t.ts,
+          (SELECT o.account_id FROM order_fills f JOIN orders_view o ON o.order_id=f.order_id WHERE f.trade_id=t.trade_id AND o.side='BUY' LIMIT 1) AS buyer_account_id,
+          (SELECT o.account_id FROM order_fills f JOIN orders_view o ON o.order_id=f.order_id WHERE f.trade_id=t.trade_id AND o.side='SELL' LIMIT 1) AS seller_account_id
+          FROM trades_view t WHERE t.ts <= $1`, [cutoff]);
+        const internal: InternalTradeRecord[] = (internalRows.rows as Array<{ trade_id: string; symbol: string; price: string; quantity: string; ts: string; buyer_account_id?: string; seller_account_id?: string }>).map(r => ({
+          tradeId: r.trade_id, symbol: r.symbol, price: BigInt(r.price), quantity: BigInt(r.quantity), ts: +r.ts,
+          buyerAccountId: r.buyer_account_id ?? "", sellerAccountId: r.seller_account_id ?? "",
+        }));
+        const breaks = classify({ cutoffTs: cutoff, priceDecimals: 2, settlementLagDays: 2, internalTrades: internal, statementRows: statements });
+        const fileHash = hash.digest("hex");
+        const runId = "run_" + fileHash;
+        const json = (value: unknown) => JSON.stringify(value, (_, v: unknown) => typeof v === "bigint" ? v.toString() : v);
+        const counts = Object.fromEntries([...new Set(breaks.map(b => b.type))].map(type => [type, breaks.filter(b => b.type === type).length]));
+        await deps.executor.transaction(async tx => {
+          const inserted = await tx.query(`INSERT INTO recon_runs (run_id,source,file_hash,cutoff_ts,price_decimals,settlement_lag_days,rows_read,parse_errors_json,counts_json,started_at,finished_at)
+            VALUES ($1,$2,$3,$4,2,2,$5,'[]',$6,now(),now()) ON CONFLICT (file_hash) DO NOTHING RETURNING run_id`,
+            [runId, fileName, fileHash, cutoff, statements.length, json(counts)]);
+          if (!inserted.rows.length) return;
+          for (const [i, def] of breaks.entries()) {
+            await tx.query(`INSERT INTO recon_breaks (break_id,run_id,type,trade_id,internal_json,external_json,status)
+              VALUES ($1,$2,$3,$4,$5,$6,'OPEN')`, [runId + ":" + i, runId, def.type, def.tradeId,
+              json({ ...def, accountIds: [...new Set([internal.find(trade => trade.tradeId === def.tradeId)?.buyerAccountId, internal.find(trade => trade.tradeId === def.tradeId)?.sellerAccountId].filter(Boolean))] }),
+              json(statements.filter(r => r.tradeId === def.tradeId))]);
+          }
+        });
         return reply.status(202).send({ runId });
       } catch (err) {
         throw err;
@@ -105,15 +106,17 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const result = await deps.executor.query(
-          `SELECT id, account_id, uploaded_at, status FROM recon_runs ORDER BY uploaded_at DESC LIMIT 100`,
+          `SELECT run_id, source, started_at, finished_at, rows_read, counts_json FROM recon_runs ORDER BY started_at DESC LIMIT 100`,
           []
         );
         return reply.code(200).send({
           runs: (result.rows as any[]).map((row) => ({
-            runId: row.id,
-            accountId: row.account_id,
-            uploadedAt: row.uploaded_at,
-            status: row.status,
+            runId: row.run_id,
+            source: row.source,
+            startedAt: row.started_at,
+            durationMs: new Date(row.finished_at).getTime() - new Date(row.started_at).getTime(),
+            rowsRead: row.rows_read,
+            breaksFound: Object.values(row.counts_json as Record<string, number>).reduce((a, b) => a + b, 0),
           })),
         });
       } catch (err) {
@@ -137,7 +140,7 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
       try {
         const params = request.params as any;
         const result = await deps.executor.query(
-          `SELECT id, account_id, uploaded_at, status FROM recon_runs WHERE id = $1`,
+          `SELECT run_id, source, started_at, finished_at, rows_read, counts_json FROM recon_runs WHERE run_id = $1`,
           [params.id]
         );
         if (result.rows.length === 0) {
@@ -178,7 +181,7 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const query = request.query as any;
-        let sql = `SELECT id, run_id, account_id, break_type, status FROM recon_breaks`;
+        let sql = `SELECT break_id, run_id, type, trade_id, status, internal_json, external_json FROM recon_breaks`;
         const params: any[] = [];
 
         if (query.runId) {
@@ -186,16 +189,19 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
           params.push(query.runId);
         }
 
-        sql += ` ORDER BY id DESC LIMIT 100`;
+        sql += ` ORDER BY created_at DESC, break_id DESC LIMIT 100`;
 
         const result = await deps.executor.query(sql, params);
         return reply.code(200).send({
           breaks: (result.rows as any[]).map((row) => ({
-            breakId: row.id,
+            breakId: row.break_id,
             runId: row.run_id,
-            accountId: row.account_id,
-            type: row.break_type,
+            accountId: row.internal_json?.accountIds?.join(", ") || row.internal_json?.accountId || "—",
+            type: row.type,
             status: row.status,
+            asset: "CASH",
+            expected: minorToDecimal(row.internal_json?.internalPrice),
+            actual: minorToDecimal(row.external_json?.[0]?.price, true),
           })),
         });
       } catch (err) {
@@ -219,7 +225,7 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
       try {
         const params = request.params as any;
         const result = await deps.executor.query(
-          `SELECT id, run_id, account_id, break_type, status FROM recon_breaks WHERE id = $1`,
+          `SELECT break_id, run_id, type, status, internal_json, external_json FROM recon_breaks WHERE break_id = $1`,
           [params.id]
         );
         if (result.rows.length === 0) {
@@ -234,12 +240,20 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
           });
         }
         const row = result.rows[0] as any;
+        const internal = row.internal_json ?? {};
+        const external = row.external_json?.[0] ?? {};
         return reply.code(200).send({
-          breakId: row.id,
+          breakId: row.break_id,
           runId: row.run_id,
-          accountId: row.account_id,
-          type: row.break_type,
+          tradeId: row.trade_id,
+          accountId: internal.accountIds?.join(", ") || internal.accountId || "—",
+          type: row.type,
           status: row.status,
+          asset: "CASH",
+          expected: minorToDecimal(internal.internalPrice),
+          actual: minorToDecimal(external.price, true),
+          definition: internal,
+          statement: external,
         });
       } catch (err) {
         return reply.code(500).type("application/problem+json").send({
@@ -262,11 +276,19 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
       const params = request.params as any;
       try {
         const body = StatusSchema.parse(request.body);
-        // Update break status in database, check legal transitions
-        await deps.executor.query(
-          `UPDATE recon_breaks SET status = $1 WHERE id = $2`,
-          [body.reason, params.id]
-        );
+        await deps.executor.transaction(async tx => {
+          const current = await tx.query(`SELECT status FROM recon_breaks WHERE break_id = $1 FOR UPDATE`, [params.id]);
+          if (!current.rows.length) throw new Error("Break not found");
+          const previous = String((current.rows[0] as { status: string }).status);
+          if (previous === "RESOLVED" || previous === "WRITTEN_OFF") throw new Error("Break already closed");
+          if (previous !== "OPEN") return;
+          const updated = await tx.query(`UPDATE recon_breaks SET status=$2, reason=$3, updated_at=now() WHERE break_id=$1 AND status=$4 RETURNING break_id`, [params.id, body.status, body.reason, previous]);
+          if (updated.rows.length) {
+            const actor = (request as FastifyRequest & { user?: { userId?: string; sub?: string } }).user?.userId
+              ?? (request as FastifyRequest & { user?: { sub?: string } }).user?.sub ?? "operator";
+            await tx.query(`INSERT INTO recon_audit (break_id,from_status,to_status,reason,actor,ts) VALUES ($1,$2,$3,$4,$5,$6)`, [params.id, previous, body.status, body.reason, actor, Date.now()]);
+          }
+        });
         return reply.status(202).send({ breakId: params.id });
       } catch (err: any) {
         if (err instanceof z.ZodError) {
@@ -280,6 +302,8 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
             requestId: request.id,
           });
         }
+        if (err instanceof Error && err.message === "Break not found") return reply.code(404).send({ detail: err.message });
+        if (err instanceof Error && err.message === "Break already closed") return reply.code(409).send({ detail: err.message });
         return reply.code(500).type("application/problem+json").send({
           type: "about:blank#internal_error",
           title: "Failed to update break status",
@@ -301,10 +325,27 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
       try {
         const body = ResolveSchema.parse(request.body);
         // Resolve break in database, apply adjustment if present
-        await deps.executor.query(
-          `UPDATE recon_breaks SET status = 'RESOLVED' WHERE id = $1`,
-          [params.id]
-        );
+        await deps.executor.transaction(async tx => {
+          const current = await tx.query(`SELECT status, resolved_by FROM recon_breaks WHERE break_id = $1 FOR UPDATE`, [params.id]);
+          if (!current.rows.length) throw new Error("Break not found");
+          const row = current.rows[0] as { status: string; resolved_by: string | null };
+          if (row.status === "RESOLVED" || row.status === "WRITTEN_OFF") {
+            return;
+          }
+          const actor = (request as FastifyRequest & { user?: { username?: string; sub?: string } }).user?.username
+            ?? (request as FastifyRequest & { user?: { sub?: string } }).user?.sub ?? "operator";
+          const updated = await tx.query(
+            `UPDATE recon_breaks SET status='RESOLVED', reason=$2, resolved_by=$3, updated_at=now() WHERE break_id=$1 AND status IN ('OPEN','INVESTIGATING') RETURNING break_id`,
+            [params.id, body.reason, actor]
+          );
+          if (updated.rows.length) {
+            await tx.query(
+              `INSERT INTO recon_audit (break_id,from_status,to_status,reason,actor,ts,adjustment_id)
+               VALUES ($1,$2,'RESOLVED',$3,$4,$5,$6)`,
+              [params.id, row.status, body.reason, actor, Date.now(), body.adjustment ? `adjustment:${params.id}` : null]
+            );
+          }
+        });
         return reply.status(202).send({ breakId: params.id });
       } catch (err: any) {
         if (err instanceof z.ZodError) {
@@ -316,6 +357,12 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
             detail: err.issues[0]?.message,
             instance: `/recon/breaks/${params.id}/resolve`,
             requestId: request.id,
+          });
+        }
+        if (err instanceof Error && err.message === "Break not found") {
+          return reply.code(404).type("application/problem+json").send({
+            type: "about:blank#not_found", title: "Break not found", status: 404,
+            code: "not_found", detail: err.message, instance: `/recon/breaks/${params.id}/resolve`, requestId: request.id,
           });
         }
         return reply.code(500).type("application/problem+json").send({
@@ -338,8 +385,8 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
       try {
         const params = request.params as any;
         const result = await deps.executor.query(
-          `SELECT id, break_id, old_status, new_status, changed_at, changed_by, reason
-           FROM recon_break_audit WHERE break_id = $1 ORDER BY changed_at DESC`,
+          `SELECT seq AS id, break_id, from_status AS old_status, to_status AS new_status, ts AS changed_at, actor AS changed_by, reason
+           FROM recon_audit WHERE break_id = $1 ORDER BY ts DESC`,
           [params.id]
         );
         return reply.code(200).send({
@@ -366,4 +413,13 @@ export async function registerReconRoutes(app: FastifyInstance, deps: ReconRoute
       }
     }
   );
+}
+
+function minorToDecimal(value: unknown, alreadyDecimal = false): string {
+  if (value === undefined || value === null) return "0.00";
+  if (alreadyDecimal) return String(value);
+  const minor = BigInt(String(value));
+  const negative = minor < 0n;
+  const absolute = negative ? -minor : minor;
+  return `${negative ? "-" : ""}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
 }

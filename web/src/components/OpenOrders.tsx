@@ -7,6 +7,7 @@ import React from "react";
 import { LifecycleStrip } from "./LifecycleStrip.js";
 import { ApiClient, ApiError } from "../api/client.js";
 import type { Order } from "../lib/lifecycle.js";
+import { useToast } from "./Toast.js";
 
 interface OpenOrdersProps {
   orders: Order[];
@@ -15,6 +16,7 @@ interface OpenOrdersProps {
 }
 
 export function OpenOrders({ orders, apiBaseUrl, onCancelRequested }: OpenOrdersProps) {
+  const { showToast } = useToast();
   const [cancellingId, setCancellingId] = React.useState<string | null>(null);
   const [cancelError, setCancelError] = React.useState<string | null>(null);
 
@@ -32,80 +34,24 @@ export function OpenOrders({ orders, apiBaseUrl, onCancelRequested }: OpenOrders
       await apiClient.delete(`/orders/${id}`);
       onCancelRequested?.(id);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        setCancelError("Order already finished");
-      } else {
-        setCancelError(err instanceof Error ? err.message : "Cancel failed");
-      }
+      const message = err instanceof ApiError
+        ? `Cancel failed (HTTP ${err.status}): ${err.message}`
+        : err instanceof Error ? err.message : "Cancel failed";
+      setCancelError(message);
+      showToast(message, "error");
     } finally {
       setCancellingId(null);
     }
   }
 
-  if (openOrders.length === 0) {
-    return <div style={{ padding: 20, textAlign: "center", color: "#999" }}>No open orders</div>;
-  }
-
   return (
-    <div style={{ padding: 20 }}>
-      <h3>Open Orders</h3>
-      {cancelError && <div style={{ color: "red", marginBottom: 10 }}>{cancelError}</div>}
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ borderBottom: "2px solid #ddd" }}>
-            <th style={{ textAlign: "left", padding: 8 }}>Order ID</th>
-            <th style={{ textAlign: "left", padding: 8 }}>Symbol</th>
-            <th style={{ textAlign: "left", padding: 8 }}>Side</th>
-            <th style={{ textAlign: "left", padding: 8 }}>Qty</th>
-            <th style={{ textAlign: "left", padding: 8 }}>Filled</th>
-            <th style={{ textAlign: "left", padding: 8 }}>Price</th>
-            <th style={{ textAlign: "left", padding: 8 }}>Status</th>
-            <th style={{ textAlign: "left", padding: 8 }}>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {openOrders.map((order) => (
-            <React.Fragment key={order.id}>
-              <tr style={{ borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: 8 }}>{order.id.substring(0, 8)}...</td>
-                <td style={{ padding: 8 }}>{order.symbol}</td>
-                <td style={{ padding: 8 }}>
-                  <strong>{order.side}</strong>
-                </td>
-                <td style={{ padding: 8 }}>{order.quantity}</td>
-                <td style={{ padding: 8 }}>{order.filledQty}</td>
-                <td style={{ padding: 8 }}>—</td>
-                <td style={{ padding: 8, fontSize: 12 }}>
-                  <code>{order.status}</code>
-                </td>
-                <td style={{ padding: 8 }}>
-                  <button
-                    onClick={() => handleCancel(order.id)}
-                    disabled={
-                      order.status === "CANCEL_REQUESTED" || cancellingId === order.id
-                    }
-                    style={{
-                      padding: "4px 8px",
-                      fontSize: 12,
-                      cursor:
-                        order.status === "CANCEL_REQUESTED" || cancellingId === order.id
-                          ? "not-allowed"
-                          : "pointer",
-                    }}
-                  >
-                    {cancellingId === order.id ? "Cancelling..." : "Cancel"}
-                  </button>
-                </td>
-              </tr>
-              <tr>
-                <td colSpan={8} style={{ padding: 8, backgroundColor: "#f9f9f9" }}>
-                  <LifecycleStrip order={order} />
-                </td>
-              </tr>
-            </React.Fragment>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <section className="panel">
+      <div className="panel-heading"><h3>Open Orders</h3><span className="badge badge-neutral">{openOrders.length} open</span></div>
+      {cancelError && <div className="notice notice-error" role="alert">{cancelError}</div>}
+      {openOrders.length === 0 ? <p className="empty-state">No open orders</p> : <div className="table-scroll bounded-table"><table>
+        <thead><tr><th>Order ID</th><th>Symbol</th><th>Side</th><th className="numeric">Qty</th><th className="numeric">Filled</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody>{openOrders.map(order => <tr key={order.id}><td><a href={`/orders/${encodeURIComponent(order.id)}`}>{order.id.substring(0, 8)}...</a></td><td><strong>{order.symbol}</strong></td><td><span className={`badge ${order.side === "BUY" ? "badge-good" : "badge-bad"}`}>{order.side}</span></td><td className="numeric">{order.quantity}</td><td className="numeric">{order.filledQty}</td><td><LifecycleStrip order={order} /></td><td><button onClick={() => handleCancel(order.id)} disabled={order.status === "CANCEL_REQUESTED" || cancellingId === order.id}>{cancellingId === order.id ? "Cancelling..." : "Cancel"}</button></td></tr>)}</tbody>
+      </table></div>}
+    </section>
   );
 }

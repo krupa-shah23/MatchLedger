@@ -2,7 +2,20 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { createSqlExecutor, setUpIsolatedSchema } from "@matchledger/journal";
 import type { IsolatedSchema } from "@matchledger/journal";
 import { republish } from "./republish.js";
+import { Engine } from "@matchledger/engine-core";
+import { journalJson } from "./postgres-runner.js";
+import type { SqlExecutor } from "@matchledger/journal";
 import type { EventSink } from "@matchledger/common";
+
+async function storeOutput(tx: SqlExecutor, symbol: string, seq: number) {
+  const engine = new Engine({ symbol, tickSize: 1n, lotSize: 1n, maxPrice: 10000n, maxQuantity: 100n });
+  const command = { kind: "PLACE" as const, ts: 1n, orderId: `order-${seq}`, accountId: "owner", side: "BUY" as const,
+    orderType: "LIMIT" as const, timeInForce: "GTC" as const, price: 100n, quantity: 1n };
+  await tx.query("INSERT INTO journal (stream_id,seq,record_type,idx,schema_version,ts,writer_epoch,payload_json) VALUES ($1,$2,'COMMAND',0,1,1,1,$3)", [symbol, seq, journalJson(command)]);
+  for (const [idx, event] of engine.apply(command).entries()) {
+    await tx.query("INSERT INTO journal (stream_id,seq,record_type,idx,schema_version,ts,writer_epoch,payload_json) VALUES ($1,$2,'EVENT',$3,1,1,1,$4)", [symbol, seq, idx, journalJson(event)]);
+  }
+}
 
 const run = process.env.RUN_CONTAINERS === "1" || process.env.RUN_INTEGRATION === "1";
 
@@ -42,11 +55,7 @@ describe.skipIf(!run)("KC: Crash Windows (Republish)", () => {
     await sql.transaction(async (tx) => {
       // Insert event rows
       for (let seq = 41; seq <= 44; seq++) {
-        await tx.query(
-          `INSERT INTO journal (stream_id, seq, record_type, idx, schema_version, ts, writer_epoch, payload_json)
-           VALUES ($1, $2, 'EVENT', 0, 1, (extract(epoch from now()) * 1000)::bigint, 1, $3)`,
-          [symbol, seq, JSON.stringify({ symbol, seq, events: [`event${seq}`] })]
-        );
+        await storeOutput(tx, symbol, seq);
       }
 
       // published_through is 40
@@ -70,6 +79,7 @@ describe.skipIf(!run)("KC: Crash Windows (Republish)", () => {
     // Should have republished events 41-44
     expect(publishedEvents).toHaveLength(4);
     expect(publishedEvents[0].seq).toBe(41);
+    expect(publishedEvents[0].events.map((e: { type: string }) => e.type)).toEqual(["ORDER_ACCEPTED", "ORDER_RESTED"]);
     expect(publishedEvents[3].seq).toBe(44);
   });
 
@@ -87,11 +97,7 @@ describe.skipIf(!run)("KC: Crash Windows (Republish)", () => {
     const sql = createSqlExecutor(pool);
     await sql.transaction(async (tx) => {
       for (let seq = 41; seq <= 44; seq++) {
-        await tx.query(
-          `INSERT INTO journal (stream_id, seq, record_type, idx, schema_version, ts, writer_epoch, payload_json)
-           VALUES ($1, $2, 'EVENT', 0, 1, (extract(epoch from now()) * 1000)::bigint, 1, $3)`,
-          [symbol, seq, JSON.stringify({ symbol, seq })]
-        );
+        await storeOutput(tx, symbol, seq);
       }
       await tx.query(
         "INSERT INTO published_through (lease_id, symbol, seq) VALUES ($1, $2, $3)",
@@ -135,11 +141,7 @@ describe.skipIf(!run)("KC: Crash Windows (Republish)", () => {
     const sql = createSqlExecutor(pool);
     await sql.transaction(async (tx) => {
       for (let seq = 1; seq <= 3; seq++) {
-        await tx.query(
-          `INSERT INTO journal (stream_id, seq, record_type, idx, schema_version, ts, writer_epoch, payload_json)
-           VALUES ($1, $2, 'EVENT', 0, 1, (extract(epoch from now()) * 1000)::bigint, 1, $3)`,
-          [symbol, seq, JSON.stringify({ symbol, seq })]
-        );
+        await storeOutput(tx, symbol, seq);
       }
       await tx.query(
         "INSERT INTO published_through (lease_id, symbol, seq) VALUES ($1, $2, $3)",

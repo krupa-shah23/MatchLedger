@@ -1,0 +1,30 @@
+{
+  "experiment": "f4",
+  "seed": 12014,
+  "warmupMs": 30000,
+  "measureMs": 60000,
+  "repetitions": 3,
+  "apiRateLimit": {
+    "RATE_LIMIT_ORDERS_PER_SEC": 40,
+    "RATE_LIMIT_BURST": 80
+  },
+  "shardCounts": [1, 2, 4],
+  "loadProfiles": [
+    { "name": "uniform", "hotSymbolShare": 0 },
+    { "name": "hot-symbol", "hotSymbolShare": 0.8 }
+  ],
+  "cpuSets": {
+    "postgres": "1",
+    "kafka": "0",
+    "api": "3",
+    "generator": "2",
+    "shards": ["4", "5", "6", "7"]
+  },
+  "cpuLimits": {
+    "postgres": 1,
+    "kafka": 1,
+    "api": 1,
+    "generator": 1,
+    "eachShard": 1
+  }
+}

@@ -45,7 +45,7 @@ describe("Order Lifecycle Derivation (UL1-UL6)", () => {
 
   it("UL3: ACCEPTED shows hint after PENDING_HINT_MS", () => {
     const now = Date.now();
-    const createdTime = now - (PENDING_HINT_MS + 1000); // 4+ seconds ago
+    const createdTime = now - (PENDING_HINT_MS + 1000); // beyond the configured hint delay
     const order = {
       ...baseOrder,
       status: "ACCEPTED" as OrderStatus,

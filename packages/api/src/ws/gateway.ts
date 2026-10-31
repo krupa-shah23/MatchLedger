@@ -1,3 +1,4 @@
+import { getOrCreateGauge } from "@matchledger/telemetry";
 /**
  * WebSocket gateway: @fastify/websocket integration
  * Auth timer, per-topic role checks, ping/pong, graceful shutdown
@@ -13,6 +14,7 @@ import type { Config } from "../config.js";
 export interface GatewayDeps {
   hub: Hub;
   config: Config;
+  snapshot?: (topic: string, token: string) => Promise<unknown>;
 }
 
 interface AuthMessage {
@@ -39,8 +41,29 @@ function topicAllowedForRole(topic: string, role: ApiRole): boolean {
 
 export async function registerWebSocketGateway(app: FastifyInstance, deps: GatewayDeps): Promise<void> {
   const hub = deps.hub;
+  const sockets = new Set<WebSocket>();
+  app.addHook("preClose", async () => { for (const socket of sockets) socket.close(1001, "server shutdown"); });
 
   app.get("/ws", { websocket: true }, async (socket: WebSocket, req: FastifyRequest) => {
+    sockets.add(socket);
+    getOrCreateGauge("ml_websocket_connections").inc();
+    const subscriptions = new Set<string>();
+    let bearer = "";
+    let sequence = 0;
+    let updating = false;
+    const epoch = Date.now();
+    const refresh = async () => {
+      if (updating || !authenticated || !deps.snapshot || socket.readyState !== 1) return;
+      updating = true;
+      try {
+        for (const topic of subscriptions) {
+          const data = await deps.snapshot(topic, bearer);
+          if (socket.readyState === 1) socket.send(JSON.stringify({ type: "snapshot", topic, epoch, seq: ++sequence, data }));
+        }
+      } catch { if (socket.readyState === 1) socket.send(JSON.stringify({ error: "snapshot unavailable" })); }
+      finally { updating = false; }
+    };
+    const snapshotTimer = setInterval(() => { void refresh(); }, 250);
     // 1. Auth timer: 5 seconds to send auth message
     let authTimer: ReturnType<typeof setTimeout> | undefined;
     let authenticated = false;
@@ -100,6 +123,7 @@ export async function registerWebSocketGateway(app: FastifyInstance, deps: Gatew
         verifyToken({ secret, ttlSeconds: deps.config.JWT_TTL_SECONDS }, message.token)
           .then((claims) => {
             role = claims.role;
+            bearer = message.token;
             authenticated = true;
             clearAuthTimer();
             socket.send(JSON.stringify({ type: "auth.ok" }));
@@ -121,8 +145,10 @@ export async function registerWebSocketGateway(app: FastifyInstance, deps: Gatew
           socket.send(JSON.stringify({ error: "forbidden", topic }));
           return;
         }
-        hub.subscribe(socket as any, topic);
+        subscriptions.add(topic);
+        if (!deps.snapshot) hub.subscribe(socket, topic);
         socket.send(JSON.stringify({ type: "subscribed", topic }));
+        void refresh();
         return;
       }
 
@@ -133,7 +159,8 @@ export async function registerWebSocketGateway(app: FastifyInstance, deps: Gatew
           socket.send(JSON.stringify({ error: "invalid topic" }));
           return;
         }
-        hub.unsubscribe(socket as any, topic);
+        subscriptions.delete(topic);
+        hub.unsubscribe(socket, topic);
         socket.send(JSON.stringify({ type: "unsubscribed", topic }));
         return;
       }
@@ -143,8 +170,11 @@ export async function registerWebSocketGateway(app: FastifyInstance, deps: Gatew
     socket.on("close", () => {
       clearAuthTimer();
       clearInterval(pingTimer);
+      clearInterval(snapshotTimer);
+      sockets.delete(socket);
+      getOrCreateGauge("ml_websocket_connections").dec();
       // Unsubscribe from all topics
-      hub.closeConnection(socket as any);
+      hub.closeConnection(socket);
     });
 
     startAuthTimer();

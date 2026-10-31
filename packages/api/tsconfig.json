@@ -22,6 +22,18 @@
     },
     {
       "path": "../recon"
+    },
+    {
+      "path": "../runtime"
+    },
+    {
+      "path": "../telemetry"
+    },
+    {
+      "path": "../simulator"
+    },
+    {
+      "path": "../transport"
     }
   ],
   "extends": "../../tsconfig.base.json"

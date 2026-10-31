@@ -16,13 +16,17 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest-integration.config.ts",
-    "test:e2e": "cd e2e && npm test",
+    "test:e2e": "npm test --workspace @matchledger/e2e --",
     "test:flake": "node scripts/flake-gate.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:no-placeholders": "node scripts/check-no-placeholders.mjs",
+    "check:deployment": "node scripts/check-deployment.mjs",
     "bench": "npm --workspace @matchledger/benchmarks run bench",
     "chaos:pipeline": "node scripts/chaos-pipeline.mjs",
-    "test:mutations": "node scripts/mutate.mjs"
+    "test:mutations": "node scripts/mutate.mjs",
+    "api:start": "node --env-file-if-exists=.env packages/api/dist/main.js",
+    "demo:api": "PROFILE=demo SEED_DEMO=1 node --env-file-if-exists=.env packages/api/dist/main.js",
+    "shard:start": "node --env-file-if-exists=.env packages/shard/dist/main.js"
   },
   "devDependencies": {
     "@types/node": "26.6.5",
@@ -30,6 +34,6 @@
     "fast-check": "4.10.2",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.0",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   }
 }

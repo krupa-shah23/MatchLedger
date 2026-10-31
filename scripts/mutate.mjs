@@ -39,6 +39,15 @@ function vitest(testPath, { cwd = "." } = {}) {
   return { cwd, cmd: `npx vitest run "${testPath}" --reporter=dot` };
 }
 
+// For tests that need RUN_INTEGRATION=1 and the real Postgres-backed
+// integration config (packages/api/src/week11-live.int.test.ts).
+function vitestLive(testPath, { cwd = "." } = {}) {
+  return {
+    cwd,
+    cmd: `RUN_INTEGRATION=1 npx vitest run "${testPath}" --config vitest-integration.config.ts --reporter=dot`,
+  };
+}
+
 // id -> { file, find, replace, test, note? }
 // `file` is relative to ROOT. `find` must occur exactly once in the pristine
 // file (verified at run time) and is replaced with `replace` to apply the
@@ -239,23 +248,19 @@ const RESOLUTIONS = {
   },
   11: {
     file: "web/src/components/OrderEntry.tsx",
-    find: `          if (err instanceof ApiError && err.status === 409) {
-            // Already submitted - likely a retry. Use same clientOrderId again
-            // Server will de-duplicate and return the original orderId
-            retryCount++;
-            submissionId = \`\${clientOrderId}-retry\${retryCount}\`;`,
-    replace: `          if (err instanceof ApiError && err.status === 409) {
-            retryCount++;
-            submissionId = \`\${clientOrderId}-\${Date.now()}-\${Math.random()}\`;`,
-    test: vitest("src/components/forms.test.ts", { cwd: "web" }),
-    note: "Real file is web/src/components/OrderEntry.tsx (web/src/components/forms.ts never existed). forms.test.ts's UF3 asserts on an inline closure it defines itself, not on OrderEntry.tsx.",
+    find: `      const response = await apiClient.post<OrderResponse>("/orders", {
+        clientOrderId,`,
+    replace: `      const response = await apiClient.post<OrderResponse>("/orders", {
+        clientOrderId: \`\${clientOrderId}-\${Date.now()}-\${Math.random()}\`,`,
+    test: vitest("src/components/OrderEntry.test.tsx", { cwd: "web" }),
+    note: "Fixed: OrderEntry.tsx previously had its own retry-suffix logic on 409 (contradicting the spec's 'same clientOrderId reused on retry' requirement) and forms.test.ts's UF3 only asserted on an inline closure, never the real component. The 409 retry-suffix behavior was removed (OrderEntry.tsx now shows the spec-required message and does not mutate the id), and real coverage now lives in OrderEntry.test.tsx (UF3).",
   },
   12: {
     file: "web/src/components/OrderEntry.tsx",
     find: `      <button type="submit" disabled={!canSubmit || isSubmitting}>`,
     replace: `      <button type="submit" disabled={!canSubmit}>`,
-    test: vitest("src/components/forms.test.ts", { cwd: "web" }),
-    note: "forms.test.ts's UF2 asserts on an inline closure it defines itself, not on OrderEntry.tsx.",
+    test: vitest("src/components/OrderEntry.test.tsx", { cwd: "web" }),
+    note: "Fixed: forms.test.ts's UF2 previously asserted on an inline closure it defined itself, not on OrderEntry.tsx. Real coverage (rendering the component, asserting fetch is called exactly once across a double-click) now lives in OrderEntry.test.tsx (UF2).",
   },
   13: {
     file: "packages/common/src/ui-config.ts",
@@ -269,10 +274,10 @@ const RESOLUTIONS = {
   },
   14: {
     file: "web/src/pages/Trading.tsx",
-    find: `          {user?.role === "TRADER" ? (`,
-    replace: `          {(user?.role === "TRADER" || user?.role === "ADMIN") ? (`,
-    test: vitest("src/auth/auth.test.ts", { cwd: "web" }),
-    note: "Trading.tsx hardcodes its own TRADER check instead of calling useCanWrite/canWritePage, so UG3 (which only tests canWritePage directly) cannot observe this mutation either way.",
+    find: `  const canWrite = useCanWrite("/trade");`,
+    replace: `  const canWrite = true;`,
+    test: vitest("src/pages/Trading.test.tsx", { cwd: "web" }),
+    note: "Fixed: Trading.tsx previously hardcoded its own `user?.role === \"TRADER\"` check instead of calling useCanWrite/canWritePage, so UG3 (which only tested canWritePage directly) could never observe this mutation. Trading.tsx now calls useCanWrite(\"/trade\") for real, and Trading.test.tsx's existing 'ADMIN is read-only' test (not UG3) is what actually catches this.",
   },
   15: {
     file: "packages/telemetry/src/registry.ts",
@@ -312,7 +317,7 @@ const RESOLUTIONS = {
          last_seq = $2,
          owned_symbols = $3,
          updated_at = now()\`,
-        [leaseId, state.lastSeq, JSON.stringify(Array.from(state.ownedSymbols))]
+        [leaseId, state.lastSeq, Array.from(state.ownedSymbols)]
       );`,
     replace: `      await this.config.pool.query(
         \`INSERT INTO shard_heartbeats (lease_id, last_heartbeat_at, last_seq, owned_symbols, updated_at)
@@ -323,16 +328,16 @@ const RESOLUTIONS = {
          owned_symbols = $3,
          updated_at = now()
          WHERE shard_heartbeats.last_seq <= $2\`,
-        [leaseId, state.lastSeq, JSON.stringify(Array.from(state.ownedSymbols))]
+        [leaseId, state.lastSeq, Array.from(state.ownedSymbols)]
       );`,
     test: vitest("packages/shard/src/shard-host.test.ts"),
   },
   18: {
     file: "packages/api/src/routes/system.ts",
-    find: `              SELECT (now() - h.last_heartbeat_at) > INTERVAL '15 seconds'`,
-    replace: `              SELECT (now() - h.last_heartbeat_at) > INTERVAL '10 seconds'`,
+    find: `const STALE_INTERVALS = 3;`,
+    replace: `const STALE_INTERVALS = 2;`,
     test: vitest("packages/api/src/routes/system.test.ts"),
-    note: "HT3's mock executor returns a canned is_stale value directly and never evaluates this SQL, so this mutation cannot be observed by HT3 as written.",
+    note: "Real anchor is the STALE_INTERVALS constant (not a literal SQL interval string - the threshold is computed from STALE_INTERVALS * heartbeatMs). Previous anchor ('15 seconds') never existed in this file.",
   },
   19: {
     file: "packages/api/src/system/prom-queries.ts",
@@ -356,8 +361,8 @@ const RESOLUTIONS = {
     file: "packages/api/src/routes/admin.ts",
     find: `  if (deps.isDemo && deps.commandRouter) {`,
     replace: `  if (deps.commandRouter) {`,
-    test: vitest("packages/simulator/simulator-integration.test.ts"),
-    note: "CH3 asserts on an inline closure it defines itself, not on admin.ts's route registration.",
+    test: vitestLive("packages/api/src/week11-live.int.test.ts"),
+    note: "Fixed: packages/simulator/simulator-integration.test.ts's CH3 asserted on an inline closure, not on admin.ts's route registration, and could never catch this. Real coverage is CH3-live in week11-live.int.test.ts, which boots the real app with PROFILE=prod and asserts a real 404 over HTTP for an ADMIN token - this requires RUN_INTEGRATION=1 and a real Postgres.",
   },
   22: {
     file: "packages/simulator/src/flow-model.ts",
@@ -367,13 +372,10 @@ const RESOLUTIONS = {
   },
   23: {
     file: "packages/simulator/src/flow-model.ts",
-    find: `  const newMidPriceTicks = Math.max(
-    0,
-    Math.min(maxPriceTicks, state.midPriceTicks + priceMove)
-  );`,
-    replace: `  const newMidPriceTicks = state.midPriceTicks + priceMove;`,
+    find: `  const clampTicks = (value: bigint) => value < 1n ? 1n : value > maxPriceTicks ? maxPriceTicks : value;`,
+    replace: `  const clampTicks = (value: bigint) => value;`,
     test: vitest("packages/simulator/src/simulator.test.ts"),
-    note: "With tickSize=1 in SM3's spec, 'price % tickSize' can't expose misalignment; removing the bounds clamp is what SM3's in-bounds assertions can actually catch over a 50-tick random walk.",
+    note: "Real anchor is the clampTicks helper (midPriceTicks is now a bigint and clamping was refactored into this closure). Previous anchor (an inline Math.max/Math.min on a number) never existed in this file.",
   },
   24: {
     file: "ops/grafana/provisioning/dashboards/matchledger-main.json",
@@ -391,8 +393,8 @@ const RESOLUTIONS = {
           await deps.executor.query("DELETE FROM journal", []);
           // Stop simulator if running
           if (deps.simulatorState && deps.simulatorState.current) {`,
-    test: vitest("packages/simulator/simulator-integration.test.ts"),
-    note: "CH5 asserts on inline closures it defines itself, not on admin.ts's reset route or journal row counts.",
+    test: vitestLive("packages/api/src/week11-live.int.test.ts"),
+    note: "Fixed: packages/simulator/simulator-integration.test.ts's CH5 asserted on inline closures, never on admin.ts's reset route or real journal row counts. Real coverage is CH5-live in week11-live.int.test.ts, which inserts a real journal row, calls the real /admin/demo/reset endpoint twice, and asserts the real row count is unchanged - this requires RUN_INTEGRATION=1 and a real Postgres.",
   },
 };
 

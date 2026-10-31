@@ -1,5 +1,7 @@
 # Week 8 Test ID Audit - FINAL
 
+> Historical audit snapshot, not an archived run output. Its 104-test table, 113-test heading, and 313/96/4 test summary conflict with other Week 8 records. See the provenance note in `README.md`.
+
 ## ✅ COMPLETE: All 113 Core Tests Passing
 
 | Category | Test Range | File | Count | Status |

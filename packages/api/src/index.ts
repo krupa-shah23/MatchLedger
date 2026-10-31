@@ -8,7 +8,10 @@ export interface ServerOptions {
 }
 
 export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInstance> {
-  const jwtSecretStr = opts.jwtSecret ?? process.env.JWT_SECRET ?? "default-secret-key-12345678901234567890";
+  const jwtSecretStr = opts.jwtSecret ?? process.env.JWT_SECRET;
+  if (!jwtSecretStr || new TextEncoder().encode(jwtSecretStr).byteLength < 32) {
+    throw new Error("JWT_SECRET must be provided and at least 32 bytes");
+  }
   const secretBytes = new TextEncoder().encode(jwtSecretStr);
   const wsTimeout = opts.wsAuthTimeoutMs ?? 5000;
 

@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { AuthProvider } from "../auth/AuthProvider.js";
 import { SystemPage } from "./System.js";
@@ -38,6 +38,7 @@ describe("UP: System Page (P7)", () => {
         shards: [
           {
             leaseId: "shard-0",
+            ownedSymbols: ["ACME"],
             owner: "shard-host-1",
             epoch: 1,
             stale: false,
@@ -46,6 +47,7 @@ describe("UP: System Page (P7)", () => {
             snapshotSeq: 900,
           },
         ],
+        chaosEnabled: true,
         available: true,
         commandsPerSec: 1000,
         latencyMs: { p50: 1.5, p95: 5.2, p99: 12.3 },
@@ -65,7 +67,7 @@ describe("UP: System Page (P7)", () => {
 
     // Wait for heading
     await waitFor(() => {
-      expect(screen.getByText("System (P7)")).toBeInTheDocument();
+      expect(screen.getByText("System")).toBeInTheDocument();
     });
 
     // Check that main sections are rendered
@@ -79,10 +81,13 @@ describe("UP: System Page (P7)", () => {
     expect(screen.getByText("Owner")).toBeInTheDocument();
     expect(screen.getByText("Epoch")).toBeInTheDocument();
     expect(screen.getByText("Stale")).toBeInTheDocument();
-    expect(screen.getByText("Queue Depth")).toBeInTheDocument();
+    // Queue depth is supplied by the metrics summary, not the shard-status table.
+    expect(screen.getByText(/Queue Depth Max: 150/)).toBeInTheDocument();
     expect(screen.getByText("Last Seq")).toBeInTheDocument();
     expect(screen.getByText("Snapshot Seq")).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: /^Kill$/ }));
+    expect(mockFetch).toHaveBeenCalledWith("/api/v1/admin/demo/chaos/kill/ACME", expect.objectContaining({ method: "POST" }));
     // Check shard data is rendered
     expect(screen.getAllByText("shard-0")[0]).toBeInTheDocument();
     expect(screen.getByText("shard-host-1")).toBeInTheDocument();

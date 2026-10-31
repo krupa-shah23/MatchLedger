@@ -53,10 +53,12 @@ function defaultScheduleReconnect(attempt: number, run: () => void): ReconnectHa
 export function useSocket(options: UseSocketOptions): UseSocketResult {
   const [state, setState] = useState<StreamState>(createInitialState());
   const [connection, setConnection] = useState<ConnectionStatus>("connecting");
+  const topicKey = options.topics.join("|");
   const stateRef = useRef(state);
   stateRef.current = state;
 
   useEffect(() => {
+    if (!options.token) return;
     let cancelled = false;
     let attempt = 0;
     let socket: SocketLike | null = null;
@@ -144,7 +146,7 @@ export function useSocket(options: UseSocketOptions): UseSocketResult {
       pendingReconnect?.cancel();
       socket?.close();
     };
-  }, [options.url, options.token]);
+  }, [options.url, options.token, topicKey]);
 
   return { state, connection };
 }

@@ -1,3 +1,4 @@
+import { ToastProvider } from "../components/Toast.js";
 /**
  * UP1: Login page with demo role buttons, against the real LoginPage.
  */
@@ -12,9 +13,9 @@ import { LoginPage } from "./Login.js";
 function renderLogin(demoMode: boolean) {
   return render(
     <MemoryRouter>
-      <AuthProvider>
+      <ToastProvider><AuthProvider>
         <LoginPage demoMode={demoMode} />
-      </AuthProvider>
+      </AuthProvider></ToastProvider>
     </MemoryRouter>
   );
 }
@@ -25,7 +26,7 @@ describe("UP1: Login page", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows a demo button per role when the server reports demo mode", () => {
+  it("UP1: shows a demo button per role when the server reports demo mode", () => {
     renderLogin(true);
     expect(screen.getByText("Login as Trader")).toBeInTheDocument();
     expect(screen.getByText("Login as Risk Officer")).toBeInTheDocument();

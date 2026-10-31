@@ -1,0 +1,29 @@
+{
+  "experiment": "f6",
+  "seed": 12016,
+  "warmupMs": 30000,
+  "measureMs": 60000,
+  "repetitions": 3,
+  "apiRateLimit": {
+    "RATE_LIMIT_ORDERS_PER_SEC": 40,
+    "RATE_LIMIT_BURST": 80
+  },
+  "scenarios": [
+    { "name": "websocket-never-reads", "readerMode": "paused" },
+    { "name": "slow-kafka-consumer", "consumerDelayMs": 250 }
+  ],
+  "cpuSets": {
+    "postgres": "1",
+    "kafka": "0",
+    "api": "3",
+    "shards": ["4", "5"],
+    "generator": "2"
+  },
+  "cpuLimits": {
+    "postgres": 1,
+    "kafka": 1,
+    "api": 1,
+    "eachShard": 1,
+    "generator": 1
+  }
+}

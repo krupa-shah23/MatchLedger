@@ -84,9 +84,8 @@ export class ApiClient {
     const url = `${this.config.baseUrl}${path}`;
     const token = this.config.getToken();
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers["Content-Type"] = "application/json";
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
@@ -94,7 +93,7 @@ export class ApiClient {
     const response = await fetch(url, {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
 
     if (response.status === 429 || response.status === 503) {

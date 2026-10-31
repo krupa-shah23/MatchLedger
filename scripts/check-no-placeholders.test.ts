@@ -48,14 +48,10 @@ describe("NP1: No placeholder tests in web", () => {
     );
 
     try {
-      // check-no-placeholders.mjs enumerates files via `git ls-files --cached`,
-      // so the seed file must be staged for the checker to see it at all.
-      execFileSync("git", ["add", seedFile], { cwd: ROOT });
-
       let threw = false;
       let output = "";
       try {
-        execFileSync("node", [path.join(ROOT, "scripts", "check-no-placeholders.mjs")], {
+        execFileSync(process.execPath, [path.join(ROOT, "scripts", "check-no-placeholders.mjs")], {
           cwd: ROOT,
           encoding: "utf8",
           stdio: ["ignore", "pipe", "pipe"],
@@ -70,7 +66,6 @@ describe("NP1: No placeholder tests in web", () => {
       expect(output).toContain("it.todo");
       expect(output).toContain("__np1-seeded-violation.test.ts");
     } finally {
-      execFileSync("git", ["reset", "--", seedFile], { cwd: ROOT });
       fs.unlinkSync(seedFile);
     }
   });

@@ -24,6 +24,7 @@ export interface SystemRoutesDeps {
   facade: RuntimeFacade;
   prometheusUrl?: string;
   isDemo?: boolean;
+  chaosEnabled?: boolean;
   instruments?: Array<{ symbol: string; tick?: string; lot?: string; spec?: any }>;
   simulatorState?: { current: SimulatorDriverState | null };
   /**
@@ -35,10 +36,15 @@ export interface SystemRoutesDeps {
   /** Same HEARTBEAT_MS a shard process is configured with; the stale-shard
    * threshold on /system/shards is 3 intervals of this, not a fixed literal. */
   heartbeatMs?: number;
+  simulatorRateCap?: number;
+  simulatorTicksPerSec?: number;
+  submitSimulatorOrder?: SubmitPort["submitOrder"];
 }
 
 const DEFAULT_HEARTBEAT_MS = 5000;
 const STALE_INTERVALS = 3;
+const PROJECTOR_LAG_RUNNING_THRESHOLD_SEQ = 1000;
+const PROJECTOR_LAG_HEALTHY_THRESHOLD_SEQ = 5000;
 
 export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRoutesDeps): Promise<void> {
   // GET /system/invariants - check system invariants
@@ -67,10 +73,15 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
         );
         const ledgerZeroSum = unbalancedLedgerAssets.rows.length === 0;
 
-        // Shares are conserved by the matching engine: every symbol's net position
-        // across all accounts must be zero (no shares created or destroyed by trading).
+        // Shares are conserved: every SHARES:<symbol> asset's double-entry ledger
+        // postings must net to zero across all accounts (deposits are balanced by
+        // an @EXTERNAL leg, trades swap quantity between buyer and seller legs -
+        // see live-runtime.ts). positions_view is a customer-only operational
+        // view (it deliberately excludes @EXTERNAL, same as balances_view does
+        // for cash) and is expected to carry a nonzero total once any deposit
+        // has happened, so it cannot be the zero-sum check.
         const unbalancedSymbols = await deps.executor.query(
-          `SELECT symbol FROM positions_view GROUP BY symbol HAVING SUM(quantity) <> 0`,
+          `SELECT asset FROM ledger_entries WHERE asset LIKE 'SHARES:%' GROUP BY asset HAVING SUM(amount) <> 0`,
           []
         );
         const positionsZeroSum = unbalancedSymbols.rows.length === 0;
@@ -113,14 +124,14 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
         // Calculate projector lag: max(journal seq) - checkpoint
         const lagResult = await deps.executor.query(
           `SELECT COALESCE(MAX(j.seq), 0) - COALESCE(MAX(cp.last_seq), 0) as lag
-           FROM journal j, projections_checkpoint cp`,
+           FROM journal j LEFT JOIN projection_checkpoints cp ON cp.stream_id=j.stream_id`,
           []
         );
         const projectorLagSeq = Math.max(0, parseInt((lagResult.rows[0] as any)?.lag ?? "0", 10));
-        const pipelineState = projectorLagSeq < 1000 ? "running" : "lagging";
+        const pipelineState = projectorLagSeq < PROJECTOR_LAG_RUNNING_THRESHOLD_SEQ ? "running" : "lagging";
 
         return reply.code(200).send({
-          status: projectorLagSeq < 5000 ? "healthy" : "degraded",
+          status: projectorLagSeq < PROJECTOR_LAG_HEALTHY_THRESHOLD_SEQ ? "healthy" : "degraded",
           projectorLagSeq,
           pipelineState,
           ts: new Date().toISOString(),
@@ -171,6 +182,7 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
         );
 
         return reply.code(200).send({
+          chaosEnabled: deps.isDemo === true && deps.chaosEnabled === true,
           shards: (result.rows as any[]).map((row: any) => ({
             leaseId: row.lease_id,
             owner: row.owner,
@@ -255,8 +267,7 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
         const prometheusUrl = deps.prometheusUrl || "http://localhost:9090";
         const metrics = await fetchMetricsSummary(prometheusUrl);
 
-        // If Prometheus is unreachable, metrics will have all null values
-        const available = metrics.commandsPerSec !== null;
+        const available = metrics.prometheusAvailable;
 
         return reply.code(200).send({
           available,
@@ -341,8 +352,13 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
           // whatever is currently cached in any running process.
           const partition = Number(riskPartitionMatch[1]);
           const recovered = await recoverRiskPartition({
-            sql: deps.executor as unknown as Parameters<typeof recoverRiskPartition>[0]["sql"],
+            sql: { ...deps.executor,
+              // Verify independently from genesis, never by trusting the snapshot under inspection.
+              query: (sql: string, values: unknown[]) => /FROM snapshots/i.test(sql)
+                ? Promise.resolve({ rows: [] }) : deps.executor.query(sql, values),
+            } as unknown as Parameters<typeof recoverRiskPartition>[0]["sql"],
             partition,
+            upToSeq: Number(snapshotSeq),
             config: deps.riskConfig,
           });
           const freshChecksum = createHash("sha256").update(serializeRiskState(recovered.core.exportState())).digest("hex");
@@ -350,7 +366,10 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
           return reply.code(200).send({
             streamId,
             upToSeq: recovered.lastSeq,
-            equal: freshChecksum === storedChecksum,
+            equal: freshChecksum === storedChecksum && (() => {
+              try { return createHash("sha256").update(serializeRiskState(deserializeRiskState(JSON.stringify(snapshotRow.state_json)))).digest("hex") === storedChecksum; }
+              catch { return false; }
+            })(),
             checksum: freshChecksum,
           });
         }
@@ -452,30 +471,16 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
 
           const submitPort: SubmitPort = {
             submitOrder: async (order: any) => {
-              const cmd = {
-                type: "SubmitOrder",
-                accountId: "simulator-account",
-                clientOrderId: order.clientOrderId,
-                symbol: order.symbol,
-                side: order.side,
-                orderType: order.type,
-                quantity: order.quantity.toString(),
-                price: order.price ? order.price.toString() : null,
-              };
-
-              const result = await deps.facade.submitOrder(cmd);
-              if (result.kind === "JOURNALED") {
-                return "ACCEPTED";
-              } else {
-                return "FULL";
-              }
+              if (!deps.submitSimulatorOrder) return 503;
+              return deps.submitSimulatorOrder(order);
             },
           };
 
           state = await createSimulatorDriver({
             seed: requestedSeed ?? Date.now(),
             symbols: instrumentMap.size > 0 ? Array.from(instrumentMap.keys()) : ["AAPL"],
-            ratePerSec: 10,
+            ratePerSec: deps.simulatorRateCap ?? 10,
+            ticksPerSec: deps.simulatorTicksPerSec ?? 10,
             scenario: "steady",
             scheduler,
             submitPort,

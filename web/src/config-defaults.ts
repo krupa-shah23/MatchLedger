@@ -1,0 +1,2 @@
+export const DEFAULT_PENDING_HINT_MS = 10000;
+export const DEFAULT_POLL_INTERVAL_MS = 5000;

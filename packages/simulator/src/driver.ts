@@ -7,6 +7,7 @@
 import type { InstrumentSpec } from "@matchledger/engine-core";
 import type { Scenario } from "./flow-model.js";
 import { createFlowModel, flowModelNextTick } from "./flow-model.js";
+import { mulberry32 } from "./prng.js";
 
 export type Scheduler = (fn: () => Promise<void>, intervalMs: number) => () => void;
 
@@ -30,6 +31,7 @@ export interface SimulatorDriverState {
   readonly seed: number;
   readonly symbols: string[];
   readonly ratePerSec: number;
+  readonly ticksPerSec: number;
   readonly scenario: Scenario;
   readonly scheduler: Scheduler;
   readonly submitPort: SubmitPort;
@@ -46,12 +48,16 @@ export async function createSimulatorDriver(
     seed: number;
     symbols: string[];
     ratePerSec: number;
+    ticksPerSec?: number;
     scenario: Scenario;
     scheduler: Scheduler;
     submitPort: SubmitPort;
     instruments: Map<string, InstrumentSpec>;
   }
 ): Promise<SimulatorDriverState> {
+  if (!Number.isFinite(config.ratePerSec) || config.ratePerSec <= 0) throw new Error("ratePerSec must be positive");
+  const ticksPerSec = config.ticksPerSec ?? 10;
+  if (!Number.isInteger(ticksPerSec) || ticksPerSec <= 0) throw new Error("ticksPerSec must be a positive integer");
   const flowModels = new Map<string, unknown>();
   const orderCounters = new Map<string, number>();
 
@@ -70,6 +76,7 @@ export async function createSimulatorDriver(
     seed: config.seed,
     symbols: config.symbols,
     ratePerSec: config.ratePerSec,
+    ticksPerSec,
     scenario: config.scenario,
     scheduler: config.scheduler,
     submitPort: config.submitPort,
@@ -88,10 +95,18 @@ export async function startSimulator(
     return state;
   }
 
-  const ticksPerSec = parseInt(process.env.SIMULATOR_TICKS_PER_SEC ?? "10", 10); // configurable via SIMULATOR_TICKS_PER_SEC
+  const ticksPerSec = state.ticksPerSec;
   let tickNumber = 0;
+  let busy = false;
+  let stopped = false;
+  let credits = 0;
+  const jitterRng = mulberry32(state.seed);
 
   const tickFn = async () => {
+    if (busy || stopped) return;
+    busy = true;
+    credits = Math.min(state.ratePerSec, credits + state.ratePerSec / ticksPerSec);
+    try {
     for (const symbol of state.symbols) {
       const flowModel = state.flowModels.get(symbol) as unknown;
       const counter = state.orderCounters.get(symbol)!;
@@ -103,20 +118,22 @@ export async function startSimulator(
 
       // Submit each order with backoff handling
       for (const order of orders) {
+        if (stopped || credits < 1) break;
+        credits -= 1;
         try {
-          const result = await state.submitPort.submitOrder(order);
+          const submission = { ...order, clientOrderId: `sim:${state.seed}:${order.symbol}:${order.clientOrderId}` };
+          const result = await state.submitPort.submitOrder(submission);
           if (result === "ACCEPTED") {
             state.counters.sent++;
           } else if (result === "FULL" || result === 503) {
             state.counters.backedOff++;
             // Backoff: wait before retrying
-            await new Promise((resolve) => setTimeout(resolve, 100 + Math.random() * 200));
+            await new Promise((resolve) => setTimeout(resolve, 100 + jitterRng() * 200));
 
             // Retry once
-            const retryResult = await state.submitPort.submitOrder({
-              ...order,
-              clientOrderId: order.clientOrderId + "-retry1",
-            });
+            if (stopped || credits < 1) break;
+            credits -= 1;
+            const retryResult = await state.submitPort.submitOrder(submission);
             if (retryResult === "ACCEPTED") {
               state.counters.sent++;
             } else {
@@ -130,9 +147,11 @@ export async function startSimulator(
     }
 
     tickNumber++;
+    } finally { busy = false; }
   };
 
-  const stopFn = state.scheduler(tickFn, 1000 / ticksPerSec);
+  const cancelSchedule = state.scheduler(tickFn, 1000 / ticksPerSec);
+  const stopFn = () => { stopped = true; cancelSchedule(); };
 
   return {
     ...state,

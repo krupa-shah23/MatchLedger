@@ -5,13 +5,15 @@
  */
 import React from "react";
 import { useAuth } from "../auth/AuthProvider.js";
+import { Icon, PageHeading } from "../components/Ui.js";
+import { webConfig } from "../config.js";
 
 interface Shard {
   leaseId: string;
+  ownedSymbols?: string[];
   owner: string;
   epoch: number;
   stale: boolean;
-  queueDepth: number;
   lastSeq: number;
   snapshotSeq: number;
 }
@@ -34,11 +36,12 @@ interface Invariants {
 }
 
 interface RecoveryEntry {
-  symbol: string;
-  recoveryStartTs: string;
+  leaseId: string;
+  startedAt: string;
   durationMs: number;
   snapshotSeq: number;
   tailLength: number;
+  symbolsRecovered: string[];
 }
 
 interface SimulatorState {
@@ -56,14 +59,16 @@ export function SystemPage() {
   const [recovery, setRecovery] = React.useState<RecoveryEntry[]>([]);
   const [simulator, setSimulator] = React.useState<SimulatorState | null>(null);
   const [isDemo, setIsDemo] = React.useState(false);
+  const [chaosEnabled, setChaosEnabled] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
+  const [fetchError, setFetchError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!token) return;
 
     const fetchAll = async () => {
       try {
-        setLoading(true);
+        setFetchError(null);
         const headers = { Authorization: `Bearer ${token}` };
 
         const [shardsRes, metricsRes, invariantsRes, recoveryRes, simRes] = await Promise.all([
@@ -74,9 +79,11 @@ export function SystemPage() {
           fetch("/api/v1/system/simulator", { headers }),
         ]);
 
+        if ([shardsRes, metricsRes, invariantsRes, recoveryRes].some(response => !response.ok)) throw new Error("Unable to load system data");
         if (shardsRes.ok) {
           const data = await shardsRes.json();
-          setShards(data.shards || []);
+          setChaosEnabled(data.chaosEnabled === true);
+          setShards((data.shards || []).map((s: Shard & { isStale?: boolean }) => ({ ...s, stale: s.isStale ?? s.stale })));
         }
         if (metricsRes.ok) {
           setMetrics(await metricsRes.json());
@@ -86,7 +93,7 @@ export function SystemPage() {
         }
         if (recoveryRes.ok) {
           const data = await recoveryRes.json();
-          setRecovery(data.recovery || data.recent || []);
+          setRecovery(data.recoveries || data.recovery || data.recent || []);
         }
         if (simRes.ok) {
           setSimulator(await simRes.json());
@@ -95,6 +102,7 @@ export function SystemPage() {
           setIsDemo(false);
         }
       } catch (err) {
+        setFetchError(err instanceof Error ? err.message : "Request failed");
         console.error("Error fetching system data", err);
       } finally {
         setLoading(false);
@@ -109,7 +117,7 @@ export function SystemPage() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") fetchAll();
-    }, 5000);
+    }, webConfig.pollIntervalMs);
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -147,18 +155,18 @@ export function SystemPage() {
     }
   };
 
-  if (loading) {
-    return <div style={{ padding: 20 }}>Loading system data...</div>;
-  }
+  if (fetchError) return <div className="page"><p role="alert" className="notice notice-error">{fetchError}</p></div>;
+  if (loading) return <div className="loading-state" role="status"><span className="spinner" />Loading system data...</div>;
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>System (P7)</h1>
-
-      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
-        <h2>Metrics Summary</h2>
+    <div className="page">
+      <PageHeading eyebrow="PLATFORM OPERATIONS" title="System" description="A live view of processing, shard ownership, and recovery." actions={isDemo ? <span className="badge badge-neutral">Demo environment</span> : undefined} />
+      <section className="panel">
+        <div className="panel-heading"><h2>Metrics Summary</h2><span className="panel-note">From Prometheus</span></div>
         {metrics?.available ? (
-          <div>
+          <>
+          {metrics.commandsPerSec == null && <div className="notice notice-info">Prometheus is connected; no matching samples have been recorded yet.</div>}
+          <div className="system-metrics">
             <p>Commands/sec: {metrics.commandsPerSec?.toFixed(2) ?? "—"}</p>
             <p>Latency p50: {metrics.latencyMs?.p50?.toFixed(2) ?? "—"}ms</p>
             <p>Latency p95: {metrics.latencyMs?.p95?.toFixed(2) ?? "—"}ms</p>
@@ -167,151 +175,93 @@ export function SystemPage() {
             <p>Consumer Lag Max: {metrics.consumerLagMax ?? "—"}</p>
             <p>Event Loop P99: {metrics.eventLoopP99Ms?.toFixed(2) ?? "—"}ms</p>
           </div>
-        ) : (
-          <p style={{ color: "orange" }}>Metrics unavailable</p>
-        )}
-      </div>
-
-      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
-        <h2>Shards</h2>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ borderBottom: "2px solid #666" }}>
-              <th style={{ textAlign: "left", padding: 8 }}>Lease ID</th>
-              <th style={{ textAlign: "left", padding: 8 }}>Owner</th>
-              <th style={{ textAlign: "left", padding: 8 }}>Epoch</th>
-              <th style={{ textAlign: "left", padding: 8 }}>Stale</th>
-              <th style={{ textAlign: "left", padding: 8 }}>Queue Depth</th>
-              <th style={{ textAlign: "left", padding: 8 }}>Last Seq</th>
-              <th style={{ textAlign: "left", padding: 8 }}>Snapshot Seq</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shards.map((shard) => (
-              <tr key={shard.leaseId} style={{ borderBottom: "1px solid #ddd" }}>
-                <td style={{ padding: 8 }}>{shard.leaseId}</td>
-                <td style={{ padding: 8 }}>{shard.owner}</td>
-                <td style={{ padding: 8 }}>{shard.epoch}</td>
-                <td style={{ padding: 8, color: shard.stale ? "red" : "green" }}>{shard.stale ? "YES" : "NO"}</td>
-                <td style={{ padding: 8 }}>{shard.queueDepth}</td>
-                <td style={{ padding: 8 }}>{shard.lastSeq}</td>
-                <td style={{ padding: 8 }}>{shard.snapshotSeq}</td>
+          </>
+        ) : <div className="notice notice-warning">{metrics?.available ? "Prometheus is connected; metric samples have not arrived yet." : "Prometheus is unreachable. Check that its service is running and scraping the API and shard targets."}</div>}
+      </section>
+      <section className="panel">
+        <div className="panel-heading"><h2>Shards</h2><span className="panel-note">Ownership and journal position</span></div>
+        {shards.length === 0 ? <div className="empty-state"><Icon name="system" /><p>No active shards</p></div> : (
+          <div className="table-scroll"><table>
+            <thead><tr><th>Lease ID</th><th>Owner</th><th className="numeric">Epoch</th><th>Stale</th><th className="numeric">Last Seq</th><th className="numeric">Snapshot Seq</th></tr></thead>
+            <tbody>{shards.map((shard) => (
+              <tr key={shard.leaseId}>
+                <td><strong>{shard.leaseId}</strong></td><td>{shard.owner}</td><td className="numeric">{shard.epoch}</td>
+                <td><span className={`badge ${shard.stale ? "badge-bad" : "badge-good"}`}><span className="status-dot" />{shard.stale ? "YES" : "NO"}</span></td>
+                <td className="numeric">{shard.lastSeq}</td><td className="numeric">{shard.snapshotSeq}</td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
-        <h2>
-          Invariants{" "}
-          <button onClick={handleRunInvariants} style={{ marginLeft: 10 }}>
-            Run Now
-          </button>
-        </h2>
+            ))}</tbody>
+          </table></div>
+        )}
+      </section>
+      <section className="panel">
+        <div className="panel-heading"><h2>Invariants</h2><button onClick={handleRunInvariants}><Icon name="check" />Run Now</button></div>
         {invariants && (
           <div>
-            <p>
-              Overall: <span style={{ color: invariants.valid ? "green" : "red" }}>{invariants.valid ? "✓ Valid" : "✗ Invalid"}</span>
-            </p>
-            <ul>
-              <li>Ledger Zero Sum: {invariants.ledgerZeroSum ? "✓" : "✗"}</li>
-              <li>Positions Zero Sum: {invariants.positionsZeroSum ? "✓" : "✗"}</li>
-              <li>No Negative Available: {invariants.noNegativeAvailable ? "✓" : "✗"}</li>
-              <li>Projections = Risk: {invariants.projectionsEqualRisk ? "✓" : "✗"}</li>
+            <p>Overall: <span className={`badge ${invariants.valid ? "badge-good" : "badge-bad"}`}>{invariants.valid ? "✓ Valid" : "✗ Invalid"}</span></p>
+            <ul className="invariant-list">
+              <li>Ledger Zero Sum: <span className={invariants.ledgerZeroSum ? "text-buy" : "text-sell"}>{invariants.ledgerZeroSum ? "✓" : "✗"}</span></li>
+              <li>Positions Zero Sum: <span className={invariants.positionsZeroSum ? "text-buy" : "text-sell"}>{invariants.positionsZeroSum ? "✓" : "✗"}</span></li>
+              <li>No Negative Available: <span className={invariants.noNegativeAvailable ? "text-buy" : "text-sell"}>{invariants.noNegativeAvailable ? "✓" : "✗"}</span></li>
+              <li>Projections = Risk: <span className={invariants.projectionsEqualRisk ? "text-buy" : "text-sell"}>{invariants.projectionsEqualRisk ? "✓" : "✗"}</span></li>
             </ul>
           </div>
         )}
-      </div>
-
-      <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ccc", borderRadius: 4 }}>
-        <h2>Recent Recovery Operations ({recovery.length})</h2>
+      </section>
+      <section className="panel">
+        <div className="panel-heading"><h2>Recent Recovery Operations ({recovery.length})</h2><span className="panel-note">Recorded recoveries</span></div>
         {recovery.length > 0 ? (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9em" }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid #666" }}>
-                <th style={{ textAlign: "left", padding: 8 }}>Symbol</th>
-                <th style={{ textAlign: "left", padding: 8 }}>Start Time</th>
-                <th style={{ textAlign: "left", padding: 8 }}>Duration (ms)</th>
-                <th style={{ textAlign: "left", padding: 8 }}>Snapshot Seq</th>
-                <th style={{ textAlign: "left", padding: 8 }}>Tail Length</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recovery.map((rec, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid #ddd" }}>
-                  <td style={{ padding: 8 }}>{rec.symbol}</td>
-                  <td style={{ padding: 8 }}>{new Date(rec.recoveryStartTs).toLocaleString()}</td>
-                  <td style={{ padding: 8 }}>{rec.durationMs}</td>
-                  <td style={{ padding: 8 }}>{rec.snapshotSeq}</td>
-                  <td style={{ padding: 8 }}>{rec.tailLength}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p>No recent recovery operations</p>
-        )}
-      </div>
+          <div className="table-scroll bounded-table"><table>
+            <thead><tr><th>Lease</th><th>Symbols</th><th>Start Time</th><th className="numeric">Duration (ms)</th><th className="numeric">Snapshot Seq</th><th className="numeric">Tail Length</th></tr></thead>
+            <tbody>{recovery.map((rec, i) => (
+              <tr key={i}><td>{rec.leaseId}</td><td>{rec.symbolsRecovered.join(", ")}</td><td>{new Date(rec.startedAt).toLocaleString()}</td><td className="numeric">{rec.durationMs}</td><td className="numeric">{rec.snapshotSeq}</td><td className="numeric">{rec.tailLength}</td></tr>
+            ))}</tbody>
+          </table></div>
+        ) : <div className="empty-state"><p>No recent recovery operations</p><small>Recovery history appears here when a component restarts.</small></div>}
+      </section>
 
       {isDemo && (
-        <>
-          <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ffa500", borderRadius: 4, background: "#fffacd" }}>
-            <h2>🧪 Simulator (Demo Only)</h2>
+        <div className="split-grid">
+          <section className="panel panel-muted">
+            <div className="panel-heading"><h2>Simulator</h2><span className="badge badge-neutral">Demo only</span></div>
             {simulator && (
-              <div>
-                <p>Status: {simulator.running ? "✓ Running" : "⊘ Stopped"}</p>
-                <p>
-                  Sent: {simulator.sent} | Backed Off: {simulator.backedOff}
-                </p>
-                <p>Symbols: {simulator.symbols?.join(", ") || "—"}</p>
-                <button onClick={handleSimulatorStart} disabled={simulator.running} style={{ marginRight: 10 }}>
-                  Start
-                </button>
-                <button onClick={handleSimulatorStop} disabled={!simulator.running}>
-                  Stop
-                </button>
+              <div className="form-stack">
+                <p>Status: <span className={`badge ${simulator.running ? "badge-good" : "badge-neutral"}`}>{simulator.running ? "✓ Running" : "⊘ Stopped"}</span></p>
+                <p className="mono">Sent: {simulator.sent ?? "—"} | Backed Off: {simulator.backedOff ?? "—"}</p>
+                <p className="muted">Symbols: {simulator.symbols?.join(", ") || "—"}</p>
+                <div className="form-actions">
+                  <button className="primary-button" onClick={handleSimulatorStart} disabled={simulator.running}>Start</button>
+                  <button onClick={handleSimulatorStop} disabled={!simulator.running}>Stop</button>
+                </div>
               </div>
             )}
-          </div>
-
-          <div style={{ marginBottom: 20, padding: 15, border: "1px solid #ffa500", borderRadius: 4, background: "#fffacd" }}>
-            <h2>⚡ Chaos Controls (Demo Only)</h2>
-            <p>Inject faults into shards for testing recovery:</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {shards.map((shard) => (
-                <div key={shard.leaseId} style={{ padding: 10, border: "1px solid #ddd" }}>
-                  <p style={{ margin: "0 0 10px 0", fontWeight: "bold" }}>{shard.leaseId}</p>
-                  <button
-                    onClick={async () => {
-                      const res = await fetch(`/api/v1/admin/demo/chaos/kill/${shard.leaseId.replace("shard-", "")}`, {
-                        method: "POST",
-                        headers: { Authorization: `Bearer ${token}` },
+          </section>
+          {chaosEnabled && (
+            <section className="panel panel-warning">
+              <div className="panel-heading"><h2>Chaos Controls</h2><span className="badge badge-warn">Demo only</span></div>
+              <p className="panel-subtitle">Inject faults into shards for testing recovery.</p>
+              <div className="chaos-controls">{shards.filter(shard => (shard.ownedSymbols?.length ?? 0) > 0).map((shard) => (
+                <div key={shard.leaseId} className="chaos-shard">
+                  <strong className="mono">{shard.leaseId}</strong>
+                  <div className="form-actions">
+                    <button className="danger-button" onClick={async () => {
+                      const res = await fetch(`/api/v1/admin/demo/chaos/kill/${encodeURIComponent(shard.ownedSymbols?.[0] ?? "")}`, {
+                        method: "POST", headers: { Authorization: `Bearer ${token}` },
                       });
                       if (!res.ok) console.error("Kill command failed");
-                    }}
-                    style={{ marginRight: 5, padding: "5px 10px" }}
-                  >
-                    Kill
-                  </button>
-                  <button
-                    onClick={async () => {
-                      const res = await fetch(`/api/v1/admin/demo/chaos/freeze/${shard.leaseId.replace("shard-", "")}`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                    }}>Kill</button>
+                    <button onClick={async () => {
+                      const res = await fetch(`/api/v1/admin/demo/chaos/freeze/${encodeURIComponent(shard.ownedSymbols?.[0] ?? "")}`, {
+                        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                         body: JSON.stringify({ durationMs: 5000 }),
                       });
                       if (!res.ok) console.error("Freeze command failed");
-                    }}
-                    style={{ padding: "5px 10px" }}
-                  >
-                    Freeze 5s
-                  </button>
+                    }}>Freeze 5s</button>
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </>
+              ))}</div>
+            </section>
+          )}
+        </div>
       )}
     </div>
   );

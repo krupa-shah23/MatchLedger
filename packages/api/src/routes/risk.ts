@@ -80,7 +80,7 @@ export async function registerRiskRoutes(app: FastifyInstance, deps: RiskRoutesD
           symbol: r.symbol,
           reason: r.reason,
           required: r.required ? formatMinor(BigInt(r.required), 2) : null,
-          snapshot: r.snapshot_json ? JSON.parse(r.snapshot_json) : null,
+          snapshot: typeof r.snapshot_json === "string" ? JSON.parse(r.snapshot_json) : r.snapshot_json ?? null,
           ts: r.ts,
         }))
       );
@@ -101,6 +101,8 @@ export async function registerRiskRoutes(app: FastifyInstance, deps: RiskRoutesD
           incidentStartTs: b.incident_start_ts,
           stateSinceTs: b.state_since_ts,
           lastIgnored: b.detail_json?.lastIgnored,
+          restingOrders: Number(b.resting_orders ?? 0),
+          heldFunds: formatMinor(BigInt(b.held_funds ?? 0), 2),
         }))
       );
     }

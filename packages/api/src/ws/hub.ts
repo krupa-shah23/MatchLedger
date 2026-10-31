@@ -1,3 +1,4 @@
+import { getOrCreateCounter } from "@matchledger/telemetry";
 /**
  * Hub: independent of Fastify, routes messages to subscribers
  * Handles conflation for books, queuing for others, slow client policy
@@ -126,6 +127,7 @@ export class Hub {
 
         // Book topics: conflate
         if (topicSubs.isConflatable) {
+          getOrCreateCounter("ml_websocket_conflations_total").inc();
           state.staleTopics.add(topic);
           // Mark as stale, will send one conflated snapshot on drain
           continue;
@@ -134,6 +136,7 @@ export class Hub {
           const queue = state.bufferedMessages.get(topic) || [];
           if (queue.length >= this.MAX_QUEUE) {
             // Over limit: close connection
+            getOrCreateCounter("ml_websocket_slow_closes_total").inc();
             state.socket.close(1013, "too many buffered messages");
             this.connections.delete(state.socket);
             state.subscriptions.clear();

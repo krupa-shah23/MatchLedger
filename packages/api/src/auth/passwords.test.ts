@@ -44,7 +44,7 @@ describe("AU: Authentication - Passwords", () => {
     expect(() => Buffer.from(parts[5]!, "base64")).not.toThrow();
   });
 
-  it("AU6: Dummy hash fails verification (timing-safe unknown user)", async () => {
+  it("AU6: Fallback hash fails verification (timing-safe unknown user)", async () => {
     const dummyHash = getDummyHash();
     const result = await verifyPassword("any-password", dummyHash);
     expect(result).toBe(false);

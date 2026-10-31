@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { startMetricsServer } from "./src/server.js";
 
 describe("Telemetry and metrics", () => {
   // TL1: Metrics have ml_ prefix and match catalogue
@@ -54,15 +55,20 @@ describe("Telemetry and metrics", () => {
   });
 
   // TL3: Metrics server serves /metrics and /healthz only
-  it("TL3: Metrics server 404 on other paths", () => {
-    const validPaths = ["/metrics", "/healthz"];
-    const handleRequest = (path: string) => {
-      return validPaths.includes(path) ? 200 : 404;
-    };
-
-    expect(handleRequest("/metrics")).toBe(200);
-    expect(handleRequest("/healthz")).toBe(200);
-    expect(handleRequest("/other")).toBe(404);
+  it("TL3: Metrics server 404 on other paths", async () => {
+    const server = await startMetricsServer({ port: 0 });
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("TCP listener required");
+    const base = `http://127.0.0.1:${address.port}`;
+    try {
+      expect((await fetch(`${base}/metrics`)).status).toBe(200);
+      expect((await fetch(`${base}/healthz`)).status).toBe(200);
+      for (const path of ["/status", "/other", "/"]) {
+        expect((await fetch(`${base}${path}`)).status).toBe(404);
+      }
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve()));
+    }
   });
 
   // TL3: Metrics not on public port

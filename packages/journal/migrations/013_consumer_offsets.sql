@@ -1,4 +1,4 @@
-CREATE TABLE consumer_offsets (
+CREATE TABLE IF NOT EXISTS consumer_offsets (
   lease_id text NOT NULL,
   topic text NOT NULL,
   partition integer NOT NULL,

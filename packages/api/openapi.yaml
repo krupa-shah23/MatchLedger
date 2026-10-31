@@ -654,8 +654,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [reason]
+              required: [status, reason]
               properties:
+                status:
+                  type: string
+                  enum: [INVESTIGATING]
                 reason:
                   type: string
       responses:

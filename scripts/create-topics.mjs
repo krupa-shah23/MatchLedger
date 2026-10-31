@@ -21,6 +21,7 @@ const expectedTopics = [
   { topic: "orders.accepted", numPartitions: 4, replicationFactor: 1 },
   { topic: "control.commands", numPartitions: 4, replicationFactor: 1 },
   { topic: "engine.events", numPartitions: 4, replicationFactor: 1 },
+  { topic: "dlq.orders.accepted", numPartitions: 4, replicationFactor: 1 },
 ];
 
 async function getExistingTopics() {

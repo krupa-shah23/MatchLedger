@@ -3,17 +3,20 @@
  * server's ENDPOINT_ROLES is what actually refuses a write either way.
  */
 import React from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { PAGE_ROLES } from "@matchledger/common";
 import { useAuth } from "./auth/AuthProvider.js";
 import { RequireRole, NotAvailable } from "./auth/guards.js";
 import { LoginPage } from "./pages/Login.js";
+import { SignUpPage } from "./pages/SignUp.js";
 import { TradingPage } from "./pages/Trading.js";
 import { PortfolioPage } from "./pages/Portfolio.js";
 import { OrderDetailPage } from "./pages/OrderDetail.js";
 import { RiskPage } from "./pages/Risk.js";
 import { ReconPage } from "./pages/Recon.js";
 import { SystemPage } from "./pages/System.js";
+import { LandingPage } from "./pages/Landing.js";
+import { Brand, Icon, type IconName } from "./components/Ui.js";
 
 const LANDING_PAGE: Record<string, string> = {
   TRADER: "/trade",
@@ -22,64 +25,61 @@ const LANDING_PAGE: Record<string, string> = {
   ADMIN: "/system",
 };
 
+const WORKSPACE_LINKS: Array<{ to: string; label: string; icon: IconName }> = [
+  { to: "/trade", label: "Trading", icon: "trade" },
+  { to: "/portfolio", label: "Portfolio", icon: "portfolio" },
+  { to: "/risk", label: "Risk", icon: "risk" },
+  { to: "/ops/recon", label: "Recon", icon: "recon" },
+  { to: "/system", label: "System", icon: "system" },
+];
+
 function Nav() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   if (!user) return null;
-
-  const links: Array<{ to: string; label: string }> = [
-    { to: "/trade", label: "Trading" },
-    { to: "/portfolio", label: "Portfolio" },
-    { to: "/risk", label: "Risk" },
-    { to: "/ops/recon", label: "Recon" },
-    { to: "/system", label: "System" },
-  ];
-
   return (
-    <nav style={{ display: "flex", justifyContent: "space-between", padding: 10, borderBottom: "1px solid #ddd" }}>
-      <div style={{ display: "flex", gap: 15 }}>
-        <strong>MatchLedger</strong>
-        {links
-          .filter((l) => PAGE_ROLES[l.to]?.visible.includes(user.role))
-          .map((l) => (
-            <a key={l.to} href={l.to} onClick={(e) => { e.preventDefault(); navigate(l.to); }}>
-              {l.label}
-            </a>
-          ))}
+    <aside className="sidebar">
+      <a className="brand-link" href={LANDING_PAGE[user.role]} aria-label="MatchLedger home"><Brand /></a>
+      <p className="nav-label">WORKSPACE</p>
+      <nav className="workspace-nav" aria-label="Main navigation">
+        {WORKSPACE_LINKS.filter(link => PAGE_ROLES[link.to]?.visible.includes(user.role)).map(link => (
+          <NavLink key={link.to} to={link.to} aria-label={link.label} title={link.label} className={({ isActive }) => `nav-link${isActive ? " is-active" : ""}`}>
+            <Icon name={link.icon} /><span>{link.label}</span><span className="nav-active-dot" />
+          </NavLink>
+        ))}
+      </nav>
+      <div className="sidebar-footer">
+        <div className="user-card"><span className="user-avatar">{user.username.slice(0, 2).toUpperCase()}</span><div><strong>{user.username}</strong><span>{user.role.toLowerCase()} workspace</span></div></div>
+        <button className="logout-button" onClick={() => { logout(); navigate("/login"); }}><Icon name="logout" />Logout</button>
       </div>
-      <div>
-        <span style={{ marginRight: 10 }}>
-          {user.username} ({user.role})
-        </span>
-        <button
-          onClick={() => {
-            logout();
-            navigate("/login");
-          }}
-        >
-          Logout
-        </button>
-      </div>
-    </nav>
+    </aside>
   );
 }
 
 export function AppRoutes() {
   const { user } = useAuth();
+  const location = useLocation();
+  const activeLabel = WORKSPACE_LINKS.find(link => location.pathname.startsWith(link.to))?.label ?? "Order detail";
   const demoMode = import.meta.env.VITE_PROFILE === "demo";
 
   if (!user) {
     return (
       <Routes>
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage demoMode={demoMode} />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="/signup" element={<SignUpPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
   }
 
   return (
-    <>
+    <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to content</a>
       <Nav />
+      <div className="app-workspace">
+        <header className="topbar"><span className="breadcrumb">Workspace <span>/</span> <strong>{activeLabel}</strong></span><div className="topbar-meta">{demoMode && <span className="badge badge-neutral">Demo environment</span>}<span className="role-label"><Icon name="lock" />{user.role}</span></div></header>
+        <main id="main-content" className="page-stage" key={location.pathname}>
       <Routes>
         <Route path="/" element={<Navigate to={LANDING_PAGE[user.role] ?? "/trade"} replace />} />
         <Route path="/login" element={<Navigate to={LANDING_PAGE[user.role] ?? "/trade"} replace />} />
@@ -133,6 +133,8 @@ export function AppRoutes() {
         />
         <Route path="*" element={<NotAvailable role={user.role} />} />
       </Routes>
-    </>
+        </main>
+      </div>
+    </div>
   );
 }

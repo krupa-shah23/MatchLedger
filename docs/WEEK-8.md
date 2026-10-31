@@ -1,5 +1,7 @@
 # Week 8: Durability Across the Whole Pipeline
 
+> Historical specification and completion notes. The recorded 122 Week 8 tests and 317 overall passes are claims, not archived raw output. The overall count was reproduced at commit `a54ace6`; the Week 8-specific subtotal remains unresolved because the retained documents disagree. See `README.md`.
+
 Single-partition durability proven. System survives crashes between stages, recovers to identical final state (books, reservations, balances, ledger, events).
 
 ## Deliverables

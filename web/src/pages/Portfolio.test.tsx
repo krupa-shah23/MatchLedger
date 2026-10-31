@@ -32,18 +32,18 @@ describe("UP: Portfolio Page", () => {
       vi.fn(async (url: string) => {
         if (url.includes("/balances")) {
           return new Response(
-            JSON.stringify({ total: "500000000", held: "150000000", available: "350000000", heldBy: { AAPL: "Open order" } }),
+            JSON.stringify({ cash: "5000000.00", heldCash: "1500000.00", available: "3500000.00", heldBy: { AAPL: "Open order" } }),
             { status: 200 }
           );
         }
         if (url.includes("/positions")) {
           return new Response(
-            JSON.stringify([{ symbol: "AAPL", quantity: "500", avgCost: "150000000", mark: "155000000", unrealizedPnL: "2500000", realizedPnL: "500000" }]),
+            JSON.stringify([{ symbol: "AAPL", quantity: "500", costBasis: "1500000.00", mark: "155000000", unrealizedPnL: "2500000", realizedPnl: "5000.00" }]),
             { status: 200 }
           );
         }
         if (url.includes("/reservations")) {
-          return new Response(JSON.stringify([{ id: "res-1", symbol: "NVDA", side: "BUY", quantity: "50", estimate: "75000000" }]), { status: 200 });
+          return new Response(JSON.stringify([{ orderId: "res-1", symbol: "NVDA", asset: "CASH", amountRemaining: "750000.00" }]), { status: 200 });
         }
         return new Response(JSON.stringify({}), { status: 200 });
       })
@@ -61,10 +61,10 @@ describe("UP: Portfolio Page", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
-        if (url.includes("/balances")) return new Response(JSON.stringify({ total: "0", held: "0", available: "0" }), { status: 200 });
+        if (url.includes("/balances")) return new Response(JSON.stringify({ cash: "0.00", heldCash: "0.00", available: "0.00" }), { status: 200 });
         if (url.includes("/positions")) {
           return new Response(
-            JSON.stringify([{ symbol: "TSLA", quantity: "100", avgCost: "200000000", mark: null, unrealizedPnL: null, realizedPnL: "-1000000" }]),
+            JSON.stringify([{ symbol: "TSLA", quantity: "100", costBasis: "2000000.00", mark: null, unrealizedPnL: null, realizedPnl: "-10000.00" }]),
             { status: 200 }
           );
         }
@@ -97,7 +97,7 @@ describe("UP: Portfolio Page", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
-        if (url.includes("/balances")) return new Response(JSON.stringify({ total: "0", held: "0", available: "0" }), { status: 200 });
+        if (url.includes("/balances")) return new Response(JSON.stringify({ cash: "0.00", heldCash: "0.00", available: "0.00" }), { status: 200 });
         return new Response(JSON.stringify([]), { status: 200 });
       })
     );
@@ -106,6 +106,6 @@ describe("UP: Portfolio Page", () => {
 
     await waitFor(() => expect(screen.getByText("Cash")).toBeInTheDocument());
     expect(screen.getByText("No positions")).toBeInTheDocument();
-    expect(screen.getAllByText(/\$0\.00/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/₹0\.00/).length).toBeGreaterThan(0);
   });
 });

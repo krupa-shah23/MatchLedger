@@ -10,9 +10,13 @@
     "@matchledger/engine-core": "file:../engine-core",
     "@matchledger/risk": "file:../risk",
     "@matchledger/shard": "file:../shard",
-    "tinybench": "6.2.1"
+    "tinybench": "6.2.1",
+    "zod": "4.6.7"
   },
   "scripts": {
-    "bench": "node dist/book.bench.js"
+    "bench": "node dist/book.bench.js",
+    "env": "node dist/env-block.js",
+    "render:tables": "node dist/render-tables.js",
+    "render:charts": "node dist/render-charts.js"
   }
 }
