@@ -34,7 +34,7 @@ export interface BreakerSnapshot {
 
 
 export function TradingPage({
-  wsUrl = "/ws",
+  wsUrl = import.meta.env.VITE_WS_URL ?? "/ws",
   apiBaseUrl = "/api/v1",
   createSocket,
 }: {
