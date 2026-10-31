@@ -13,6 +13,7 @@ packages/*/src/**/*.js
 packages/*/test/**/*.d.ts
 packages/*/test/**/*.js
 web/src/**/*.d.ts
+!web/src/vite-env.d.ts
 web/src/**/*.js
 web/test/**/*.d.ts
 web/test/**/*.js
