@@ -1,4 +1,6 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/v1/:path*", "destination": "https://matchledger.onrender.com/:path*" },
     { "source": "/ws", "destination": "https://matchledger.onrender.com/ws" }
