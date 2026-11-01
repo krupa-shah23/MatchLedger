@@ -136,6 +136,15 @@ components:
           description: Decimal string, available for new reservations
 
 paths:
+  /healthz:
+    get:
+      summary: Public database-backed readiness after startup recovery
+      security: []
+      responses:
+        "200":
+          description: API initialized and database reachable
+        "503":
+          description: Database unavailable
   /orders:
     post:
       tags: [Orders]

@@ -16,3 +16,12 @@ describe("API startup configuration", () => {
     expect(() => loadStartupConfig({ INSTRUMENTS_JSON: '[{"symbol":"ABC"}]' })).toThrow();
   });
 });
+
+it("rejects unbounded or invalid startup and database deadlines", () => {
+  for (const name of ["DB_CONNECT_TIMEOUT_MS", "DB_STATEMENT_TIMEOUT_MS", "API_STARTUP_TIMEOUT_MS"]) {
+    for (const value of ["0", "-1", "NaN", "1.5"]) {
+      expect(() => loadStartupConfig({ [name]: value })).toThrow();
+    }
+    expect(loadStartupConfig({ [name]: "15000" })[name as "DB_CONNECT_TIMEOUT_MS"]).toBe(15000);
+  }
+});

@@ -39,7 +39,7 @@ export async function registerRequestContextPlugin(
   app.addHook("onRequest", async (request: FastifyRequest, reply: FastifyReply) => {
     // Skip auth routes
     const pathname = request.url.split("?")[0];
-    if (pathname === "/ws" || pathname === "/auth/login" || pathname === "/auth/refresh") {
+    if (pathname === "/healthz" || pathname === "/ws" || pathname === "/auth/login" || pathname === "/auth/refresh") {
       return;
     }
 

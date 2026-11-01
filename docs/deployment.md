@@ -71,3 +71,23 @@ that rollback restores the previous image ID and invokes the rollback smoke
 command. It substitutes local Node images and a test-only smoke wrapper; it
 does not exercise an actual external deployment or the live smoke checks. It
 does not modify or start the production stack.
+
+## Render: single-instance demo API
+
+Use the repository root as the Render service root. Build with `npm ci --include=dev && npm run build` and start with `npm run api:start`. The server entry point is `packages/api/dist/main.js`; `packages/api/dist/index.js` exports an app factory and does not start a listener.
+
+Configure the service environment:
+
+- `DATABASE_URL`: the connection URL of your reachable Postgres database (prefer Render's internal database URL for a service in the same region).
+- `JWT_SECRET`: your existing strong signing secret. Never put it in Vercel's `VITE_*` environment.
+- `PROFILE=demo`: seeds demo accounts and enables the simulator.
+- `TRANSPORT=inproc`: runs the matching component in this API process. Kafka mode requires separately running Kafka and shard services.
+- `METRICS_HOST=127.0.0.1`: keeps metrics private to the service.
+
+Keep Render's provided `PORT`; the API listens on `0.0.0.0`. Set Render's Health Check Path to `/healthz`. It is available after recovery and projection catch-up, returns ready only when a database query succeeds, and exposes no account data. `/system/health` requires authentication and is unsuitable as Render's unauthenticated health check.
+
+The API now logs startup phases: database connection, exclusive runtime ownership, migrations, journal recovery, demo account seed, projection catch-up, routes, and listeners. `DB_CONNECT_TIMEOUT_MS` limits pool acquisition/connection waits; `DB_STATEMENT_TIMEOUT_MS` limits database statement execution; `API_STARTUP_TIMEOUT_MS` bounds CLI startup as a whole. Each is a validated positive integer with a default in `packages/api/src/startup-config.ts`. A timeout exits with an error instead of leaving the deployment indefinitely starting. Large journal recoveries may need a larger startup deadline.
+
+Run exactly one API against each database. The advisory lock deliberately refuses a second owner; a rolling deployment overlapping the old API can therefore fail. Stop the old service before starting its replacement if logs report another owner. Do not bypass that lock or erase the journal to deploy.
+
+After deployment, request `/healthz` on the actual Render service URL and confirm JSON with `status: ready`, then verify demo login and WebSocket authentication. Vercel's `/api/v1` rewrite and `VITE_WS_URL` must use that same verified service hostname. Local checks cannot certify a remote database URL or Render service state.

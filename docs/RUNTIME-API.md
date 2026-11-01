@@ -210,3 +210,7 @@ All use `payload_json` paths (real, queryable):
 ## Verification limits — 2026-10-31
 
 Current results and the assertion-aware ID/skip inventories are linked from PROGRESS.md. Projector lag is recorded in journal sequence units as `ml_projector_lag` in both the API helper and telemetry catalogue; it is not a duration metric. `VITE_POLL_INTERVAL_MS` is validated by the browser config module and defaults to 5000 ms. Hand-authorship of `stream-state.ts` cannot be certified: the reducer was AI-written during this conversation.
+
+### Hosting readiness and bounded API startup
+
+`GET /healthz` is public and database-backed on the API listener after startup recovery and projector catch-up. It returns `{ status: "ready" }` or HTTP 503 `{ status: "unavailable" }`, with no-store caching. Business endpoints retain authentication. `createPool` accepts optional `connectionTimeoutMillis` and `statementTimeoutMs`; API startup supplies validated `DB_CONNECT_TIMEOUT_MS` and `DB_STATEMENT_TIMEOUT_MS` from startup config. The CLI uses `API_STARTUP_TIMEOUT_MS` to exit a stalled startup and logs the last startup phase. Failed initial connection attempts now close the pool; the ownership connection is destroyed during cleanup to release its session advisory lock.

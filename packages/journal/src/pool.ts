@@ -2,8 +2,8 @@ import { Pool } from "pg";
 
 const INT8_OID = 20;
 
-export function createPool(config: { connectionString: string }): Pool {
-  const pool = new Pool({ connectionString: config.connectionString });
+export function createPool(config: { connectionString: string; connectionTimeoutMillis?: number; statementTimeoutMs?: number }): Pool {
+  const pool = new Pool({ connectionString: config.connectionString, connectionTimeoutMillis: config.connectionTimeoutMillis, statement_timeout: config.statementTimeoutMs });
 
   pool.on("connect", (client) => {
     client.setTypeParser(INT8_OID, (value) => {

@@ -6,6 +6,9 @@ const instrument = z.object({ symbol: z.string().regex(/^[A-Z][A-Z0-9_-]{0,31}$/
 const defaults = ["ACME", "BOBO"].map(symbol => ({ symbol, tickSize: "1", lotSize: "1", maxQuantity: "1000000", maxPrice: "1000000" }));
 export function loadStartupConfig(env: NodeJS.ProcessEnv = process.env) {
   const settings = z.object({
+    DB_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
+    DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+    API_STARTUP_TIMEOUT_MS: z.coerce.number().int().positive().default(180000),
     TRANSPORT: z.enum(["inproc", "kafka"]).default("inproc"),
     KAFKA_BROKERS: z.string().min(1).default("localhost:29092"),
     SHARD_PARTITIONS: z.coerce.number().int().positive().default(4),

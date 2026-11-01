@@ -420,3 +420,16 @@ Added [scripts/smoke.mjs](scripts/smoke.mjs). Against the local API it verified 
 ## Demo Trading page activity — 2026-11-01
 
 - Demo-profile API startup now idempotently ensures demo users/accounts/funds and starts the existing backend simulator, so Trading has live-generated activity without manually opening System first. The simulator resolves the actual seeded simulator user ID, and its model centers generated prices on the configured risk reference; this keeps limit orders inside the default risk band instead of basing them on half of a much larger instrument max price. Orders still use the validated `/orders` path; no fake rows were added to the web client. Build and lint passed; full root tests passed (610 passed, 167 skipped). A live backend restart/deployment is still required; hosted order-book/trade output has not yet been verified.
+
+## Backend hosting readiness — 2026-11-01
+
+- Added public database-backed `/healthz` readiness, keeping business endpoints authenticated (`packages/api/src/app.ts`, `packages/api/src/plugins/request-context.ts`, `packages/api/src/health.test.ts`). Documented it in OpenAPI and `docs/RUNTIME-API.md`.
+- Added validated database connection/statement deadlines and an overall CLI startup deadline, startup-stage logging, and pool cleanup when the initial connection fails (`packages/api/src/main.ts`, `packages/api/src/startup-config.ts`, `packages/journal/src/pool.ts`). Render build/start/environment/health-check instructions are in `docs/deployment.md`.
+- Validation: `npm run build` and `npm run lint` passed. `npm test -- --maxWorkers=2` passed: 103 test files, 612 tests; 32 files/167 tests skipped, no failed tests (`/tmp/ml-backend-tests-final.log`). An earlier concurrently run suite exceeded the existing D1 property-test timeout; the completed bounded-worker run passed without changing that test.
+- Live local verification used a disposable Postgres container: clean startup and restart, public readiness HTTP 200, seeded demo login, authenticated WebSocket book snapshot, generated bids/asks and a completed trade passed (`/tmp/ml-backend-smoke.mjs`). A nonresponding database connection rejected within the configured timeout and released the pool (`/tmp/ml-db-timeout.mjs`). The disposable container was removed; user databases were not reset.
+- Remote deployment remains UNVERIFIED: requests to the configured Render backend timed out, and its service logs/configuration are unavailable here. These local checks do not establish the remote timeout's root cause. The user will deploy; confirm the actual backend hostname, readiness, login and WebSocket after deployment.
+
+## Localhost service restart — 2026-11-01
+
+- Restarted Vite on port 5173, the existing local Postgres container, and `npm run api:start`; no database reset or application-code change. `curl http://localhost:5173/login` returned HTTP 200, and `/api/v1/healthz` through Vite returned `{"status":"ready"}`. API logs confirm demo simulator startup.
+- Build and lint passed. The restricted-sandbox test run failed with local socket permission errors; rerunning `npm test -- --maxWorkers=2` with local network permission passed 612 tests, with 167 skipped and no failures (`/tmp/ml-local-restart-tests-network.log`).

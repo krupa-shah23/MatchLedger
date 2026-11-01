@@ -100,6 +100,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return body;
   } });
 
+  // Readiness is exposed only after recovery and projection catch-up in startApi.
+  app.get("/healthz", async (_request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    try {
+      await deps.executor.query("SELECT 1", []);
+      return reply.code(200).send({ status: "ready" });
+    } catch {
+      return reply.code(503).send({ status: "unavailable" });
+    }
+  });
+
   // Register HTTP routes with dependencies
   await registerAuthRoutes(app, { executor: deps.executor, config: deps.config });
   await registerOrderRoutes(app, { executor: deps.executor, facade: deps.facade });
