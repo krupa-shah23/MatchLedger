@@ -464,3 +464,8 @@ Added [scripts/smoke.mjs](scripts/smoke.mjs). Against the local API it verified 
 - Build/lint passed. Root tests: 619 passed, 167 skipped, zero failed (`/tmp/ml-ownership-tests.log`). Added tests for delayed acquisition, timeout and connection failure.
 - Real PostgreSQL probe verified replacement waits until release, acquires ownership, excludes a third writer, and times out under contention (`/tmp/ml-ownership-pg.mjs`). Probe database removed afterwards. Initial maintenance-database probe found an existing lock and exited without disturbing its owner; verification used a disposable database instead.
 - Hosted service is not verified/reconfigured here. Render keeps old instances alive until replacement readiness; bounded waiting cannot break that cycle. User must stop/suspend the existing owner once before deploying the update. No deployment or git write commands were run.
+
+## New Render API hostname — 2026-11-01
+
+- Updated root and web Vercel API and WebSocket rewrite destinations to `matchledger-1.onrender.com`, matching the user's reported live service. Vercel's `VITE_WS_URL` must separately be set to the new `wss://matchledger-1.onrender.com/ws` before redeploying the frontend.
+- Build and lint passed; root tests 619 passed, 167 skipped, zero failed (`/tmp/ml-backend-url-tests.log`). Hosted API readiness and browser login remain unverified from this environment; the user's Render logs report startup succeeded.
