@@ -1,0 +1,9 @@
+# Render free services cannot receive private network scrapes. Run Prometheus
+# beside the API and expose only the API listener.
+FROM prom/prometheus:v3.11.2 AS prometheus
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
+WORKDIR /app
+COPY --from=prometheus /bin/prometheus /usr/local/bin/prometheus
+COPY . .
+RUN npm ci --prefer-offline && npm run build
+CMD ["node", "deploy/render-monitoring.mjs"]
