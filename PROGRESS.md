@@ -469,3 +469,9 @@ Added [scripts/smoke.mjs](scripts/smoke.mjs). Against the local API it verified 
 
 - Updated root and web Vercel API and WebSocket rewrite destinations to `matchledger-1.onrender.com`, matching the user's reported live service. Vercel's `VITE_WS_URL` must separately be set to the new `wss://matchledger-1.onrender.com/ws` before redeploying the frontend.
 - Build and lint passed; root tests 619 passed, 167 skipped, zero failed (`/tmp/ml-backend-url-tests.log`). Hosted API readiness and browser login remain unverified from this environment; the user's Render logs report startup succeeded.
+
+## Reduce recovery database round trips — 2026-11-01
+
+- Replaced the per-accepted-order matching-command lookup during recovery with one ordered SQL anti-join; added migration 022 for a matching-command order-ID index. Missing orders continue through the normal enqueue path. Journal records are preserved (`packages/runtime/src/live-runtime.ts`, `packages/journal/migrations/022_recovery_order_lookup.sql`).
+- Compared old and new decisions on 100 local PostgreSQL accepted events (`/tmp/ml-recovery-query-check.mjs`); a separate rolled-back temporary-table check verified already-matched, missing, ordering and different-symbol cases (`/tmp/ml-recovery-cases.mjs`). Build/lint passed; root tests 619 passed, 167 skipped, zero failed (`/tmp/ml-recovery-speed-tests.log`).
+- Remote recovery timing and final startup remain unverified; this change removes one observed N+1 query pattern but other recovery work may still be slow on Render's free instance. Deployment and database migration must be tested on Render.

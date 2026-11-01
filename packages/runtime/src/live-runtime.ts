@@ -145,12 +145,20 @@ export async function createLiveRuntime(options: {
     await outputs([output]);
   }, fail);
   // Redeliver accepted orders whose matching command was not journaled at crash.
-  const accepted = await sql.query("SELECT payload_json FROM journal WHERE stream_id='risk-0' AND record_type='EVENT' AND payload_json->>'type'='OrderAccepted' ORDER BY seq,idx", []);
+  const accepted = await sql.query(`SELECT risk.payload_json FROM journal risk
+    WHERE risk.stream_id='risk-0' AND risk.record_type='EVENT'
+      AND risk.payload_json->>'type'='OrderAccepted'
+      AND NOT EXISTS (
+        SELECT 1 FROM journal matching
+        WHERE matching.stream_id = risk.payload_json->>'symbol'
+          AND matching.record_type = 'COMMAND'
+          AND matching.payload_json->>'orderId' = risk.payload_json->>'orderId'
+      )
+    ORDER BY risk.seq,risk.idx`, []);
   for (const row of accepted.rows) {
     const event = deserializeRiskEvent(JSON.stringify(row.payload_json));
     if (event.type !== "OrderAccepted") continue;
-    const existing = await sql.query("SELECT 1 FROM journal WHERE stream_id=$1 AND record_type='COMMAND' AND payload_json->>'orderId'=$2", [event.symbol, event.orderId]);
-    if (!existing.rows.length) await enqueue(event.symbol, { ...acceptedToPlaceOrder(event), orderType: event.timeInForce === "GTC" ? "LIMIT" : "IOC" });
+    await enqueue(event.symbol, { ...acceptedToPlaceOrder(event), orderType: event.timeInForce === "GTC" ? "LIMIT" : "IOC" });
   }
   heartbeat = setInterval(() => void matching?.heartbeat().catch(fail), options.heartbeatMs);
   await sql.query("INSERT INTO recovery_log (lease_id,started_at,completed_at,duration_ms,snapshot_seq,tail_length,symbols_recovered) VALUES ('risk-0',$1,now(),$2,$3,$4,$5)",
