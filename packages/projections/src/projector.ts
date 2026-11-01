@@ -281,6 +281,7 @@ export class Projector {
                     record_type: row.record_type,
                     payload_json: row.payload_json,
                     symbol: row.symbol,
+                    ts: Number(row.ts),
                     seq: Number(row.seq),
                     idx: row.idx,
                   })

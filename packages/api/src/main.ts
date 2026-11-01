@@ -10,7 +10,6 @@ import type { Server } from "node:http";
 import { loadConfig } from "./config.js";
 import { loadStartupConfig } from "./startup-config.js";
 import { buildApp } from "./app.js";
-import { signToken } from "./auth/tokens.js";
 
 export async function startApi() {
   const config = loadConfig();
@@ -94,12 +93,6 @@ export async function startApi() {
     enterStage("server listeners");
     metrics = await startMetricsServer({ port: config.METRICS_PORT, host: startup.METRICS_HOST });
     await app.listen({ port: config.PORT, host: "0.0.0.0" });
-    if (config.PROFILE === "demo") {
-      const token = await signToken({ secret: new TextEncoder().encode(config.JWT_SECRET), ttlSeconds: config.JWT_TTL_SECONDS }, "demo-admin", "ADMIN");
-      const response = await app.inject({ method: "POST", url: "/system/simulator/start", headers: { authorization: `Bearer ${token}` } });
-      if (response.statusCode !== 200) throw new Error(`Demo simulator startup failed: HTTP ${response.statusCode}`);
-      console.log("Demo simulator started; generated orders use the normal validated submission path");
-    }
     console.log(`MatchLedger API ready at http://localhost:${config.PORT} (${startup.TRANSPORT}, ${config.PROFILE})`);
     return { app, close, graceMs: startup.SHUTDOWN_GRACE_MS };
   } catch (error) {

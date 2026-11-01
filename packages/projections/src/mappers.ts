@@ -48,7 +48,7 @@ export function mapRiskRecord(
             quantity: c.quantity,
             price: c.price ?? null,
             effective_price: null,
-            received_ts: record.seq,
+            received_ts: record.ts ?? record.seq,
             accepted: false,
             rested: false,
             filled_qty: 0n,
@@ -150,7 +150,7 @@ export function mapRiskRecord(
             reason: e.reason,
             required: e.required ?? null,
             snapshot_json: e.snapshot ? JSON.stringify(e.snapshot) : null,
-            ts: record.seq,
+            ts: record.ts ?? record.seq,
           },
         });
         break;
@@ -226,7 +226,7 @@ export function mapRiskRecord(
  * Exhaustive: all engine Command and Event types handled.
  */
 export function mapEngineRecord(
-  record: { record_type: string; payload_json: unknown; symbol: string; seq: number; idx?: number }
+  record: { record_type: string; payload_json: unknown; symbol: string; seq: number; ts?: number; idx?: number }
 ): Mutation[] {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const payload = record.payload_json as any;
@@ -279,7 +279,7 @@ export function mapEngineRecord(
             price: e.price,
             quantity: e.quantity,
             role: "TAKER",
-            ts: record.seq,
+            ts: record.ts ?? record.seq,
           },
         });
         mutations.push({
@@ -290,7 +290,7 @@ export function mapEngineRecord(
             price: e.price,
             quantity: e.quantity,
             role: "MAKER",
-            ts: record.seq,
+            ts: record.ts ?? record.seq,
           },
         });
         mutations.push({
@@ -303,7 +303,7 @@ export function mapEngineRecord(
             price: e.price,
             quantity: e.quantity,
             taker_side: e.takerSide,
-            ts: record.seq,
+            ts: record.ts ?? record.seq,
           },
         });
         for (const orderId of [e.takerOrderId, e.makerOrderId]) {
@@ -359,7 +359,7 @@ export function mapEngineRecord(
             reason: e.reason,
             required: null,
             snapshot_json: null,
-            ts: record.seq,
+            ts: record.ts ?? record.seq,
           },
         });
         break;

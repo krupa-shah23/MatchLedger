@@ -80,7 +80,7 @@ Configure the service environment:
 
 - `DATABASE_URL`: the connection URL of your reachable Postgres database (prefer Render's internal database URL for a service in the same region).
 - `JWT_SECRET`: your existing strong signing secret. Never put it in Vercel's `VITE_*` environment.
-- `PROFILE=demo`: seeds demo accounts and enables the simulator.
+- `PROFILE=demo`: seeds demo accounts. The simulator stays stopped until an administrator starts it from System.
 - `TRANSPORT=inproc`: runs the matching component in this API process. Kafka mode requires separately running Kafka and shard services.
 - `METRICS_HOST=127.0.0.1`: keeps metrics private to the service.
 

@@ -445,3 +445,15 @@ Added [scripts/smoke.mjs](scripts/smoke.mjs). Against the local API it verified 
 - Fixed matcher rejection projection: matcher events omit account ownership, so INSERT_REJECTION now resolves the account from the durable submitted order in orders_view before inserting into the NOT NULL account column. Unknown owners still fail explicitly rather than silently discarding rejections or assigning invented accounts. Journals and schema constraints are unchanged.
 - Added regressions for ORDER_REJECTED and OrderRejected event formats (`packages/projections/src/rejection-owner.test.ts`). Build and lint passed; root tests passed 614, skipped 167, failed zero (`/tmp/ml-rejection-tests.log`).
 - Verified against actual PostgreSQL constraints with temporary copies of journal/order/rejection/checkpoint tables inside a rolled-back transaction: owner retained, rejection persisted, checkpoint advanced, second projection processed zero records (`/tmp/ml-rejection-pg.mjs`). Hosted deployment must receive this change before retesting startup; remote recovery remains unverified.
+
+## Simulator runs only on request — 2026-11-01
+
+- Removed automatic simulator start from demo API startup at the user's request. Demo account seeding remains; existing admin System Start/Stop controls run the simulator explicitly. Updated deployment instructions.
+- Stopped the active local simulator through its authenticated endpoint: HTTP 200, running false. Existing orders and journal history are preserved. Hosted simulator must be stopped through System or restarted with the updated backend.
+- Build and lint passed; root tests: 614 passed, 167 skipped, zero failures (`/tmp/ml-manual-simulator-tests.log`).
+
+## Correct trade timestamps — 2026-11-01
+
+- Engine projection now receives journal timestamps and stores them on trade/fill/rejection rows instead of sequence numbers. Added a regression asserting trade and both fill timestamps equal journal time.
+- Migration 021 repairs historical trade/fill/order-received times from the journal. Applied locally; latest trade timestamp verified as 2026-11-01T10:27:16.515Z. Journal contents are unchanged. Hosted repair runs on next backend deployment.
+- Build/lint passed; root tests 615 passed, 167 skipped, zero failed (`/tmp/ml-time-tests.log`).
