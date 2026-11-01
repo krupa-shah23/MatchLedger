@@ -194,7 +194,18 @@ export class Projector {
           );
           break;
 
-        case "INSERT_REJECTION":
+        case "INSERT_REJECTION": {
+          // Matcher events carry an order ID, not its owner. Resolve the
+          // account from the durable submission already projected by risk.
+          let accountId = m.data.account_id;
+          if (!accountId) {
+            const order = await executor.query(
+              "SELECT account_id FROM orders_view WHERE order_id = $1",
+              [m.data.order_id],
+            );
+            accountId = order.rows[0]?.account_id;
+            if (!accountId) throw new Error(`Cannot project rejection: missing owner for order ${m.data.order_id}`);
+          }
           await executor.query(
             `INSERT INTO rejections_view (source, order_id, account_id, symbol, reason, required, snapshot_json, ts)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -202,7 +213,7 @@ export class Projector {
             [
               m.data.source,
               m.data.order_id,
-              m.data.account_id,
+              accountId,
               m.data.symbol,
               m.data.reason,
               m.data.required,
@@ -211,6 +222,7 @@ export class Projector {
             ]
           );
           break;
+        }
 
         case "UPDATE_BREAKER":
           const breakerUpdates = Object.entries(m.data)

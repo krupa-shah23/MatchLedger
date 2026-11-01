@@ -433,3 +433,15 @@ Added [scripts/smoke.mjs](scripts/smoke.mjs). Against the local API it verified 
 
 - Restarted Vite on port 5173, the existing local Postgres container, and `npm run api:start`; no database reset or application-code change. `curl http://localhost:5173/login` returned HTTP 200, and `/api/v1/healthz` through Vite returned `{"status":"ready"}`. API logs confirm demo simulator startup.
 - Build and lint passed. The restricted-sandbox test run failed with local socket permission errors; rerunning `npm test -- --maxWorkers=2` with local network permission passed 612 tests, with 167 skipped and no failures (`/tmp/ml-local-restart-tests-network.log`).
+
+## Local portfolio demo data — 2026-11-01
+
+- Populated `acc-demo-risk` with 100 ACME and 100 BOBO shares using the existing authenticated admin deposit endpoint and stable request IDs. Verified both positions through the account API. These are demo share deposits, not purchased lots, so zero acquisition cost is intentional.
+- Submitted demo-trader limit buys through `/orders`; verified a BOBO CASH reservation of 99.99 via `/accounts/acc-demo-trader/reservations`. Risk users can inspect that trading account with the existing Portfolio Account ID input. No role permissions, frontend fixture data, or hosted database were changed. Live evidence: `/tmp/ml-portfolio-populate.mjs`.
+- Validation: build and lint passed; root tests passed 612, skipped 167, failed zero (`/tmp/ml-portfolio-tests.log`).
+
+## Render rejection projection startup failure — 2026-11-01
+
+- Fixed matcher rejection projection: matcher events omit account ownership, so INSERT_REJECTION now resolves the account from the durable submitted order in orders_view before inserting into the NOT NULL account column. Unknown owners still fail explicitly rather than silently discarding rejections or assigning invented accounts. Journals and schema constraints are unchanged.
+- Added regressions for ORDER_REJECTED and OrderRejected event formats (`packages/projections/src/rejection-owner.test.ts`). Build and lint passed; root tests passed 614, skipped 167, failed zero (`/tmp/ml-rejection-tests.log`).
+- Verified against actual PostgreSQL constraints with temporary copies of journal/order/rejection/checkpoint tables inside a rolled-back transaction: owner retained, rejection persisted, checkpoint advanced, second projection processed zero records (`/tmp/ml-rejection-pg.mjs`). Hosted deployment must receive this change before retesting startup; remote recovery remains unverified.
