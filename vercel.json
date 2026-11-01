@@ -5,6 +5,7 @@
   "outputDirectory": "web/dist",
   "rewrites": [
     { "source": "/api/v1/:path*", "destination": "https://matchledger.onrender.com/:path*" },
-    { "source": "/ws", "destination": "https://matchledger.onrender.com/ws" }
+    { "source": "/ws", "destination": "https://matchledger.onrender.com/ws" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
