@@ -416,3 +416,7 @@ Added [scripts/smoke.mjs](scripts/smoke.mjs). Against the local API it verified 
 ## Vercel SPA route fallback — 2026-11-01
 
 - Confirmed `https://matchledgerr-web.vercel.app/` and its built JS/CSS assets return HTTP 200, while `/login` returns HTTP 404. Added a final SPA fallback rewrite to `/index.html` in both Vercel configs, after the API and WebSocket rewrites, so direct loads and refreshes of React Router routes resolve to the app. Build, lint, full root tests (609 passed, 167 skipped), and `npm run check:deployment` passed. The live domain needs a new deployment before this fix takes effect.
+
+## Demo Trading page activity — 2026-11-01
+
+- Demo-profile API startup now idempotently ensures demo users/accounts/funds and starts the existing backend simulator, so Trading has live-generated activity without manually opening System first. The simulator resolves the actual seeded simulator user ID, and its model centers generated prices on the configured risk reference; this keeps limit orders inside the default risk band instead of basing them on half of a much larger instrument max price. Orders still use the validated `/orders` path; no fake rows were added to the web client. Build and lint passed; full root tests passed (610 passed, 167 skipped). A live backend restart/deployment is still required; hosted order-book/trade output has not yet been verified.

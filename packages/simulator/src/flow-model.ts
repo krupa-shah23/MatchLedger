@@ -23,6 +23,7 @@ export interface FlowModelState {
   readonly spec: InstrumentSpec;
   readonly scenario: Scenario;
   readonly midPriceTicks: bigint;
+  readonly referencePriceTicks?: bigint;
   readonly makerOrders: Set<string>;
   readonly ticksSinceBreakerSweep: number;
   readonly brekerSweepInterval: number;
@@ -31,18 +32,23 @@ export interface FlowModelState {
 export function createFlowModel(
   seed: number,
   spec: InstrumentSpec,
-  scenario: Scenario = "steady"
+  scenario: Scenario = "steady",
+  referencePriceTicks?: bigint
 ): FlowModelState {
   if (spec.tickSize <= 0n || spec.lotSize <= 0n || spec.maxPrice < spec.tickSize || spec.maxQuantity < spec.lotSize) {
     throw new Error("Instrument must support at least one positive tick and lot");
   }
-  const midPriceTicks = spec.maxPrice / spec.tickSize / 2n;
+  if (referencePriceTicks !== undefined && referencePriceTicks <= 0n) {
+    throw new Error("referencePriceTicks must be positive");
+  }
+  const midPriceTicks = referencePriceTicks ?? spec.maxPrice / spec.tickSize / 2n;
 
   return {
     rng: mulberry32(seed),
     spec,
     scenario,
     midPriceTicks,
+    referencePriceTicks,
     makerOrders: new Set(),
     ticksSinceBreakerSweep: 0,
     brekerSweepInterval: 50, // Every 50 ticks
@@ -61,7 +67,7 @@ export function flowModelNextTick(
   const priceMove = BigInt(randomInt(state.rng, -3, 3));
   const maxPriceTicks = state.spec.maxPrice / state.spec.tickSize;
   const clampTicks = (value: bigint) => value < 1n ? 1n : value > maxPriceTicks ? maxPriceTicks : value;
-  const newMidPriceTicks = clampTicks(state.midPriceTicks + priceMove);
+  const newMidPriceTicks = clampTicks((state.referencePriceTicks ?? state.midPriceTicks) + priceMove);
 
   // Maker orders: place at mid ± offset
   const makerSide = randomChoice(state.rng, ["BUY", "SELL"] as const);

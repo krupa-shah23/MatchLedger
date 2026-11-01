@@ -65,6 +65,30 @@ describe("Simulator (SM1-SM6)", () => {
     }
   });
 
+  it("keeps generated demo prices around the configured risk reference", () => {
+    const spec: InstrumentSpec = {
+      symbol: "DEMO",
+      tickSize: 1n,
+      lotSize: 1n,
+      maxQuantity: 100000n,
+      maxPrice: 1_000_000n,
+    };
+    const referencePriceTicks = 10_000n;
+    const model = createFlowModel(42, spec, "steady", referencePriceTicks);
+
+    for (let tick = 0; tick < 100; tick++) {
+      const { orders, newState } = flowModelNextTick(model, tick, tick * 2);
+      for (const order of orders) {
+        if (order.type === "LIMIT" && order.price !== null) {
+          const priceTicks = order.price / spec.tickSize;
+          expect(priceTicks).toBeGreaterThanOrEqual(referencePriceTicks - 8n);
+          expect(priceTicks).toBeLessThanOrEqual(referencePriceTicks + 8n);
+        }
+      }
+      Object.assign(model, newState);
+    }
+  });
+
   it("SM3: FlowModel validity (fast-check) - all orders on tick grid and within bounds", () => {
     const spec: InstrumentSpec = {
       symbol: "MSFT",

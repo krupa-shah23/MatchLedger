@@ -38,6 +38,7 @@ export interface AppDeps {
   prometheusUrl?: string;
   simulatorRateCap?: number;
   simulatorTicksPerSec?: number;
+  simulatorUserId?: string;
   orderRateLimiter?: RateLimiter;
 }
 
@@ -126,7 +127,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     simulatorRateCap: deps.simulatorRateCap,
     simulatorTicksPerSec: deps.simulatorTicksPerSec,
     submitSimulatorOrder: async order => {
-      const token = await signToken({ secret: new TextEncoder().encode(deps.config.JWT_SECRET), ttlSeconds: deps.config.JWT_TTL_SECONDS }, "demo-simulator", "TRADER");
+      const token = await signToken({ secret: new TextEncoder().encode(deps.config.JWT_SECRET), ttlSeconds: deps.config.JWT_TTL_SECONDS }, deps.simulatorUserId ?? "demo-simulator", "TRADER");
       const response = await app.inject({ method: "POST", url: "/orders",
         headers: { authorization: `Bearer ${token}` }, payload: {
           clientOrderId: order.clientOrderId, symbol: order.symbol, side: order.side,

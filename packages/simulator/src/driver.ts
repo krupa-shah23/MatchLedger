@@ -50,6 +50,7 @@ export async function createSimulatorDriver(
     ratePerSec: number;
     ticksPerSec?: number;
     scenario: Scenario;
+    referencePriceTicks?: ReadonlyMap<string, bigint>;
     scheduler: Scheduler;
     submitPort: SubmitPort;
     instruments: Map<string, InstrumentSpec>;
@@ -68,7 +69,7 @@ export async function createSimulatorDriver(
       throw new Error(`No instrument spec for ${symbol}`);
     }
     const seed = config.seed + config.symbols.indexOf(symbol);
-    flowModels.set(symbol, createFlowModel(seed, spec, config.scenario));
+    flowModels.set(symbol, createFlowModel(seed, spec, config.scenario, config.referencePriceTicks?.get(symbol)));
     orderCounters.set(symbol, 0);
   }
 

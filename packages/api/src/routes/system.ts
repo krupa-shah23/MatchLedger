@@ -458,9 +458,12 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
         // Create new driver if not exists
         if (!state) {
           const instrumentMap = new Map<string, any>();
+          const referencePriceTicks = new Map<string, bigint>();
           if (deps.instruments) {
             for (const inst of deps.instruments) {
               instrumentMap.set(inst.symbol, inst.spec);
+              const reference = deps.riskConfig?.instruments.get(inst.symbol)?.referencePriceTicks;
+              if (reference !== undefined && reference > 0n) referencePriceTicks.set(inst.symbol, reference);
             }
           }
 
@@ -485,6 +488,7 @@ export async function registerSystemRoutes(app: FastifyInstance, deps: SystemRou
             scheduler,
             submitPort,
             instruments: instrumentMap,
+            referencePriceTicks,
           });
 
           deps.simulatorState!.current = state;
