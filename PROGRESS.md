@@ -481,3 +481,8 @@ Added [scripts/smoke.mjs](scripts/smoke.mjs). Against the local API it verified 
 - Added `deploy/Dockerfile.render` and `deploy/render-monitoring.mjs`: a pinned Prometheus binary and API run in one container, Prometheus and the metrics endpoint bind only to loopback, metrics storage uses ephemeral `/tmp` with two-hour retention, and the launcher shuts down its peer if a process fails. Documented Render deployment, memory limits and non-overlapping single-writer cutover in `docs/deployment.md`.
 - Build/lint passed; root tests 619 passed, 167 skipped, zero failed (`/tmp/ml-prometheus-tests.log`). `docker build -f deploy/Dockerfile.render -t matchledger-render-metrics-check .` passed. The built image was tested with a disposable PostgreSQL database: API readiness and admin login succeeded, Prometheus target was UP, and `/system/metrics/summary` returned `available: true` (`/tmp/ml-prom-image-smoke.mjs`). Disposable container and database were removed.
 - Hosted metrics and actual Render free-plan memory use remain unverified. Render deployment needs the committed Dockerfile, one active database owner and updated frontend hostname if a replacement service is created. Its ephemeral metrics history resets on restart.
+
+## Monitoring backend frontend routing — 2026-11-01
+
+- Updated Vercel API/WebSocket rewrite destinations to the user's newly deployed `matchledger-2.onrender.com`. Render logs supplied by the user report Prometheus started and the API became live after recovery; hosted scrape health and browser login remain unverified.
+- Build and lint passed; root tests 619 passed, 167 skipped, zero failed (`/tmp/ml-render2-tests.log`). Frontend deployment must include these changes and set `VITE_WS_URL` to the new host.
