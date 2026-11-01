@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readWebConfig } from "./config.js";
+import { isDemoProfile, readWebConfig } from "./config.js";
 import { deriveLifecycle, type Order } from "./lib/lifecycle.js";
 
 describe("validated pending hint configuration", () => {
@@ -21,4 +21,11 @@ describe("validated pending hint configuration", () => {
     expect(deriveLifecycle(order, 751, 750).text).toBe("pending");
     expect(deriveLifecycle(order, 750, 750).text).toBe("accepted");
   });
+});
+
+it("enables demo controls for a profile with whitespace but not for other profiles", () => {
+  expect(isDemoProfile("\tdemo")).toBe(true);
+  expect(isDemoProfile(" demo \n")).toBe(true);
+  expect(isDemoProfile("prod")).toBe(false);
+  expect(isDemoProfile(undefined)).toBe(false);
 });

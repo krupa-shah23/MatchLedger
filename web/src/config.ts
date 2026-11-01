@@ -17,3 +17,8 @@ export function readWebConfig(env: { VITE_PENDING_HINT_MS?: string; VITE_POLL_IN
 }
 
 export const webConfig = readWebConfig(import.meta.env);
+
+/** Ignore accidental whitespace in the deployment profile without enabling demo by default. */
+export function isDemoProfile(value: string | undefined): boolean {
+  return value?.trim() === "demo";
+}

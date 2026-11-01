@@ -486,3 +486,9 @@ Added [scripts/smoke.mjs](scripts/smoke.mjs). Against the local API it verified 
 
 - Updated Vercel API/WebSocket rewrite destinations to the user's newly deployed `matchledger-2.onrender.com`. Render logs supplied by the user report Prometheus started and the API became live after recovery; hosted scrape health and browser login remain unverified.
 - Build and lint passed; root tests 619 passed, 167 skipped, zero failed (`/tmp/ml-render2-tests.log`). Frontend deployment must include these changes and set `VITE_WS_URL` to the new host.
+
+## Demo profile whitespace in Vercel — 2026-11-01
+
+- Inspected the public `matchledger-26zc` frontend bundle and confirmed its `VITE_PROFILE` value contains a leading tab before `demo`. The login page required an exact match, hiding the demo-role controls. The built `VITE_WS_URL` targets the expected MatchLedger-2 backend.
+- Demo profile detection now trims surrounding whitespace while retaining disabled behavior for other or absent profiles (`web/src/config.ts`, `web/src/router.tsx`). Added regression coverage for a tab, trailing whitespace, production, and missing values (`web/src/config.test.ts`).
+- Build/lint passed; root tests: 619 passed, 167 skipped; web tests: 83 passed (`/tmp/ml-demo-profile-tests.log`, `/tmp/ml-demo-profile-web-tests.log`). The web production build also passed with a leading-tab profile. Hosted login and monitoring remain unverified until Vercel is redeployed and the backend is reachable.

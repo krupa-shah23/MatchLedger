@@ -17,6 +17,7 @@ import { ReconPage } from "./pages/Recon.js";
 import { SystemPage } from "./pages/System.js";
 import { LandingPage } from "./pages/Landing.js";
 import { Brand, Icon, type IconName } from "./components/Ui.js";
+import { isDemoProfile } from "./config.js";
 
 const LANDING_PAGE: Record<string, string> = {
   TRADER: "/trade",
@@ -60,7 +61,7 @@ export function AppRoutes() {
   const { user } = useAuth();
   const location = useLocation();
   const activeLabel = WORKSPACE_LINKS.find(link => location.pathname.startsWith(link.to))?.label ?? "Order detail";
-  const demoMode = import.meta.env.VITE_PROFILE === "demo";
+  const demoMode = isDemoProfile(import.meta.env.VITE_PROFILE);
 
   if (!user) {
     return (
