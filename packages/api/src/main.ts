@@ -10,6 +10,7 @@ import type { Server } from "node:http";
 import { loadConfig } from "./config.js";
 import { loadStartupConfig } from "./startup-config.js";
 import { buildApp } from "./app.js";
+import { acquireRuntimeOwnership } from "./runtime-ownership.js";
 
 export async function startApi() {
   const config = loadConfig();
@@ -47,7 +48,11 @@ export async function startApi() {
     enterStage("database connection");
     lock = await pool.connect();
     enterStage("exclusive runtime ownership");
-    if (!(await lock.query("SELECT pg_try_advisory_lock(713110) AS locked")).rows[0]?.locked) throw new Error("Another API/control plane already owns this database");
+    await acquireRuntimeOwnership(lock, {
+      timeoutMs: startup.API_OWNERSHIP_WAIT_MS,
+      retryMs: startup.API_OWNERSHIP_RETRY_MS,
+      onWaiting: () => console.log("API startup: waiting for previous database owner to stop; this instance has not started recovery or writes"),
+    });
     enterStage("database migrations");
     await runMigrations(pool, fileURLToPath(new URL("../../journal/migrations/", import.meta.url)));
     const sql = createSqlExecutor(pool);

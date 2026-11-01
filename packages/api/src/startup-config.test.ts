@@ -18,10 +18,14 @@ describe("API startup configuration", () => {
 });
 
 it("rejects unbounded or invalid startup and database deadlines", () => {
-  for (const name of ["DB_CONNECT_TIMEOUT_MS", "DB_STATEMENT_TIMEOUT_MS", "API_STARTUP_TIMEOUT_MS"]) {
+  for (const name of ["DB_CONNECT_TIMEOUT_MS", "DB_STATEMENT_TIMEOUT_MS", "API_STARTUP_TIMEOUT_MS", "API_OWNERSHIP_WAIT_MS", "API_OWNERSHIP_RETRY_MS"]) {
     for (const value of ["0", "-1", "NaN", "1.5"]) {
       expect(() => loadStartupConfig({ [name]: value })).toThrow();
     }
-    expect(loadStartupConfig({ [name]: "15000" })[name as "DB_CONNECT_TIMEOUT_MS"]).toBe(15000);
+    expect(loadStartupConfig({ API_OWNERSHIP_WAIT_MS: "10000", [name]: "15000" })[name as "DB_CONNECT_TIMEOUT_MS"]).toBe(15000);
   }
+});
+
+it("reserves startup time after the ownership wait", () => {
+  expect(() => loadStartupConfig({ API_OWNERSHIP_WAIT_MS: "180000" })).toThrow("must be below");
 });

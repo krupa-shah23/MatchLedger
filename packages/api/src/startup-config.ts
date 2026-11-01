@@ -9,6 +9,8 @@ export function loadStartupConfig(env: NodeJS.ProcessEnv = process.env) {
     DB_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
     DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
     API_STARTUP_TIMEOUT_MS: z.coerce.number().int().positive().default(180000),
+    API_OWNERSHIP_WAIT_MS: z.coerce.number().int().positive().default(120000),
+    API_OWNERSHIP_RETRY_MS: z.coerce.number().int().positive().default(1000),
     TRANSPORT: z.enum(["inproc", "kafka"]).default("inproc"),
     KAFKA_BROKERS: z.string().min(1).default("localhost:29092"),
     SHARD_PARTITIONS: z.coerce.number().int().positive().default(4),
@@ -23,6 +25,7 @@ export function loadStartupConfig(env: NodeJS.ProcessEnv = process.env) {
     SIMULATOR_RATE_CAP: z.coerce.number().int().positive().max(1000).default(10),
     SIMULATOR_TICKS_PER_SEC: z.coerce.number().int().positive().max(100).default(10),
   }).parse(env);
+  if (settings.API_OWNERSHIP_WAIT_MS >= settings.API_STARTUP_TIMEOUT_MS) throw new Error("API_OWNERSHIP_WAIT_MS must be below API_STARTUP_TIMEOUT_MS");
   const instruments = z.array(instrument).min(1).parse(env.INSTRUMENTS_JSON ? JSON.parse(env.INSTRUMENTS_JSON) : defaults);
   if (new Set(instruments.map(i => i.symbol)).size !== instruments.length) throw new Error("Duplicate instrument symbol");
   return { ...settings, instruments };

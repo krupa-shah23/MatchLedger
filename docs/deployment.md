@@ -91,3 +91,11 @@ The API now logs startup phases: database connection, exclusive runtime ownershi
 Run exactly one API against each database. The advisory lock deliberately refuses a second owner; a rolling deployment overlapping the old API can therefore fail. Stop the old service before starting its replacement if logs report another owner. Do not bypass that lock or erase the journal to deploy.
 
 After deployment, request `/healthz` on the actual Render service URL and confirm JSON with `status: ready`, then verify demo login and WebSocket authentication. Vercel's `/api/v1` rewrite and `VITE_WS_URL` must use that same verified service hostname. Local checks cannot certify a remote database URL or Render service state.
+
+### Render ownership conflict during overlapping deployment
+
+The API waits up to `API_OWNERSHIP_WAIT_MS` (default 120000), retrying every `API_OWNERSHIP_RETRY_MS` (default 1000), for the previous database owner to finish. Both settings are validated positive integers; ownership wait must be below `API_STARTUP_TIMEOUT_MS`. Recovery and application writes start only after acquiring the lock. It never terminates or steals another database session.
+
+This bounded wait handles a previous process that is already shutting down. It cannot resolve Render's overlapping-deployment lifecycle by itself: Render keeps the old instance alive until the replacement passes readiness, while this single-writer API cannot become ready until the old owner stops. See https://render.com/articles/how-render-handles-zero-downtime-deploys.
+
+For an existing conflicted deployment, cancel the pending deploy, suspend the old service and wait for it to stop, then resume and deploy the latest commit. Confirm there is only one Render service connected to that application database. Keep `/healthz` as the health check; do not fake readiness or remove ownership checks. Expect downtime for this stop/start deployment. An attached Render persistent disk disables overlapping deploys, but requires an intentional hosting configuration/plan change; it is not needed for storing this application's PostgreSQL data.

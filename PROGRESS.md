@@ -457,3 +457,10 @@ Added [scripts/smoke.mjs](scripts/smoke.mjs). Against the local API it verified 
 - Engine projection now receives journal timestamps and stores them on trade/fill/rejection rows instead of sequence numbers. Added a regression asserting trade and both fill timestamps equal journal time.
 - Migration 021 repairs historical trade/fill/order-received times from the journal. Applied locally; latest trade timestamp verified as 2026-11-01T10:27:16.515Z. Journal contents are unchanged. Hosted repair runs on next backend deployment.
 - Build/lint passed; root tests 615 passed, 167 skipped, zero failed (`/tmp/ml-time-tests.log`).
+
+## Safe wait for API ownership during deployment — 2026-11-01
+
+- Replaced immediate lock-conflict failure with bounded session-lock retries, validated wait/retry settings, and an explicit operator error explaining Render deployment overlap. Recovery remains after ownership acquisition; no lock bypass or forced session termination. Updated deployment/runtime docs with the required stop/start procedure and its downtime.
+- Build/lint passed. Root tests: 619 passed, 167 skipped, zero failed (`/tmp/ml-ownership-tests.log`). Added tests for delayed acquisition, timeout and connection failure.
+- Real PostgreSQL probe verified replacement waits until release, acquires ownership, excludes a third writer, and times out under contention (`/tmp/ml-ownership-pg.mjs`). Probe database removed afterwards. Initial maintenance-database probe found an existing lock and exited without disturbing its owner; verification used a disposable database instead.
+- Hosted service is not verified/reconfigured here. Render keeps old instances alive until replacement readiness; bounded waiting cannot break that cycle. User must stop/suspend the existing owner once before deploying the update. No deployment or git write commands were run.
